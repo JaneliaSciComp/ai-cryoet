@@ -10,12 +10,13 @@ The central design goal is answering one question across both the experimental a
 |---|---|
 | `cryoet_schema/schema_info.md` | Human-readable reference for every field that will land in the portal database, grouped by entity (Sample → Acquisition → Tomogram → Annotation) with the authoritative source of each (TOML vs MDOC vs MRC vs directory vs derived). |
 | `cryoet_schema/schema.py` | Authoritative Pydantic schema — defines every metadata field, its type, and any constraints. |
-| `cryoet_schema/schema.json` | Language-neutral JSON Schema generated from `schema.py` for non-Python consumers (portal UI, etc.). |
+| `cryoet_schema/schema.json` | Language-neutral JSON Schema for the merged `SampleRecord` (sample + all its acquisitions), generated from `schema.py`. Used by `sample.toml`'s `#:schema` directive for in-editor validation, and by non-Python consumers (portal UI, etc.). |
+| `cryoet_schema/acquisition.schema.json` | JSON Schema for a single `acquisition.toml` on its own (the `AcquisitionFile` model), generated from `schema.py`. Used by `acquisition.toml`'s `#:schema` directive so editors can validate it without requiring the sample-level fields. |
+| `cryoet_schema/validate.py` | Validator: `pixi run validate {sample_dir}`. |
+| `cryoet_schema/generate_json_schema.py` | Regenerates both `schema.json` and `acquisition.schema.json` from the Pydantic models: `pixi run json-schema`. |
 | `templates/sample.toml` | Starter template for `sample.toml` — copy into each sample directory and fill in. |
 | `templates/acquisition.toml` | Starter template for `acquisition.toml` — copy into each acquisition directory and fill in. |
-| `scripts/validate.py` | Validator: `pixi run validate {sample_dir}`. |
-| `scripts/generate_json_schema.py` | Regenerates `schema.json` from the Pydantic models: `pixi run json-schema`. |
-| `pixi.toml` / `pixi.lock` | Pinned default and testing environments, with pixi tasks defined for each. |
+| `pixi.toml` / `pixi.lock` | Pinned default and testing environments, with pixi tasks defined for each.  |
 
 ---
 
@@ -62,7 +63,7 @@ The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chan
 
 - **Two metadata files per sample.** Sample-level conditions live in `sample.toml` at the sample root. Per-acquisition parameters and the processing log live in `{acquisition}/acquisition.toml`. Fields derivable from MDOC files and file headers are authored in neither file; the ingest pipeline will read them directly.
 - **Tomograms are kept in per-pipeline subfolders** (e.g., `bp_3dctf_bin4/`, `bp_3dctf_bin4_ddw/`) rather than flattened into `Tomograms/`. This avoids filename collisions when new processing versions are added, and the folder name acts as the `processing_id`.
-- **No `VoxelSpacing{N}/` subfolder.** Voxel spacing is recorded directly in `acquisition.toml` (as `voxel_bin` and `voxel_spacing_angstrom` on each `[[tomogram]]` entry) and cross-checked against the MRC header. Keeping it out of the path avoids duplicating information that lives in the file itself.
+- **No `VoxelSpacing{N}/` subfolder.** Voxel binning is recorded directly in `acquisition.toml` (as `voxel_bin` on each `[[tomogram]]` entry); the absolute voxel spacing in Ångström is read from the MRC header by the catalog scanner. Keeping voxel info out of the path avoids duplicating information that lives in the file itself.
 
 Simulation data uses a parallel structure with domain-appropriate folder names. Both share the same schema, which is what makes cross-comparison possible.
 
@@ -142,14 +143,12 @@ Each Pydantic model is configured with `extra="allow"`, so unknown keys are pres
 [[tomogram]]
 id                     = "bp_3dctf_bin4"
 voxel_bin              = 4
-voxel_spacing_angstrom = 10.0
 derived_from           = []
 
 # Denoised version derived from the raw
 [[tomogram]]
 id                     = "bp_3dctf_bin4_ddw"
 voxel_bin              = 4
-voxel_spacing_angstrom = 10.0
 derived_from           = ["bp_3dctf_bin4"]
 
 # Segmentation run on the denoised tomogram
@@ -162,6 +161,12 @@ target_tomogram = "bp_3dctf_bin4_ddw"
 ---
 
 ## Researcher workflow: creating metadata
+
+### 0. (Optional) Set up VSCode for live TOML validation
+
+Authoring TOML in **VSCode** with the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension gives you in-editor type checking, enum suggestions, and field hints as you fill in the templates. The `#:schema` directive at the top of each template points the extension at `cryoet_schema/schema.json` (for `sample.toml`) and `cryoet_schema/acquisition.schema.json` (for `acquisition.toml`).
+
+Skipping the editor setup is fine — `pixi run validate {sample_dir}` (step 5) catches the same errors at the end.
 
 ### 1. Lay out the sample directory
 
@@ -183,15 +188,13 @@ gouauxlab_20250418_AMmilled29-2/
 
 Copy `templates/sample.toml` to the sample root and fill it in:
 
-- Every field marked `← FILL IN` must be completed.
+- Complete as many fields marked `<FILL IN>` as you can. For now, the only required fields are `sample.data_source` and `sample.project`.
 - Delete the `[synapse]` block if your project is `chromatin`, or vice versa.
-- Uncomment and complete the [[aunp]], [freezing], and [milling] blocks.
+- Optionally, uncomment and complete the [[aunp]], [freezing], and [milling] blocks.
 
 ### 3. Fill out `acquisition.toml` in each acquisition directory
 
 Copy `templates/acquisition.toml` into each acquisition directory and fill in the researcher-authored imaging parameters (nominal resolution, microscope, defocus range, …).
-
-Leave the processing-log section (the `[[tomogram]]` and `[[annotation]]` blocks) empty at this stage — you'll append to it as processing happens.
 
 ### 4. Append to the processing log as outputs are produced
 

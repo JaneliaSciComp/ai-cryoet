@@ -1,3 +1,4 @@
+#:schema ../cryoet_schema/acquisition.schema.json
 # acquisition.toml — researcher-authored per-acquisition metadata.
 # One file per acquisition, placed at the root of each acquisition directory.
 # The acquisition directory name IS the acquisition's identity — not repeated here.
@@ -34,13 +35,13 @@
 # Researcher-authored imaging parameters that are not in MDOC files.
 # ════════════════════════════════════════════════════════════════
 
-# [acquisition]
-# resolution    = "<FILL IN>"   # nominal resolution in Å, e.g. 3.5
-# tilt_spacing  = "<FILL IN>"   # nominal tilt step in degrees, e.g. 3.0
-# defocus_range = "<FILL IN>"   # target defocus range in µm, e.g. "-1.5 to -3.0"
-# energy_filter = "<FILL IN>"   # model name, e.g. "Selectris", "GIF Quantum", "none"
-# phase_plate   = "<FILL IN>"   # true | false
-# microscope    = "<FILL IN>"   # model name, e.g. "Titan Krios", "Glacios"
+[acquisition]
+# resolution    = "<FILL IN>"   # float, nominal resolution in Å, e.g. 3.5
+# tilt_spacing  = "<FILL IN>"   # float, nominal tilt step in degrees, e.g. 3.0
+# defocus_range = "<FILL IN>"   # text, target defocus range in µm, e.g. "-1.5 to -3.0"
+# energy_filter = "<FILL IN>"   # text, model name, e.g. "Selectris", "GIF Quantum", "none"
+# phase_plate   = "<FILL IN>"   # boolean, true | false
+# microscope    = "<FILL IN>"   # text, model name, e.g. "Titan Krios", "Glacios"
 
 
 # ════════════════════════════════════════════════════════════════
@@ -50,14 +51,13 @@
 # ════════════════════════════════════════════════════════════════
 
 # [[tomogram]]
-# id                     = "<FILL IN>"   # processing pipeline label and folder name, e.g. "bp_3dctf_bin4"
-# pipeline               = "<FILL IN>"   # e.g. "backprojection + 3D CTF correction"
-# software               = "<FILL IN>"   # e.g. "IMOD 4.12 + novaCTF"
-# voxel_bin              = "<FILL IN>"   # integer, e.g. 4
-# voxel_spacing_angstrom = "<FILL IN>"   # float, e.g. 10.0
-# derived_from           = "<FILL IN>"   # list of tomogram ids in this acquisition; empty for raw reconstructions
+# id              = "<FILL IN>"   # text, processing pipeline label and folder name, e.g. "bp_3dctf_bin4"
+# pipeline        = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
+# software        = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
+# voxel_bin       = "<FILL IN>"   # integer, e.g. 4
+# derived_from    = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[annotation]]
-# id              = "<FILL IN>"   # unique annotation label and folder name, e.g. "membrain_seg_v10"
-# type            = "<FILL IN>"   # e.g. membrane_segmentation | nucleosome_placement | active_zone
-# target_tomogram = "<FILL IN>"   # id of the tomogram in this acquisition that this was generated from
+# id              = "<FILL IN>"   # text, unique annotation label and folder name, e.g. "membrain_seg_v10"
+# type            = "<FILL IN>"   # text, e.g. membrane_segmentation | nucleosome_placement | active_zone
+# target_tomogram = "<FILL IN>"   # text, id of the tomogram in this acquisition that this was generated from

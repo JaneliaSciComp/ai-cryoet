@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "Acquisition": {
+      "additionalProperties": true,
+      "properties": {
+        "acquisition_id": {
+          "title": "Acquisition Id",
+          "type": "string"
+        },
+        "resolution": {
+          "title": "Resolution",
+          "type": "number"
+        },
+        "tilt_spacing": {
+          "title": "Tilt Spacing",
+          "type": "number"
+        },
+        "defocus_range": {
+          "title": "Defocus Range",
+          "type": "string"
+        },
+        "energy_filter": {
+          "title": "Energy Filter",
+          "type": "string"
+        },
+        "phase_plate": {
+          "title": "Phase Plate",
+          "type": "boolean"
+        },
+        "microscope": {
+          "title": "Microscope",
+          "type": "string"
+        },
+        "pixel_size": {
+          "title": "Pixel Size",
+          "type": "number"
+        },
+        "dose_per_tilt": {
+          "title": "Dose Per Tilt",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "total_dose": {
+          "title": "Total Dose",
+          "type": "number"
+        },
+        "tilt_min": {
+          "title": "Tilt Min",
+          "type": "number"
+        },
+        "tilt_max": {
+          "title": "Tilt Max",
+          "type": "number"
+        },
+        "tilt_axis": {
+          "title": "Tilt Axis",
+          "type": "number"
+        },
+        "defocus_per_image": {
+          "title": "Defocus Per Image",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "date_collected": {
+          "title": "Date Collected",
+          "format": "date",
+          "type": "string"
+        },
+        "voltage": {
+          "title": "Voltage",
+          "type": "number"
+        },
+        "energy_filter_slit_width": {
+          "title": "Energy Filter Slit Width",
+          "type": "number"
+        },
+        "frame_count": {
+          "title": "Frame Count",
+          "type": "integer"
+        },
+        "camera": {
+          "title": "Camera",
+          "type": "string"
+        }
+      },
+      "title": "Acquisition",
+      "type": "object"
+    },
+    "Annotation": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "target_tomogram": {
+          "title": "Target Tomogram",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Annotation",
+      "type": "object"
+    },
+    "Tomogram": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "pipeline": {
+          "title": "Pipeline",
+          "type": "string"
+        },
+        "software": {
+          "title": "Software",
+          "type": "string"
+        },
+        "voxel_bin": {
+          "title": "Voxel Bin",
+          "type": "integer"
+        },
+        "derived_from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
+        },
+        "is_raw": {
+          "title": "Is Raw",
+          "type": "boolean"
+        },
+        "image_size_x": {
+          "title": "Image Size X",
+          "type": "integer"
+        },
+        "image_size_y": {
+          "title": "Image Size Y",
+          "type": "integer"
+        },
+        "image_size_z": {
+          "title": "Image Size Z",
+          "type": "integer"
+        },
+        "mrc_path": {
+          "title": "Mrc Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "zarr_axes": {
+          "title": "Zarr Axes",
+          "type": "string"
+        },
+        "zarr_scale": {
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Tomogram",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "Parsed contents of one acquisition.toml.",
+  "properties": {
+    "acquisition": {
+      "$ref": "#/$defs/Acquisition"
+    },
+    "tomogram": {
+      "items": {
+        "$ref": "#/$defs/Tomogram"
+      },
+      "title": "Tomogram",
+      "type": "array"
+    },
+    "annotation": {
+      "items": {
+        "$ref": "#/$defs/Annotation"
+      },
+      "title": "Annotation",
+      "type": "array"
+    }
+  },
+  "required": [
+    "acquisition"
+  ],
+  "title": "AcquisitionFile",
+  "type": "object"
+}

@@ -1,3 +1,4 @@
+#:schema ../cryoet_schema/schema.json
 # sample.toml — researcher-authored sample-level metadata.
 # One file per sample, placed at the root of the sample directory.
 # The sample directory name IS the sample's identity — not repeated here.
@@ -38,73 +39,73 @@
 # ════════════════════════════════════════════════════════════════
 
 [sample]
-data_source = "<FILL IN>"   # cryoet | simulation
-project     = "<FILL IN>"   # synapse | chromatin
-# type        = "<FILL IN>"   # e.g. tissue | cellular | reconstituted
-# cell_type   = "<FILL IN>" # required if type = "cellular"
-# description = "<FILL IN>" # optional free-text description
+data_source = "<FILL IN>"     # enum: cryoet | simulation
+project     = "<FILL IN>"     # enum: synapse | chromatin
+# type        = "<FILL IN>"   # text, e.g. tissue | cellular | reconstituted
+# cell_type   = "<FILL IN>"   # text, required if type = "cellular"
+# description = "<FILL IN>"   # text, optional free-text description
 
 
 # ── Synapse-specific  (delete this block if project = "chromatin") ────────────
 
 [synapse]
-label_target   = "<FILL IN>"   # e.g. none | glutamate_receptor | AMPA | NMDA | kainate
-label_strategy = "<FILL IN>"   # e.g. none | single_label | dual_label | dimer_label
+label_target   = "<FILL IN>"   # text, e.g. none | glutamate_receptor | AMPA | NMDA | kainate
+label_strategy = "<FILL IN>"   # text, e.g. none | single_label | dual_label | dimer_label
 
 
 # ── Chromatin-specific  (delete this block if project = "synapse") ───────────
 # Uncomment and complete the fields that apply to your substrate.
 
-# [chromatin]
-# substrate             = "<FILL IN>"   # e.g. synthetic | native | n/a
-# linker_length_bp      = "<FILL IN>"   # homogenous linker length in bp (float)
-# linker_pattern        = "<FILL IN>"   # patterned linker lengths, e.g. [20, 50, 20, 50]
-# linker_distribution   = "<FILL IN>"   # free-text for non-homogenous, non-patterned linkers
-# buffer                = "<FILL IN>"   # e.g. "2.0 mM MgCl2, 150 mM KCl"
-# ptm                   = "<FILL IN>"   # e.g. none | H3K9me3 | H3K27me3 | H3K27Ac | H4K16Ac
-# histone_variants      = "<FILL IN>"   # e.g. canonical | macroH2A | H2A.Z
-# transcription_factors = "<FILL IN>"   # e.g. none | HP1a | Brd4
+[chromatin]
+# substrate             = "<FILL IN>"   # text, e.g. synthetic | native | n/a
+# linker_length_bp      = "<FILL IN>"   # float, homogenous linker length in bp
+# linker_pattern        = "<FILL IN>"   # list[int], patterned linker lengths, e.g. [20, 50, 20, 50]
+# linker_distribution   = "<FILL IN>"   # text, free-text for non-homogenous, non-patterned linkers
+# buffer                = "<FILL IN>"   # text, e.g. "2.0 mM MgCl2, 150 mM KCl"
+# ptm                   = "<FILL IN>"   # text, e.g. none | H3K9me3 | H3K27me3 | H3K27Ac | H4K16Ac
+# histone_variants      = "<FILL IN>"   # text, e.g. canonical | macroH2A | H2A.Z
+# transcription_factors = "<FILL IN>"   # text, e.g. none | HP1a | Brd4
 # nucleosome_count      = "<FILL IN>"   # integer
 # dna_length_bp         = "<FILL IN>"   # integer
 # nucleosome_uM         = "<FILL IN>"   # float
 # # For native substrates:
-# sequence_identity     = "<FILL IN>"
-# nucleosome_footprint  = "<FILL IN>"   # list of ints
+# sequence_identity     = "<FILL IN>"   # text
+# nucleosome_footprint  = "<FILL IN>"   # list, list of ints
 
 
 # ── Simulation-specific  (uncomment only if data_source = "simulation") ──────
 
 # [simulation]
-# dataset_type = "<FILL IN>"   # e.g. single_molecule | slab | bulk
+# dataset_type = "<FILL IN>"   # text, e.g. single_molecule | slab | bulk
 
 
 # ── Gold nanoparticle labeling (uncomment and fill in) ──────────
 # Copy the [[aunp]] block for each distinct AuNP label.
 
 # [[aunp]]
-# size_nm             = "<FILL IN>"   # AuNP diameter in nm (float)
-# type                = "<FILL IN>"   # e.g. colloidal, cluster
-# fluorophore         = "<FILL IN>"   # e.g. Alexa647, Alexa488, or "none"
-# concentration_value = "<FILL IN>"   # numeric concentration (float)
-# concentration_unit  = "<FILL IN>"   # unit string, e.g. "nM", "ug/mL"
-# conjugation         = "<FILL IN>"   # e.g. Fab | nanobody | chemical_tag | none
-# conjugation_target  = "<FILL IN>"   # e.g. GluA2, H3K9me3
-# notes               = "<FILL IN>" # optional free-text notes
+# size_nm             = "<FILL IN>"   # float, AuNP diameter in nm
+# type                = "<FILL IN>"   # text, e.g. colloidal, cluster
+# fluorophore         = "<FILL IN>"   # text, e.g. Alexa647, Alexa488, or "none"
+# concentration_value = "<FILL IN>"   # float, numeric concentration
+# concentration_unit  = "<FILL IN>"   # text, unit string, e.g. "nM", "ug/mL"
+# conjugation         = "<FILL IN>"   # text, e.g. Fab | nanobody | chemical_tag | none
+# conjugation_target  = "<FILL IN>"   # text, e.g. GluA2, H3K9me3
+# notes               = "<FILL IN>"   # text, optional free-text notes
 
 
 # ── Freezing / grid preparation (uncomment and fill in) ─────────
 
 # [freezing]
-# grid_type        = "<FILL IN>"   # e.g. "Quantifoil R2/2"
-# cryoprotectant   = "<FILL IN>"   # or "none"
-# method           = "<FILL IN>"   # plunge_frozen | HPF
+# grid_type        = "<FILL IN>"   # text, e.g. "Quantifoil R2/2"
+# cryoprotectant   = "<FILL IN>"   # text, or "none"
+# method           = "<FILL IN>"   # text, plunge_frozen | HPF
 # # HPF-only:
-# planchette_size  = "<FILL IN>" # e.g. "3 mm"
-# spacer_thickness = "<FILL IN>" # e.g. "100 um"
+# planchette_size  = "<FILL IN>"   # text, e.g. "3 mm"
+# spacer_thickness = "<FILL IN>"   # text, e.g. "100 um"
 
 
 # ── Milling  (uncomment and fill in) ────
 
 # [milling]
-# scheme = "<FILL IN>"   # e.g. cryo-FIB
-# date   = "<FILL IN>"   # YYYY-MM-DD
+# scheme = "<FILL IN>"   # text, e.g. cryo-FIB
+# date   = "<FILL IN>"   # date, YYYY-MM-DD
