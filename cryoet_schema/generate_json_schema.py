@@ -19,7 +19,7 @@ from pathlib import Path
 from cryoet_schema import SampleRecord
 
 
-_DEFAULT_OUT = Path(__file__).resolve().parent.parent / "cryoet_schema" / "schema.json"
+_DEFAULT_OUT = Path(__file__).resolve().parent / "schema.json"
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from cryoet_schema import Sample, Tomogram
 from cryoet_schema.schema import _validate_id
-from scripts.validate import validate_dir
+from cryoet_schema.loader import load_sample_record
 
 
 # ── direct unit tests of _validate_id ────────────────────────────────────────
@@ -139,7 +139,7 @@ def test_tomogram_rejects_bad_derived_from():
         Tomogram.model_validate({"id": "tomo_001", "derived_from": ["also/bad"]})
 
 
-# ── integration through validate_dir ──────────────────────────────────
+# ── integration through load_sample_record ──────────────────────────────────
 
 
 def _write(path: Path, content: str) -> None:
@@ -148,6 +148,7 @@ def _write(path: Path, content: str) -> None:
 
 
 def test_bad_sample_folder_name(tmp_path):
+    """Bad sample_id (from folder name) is a sample-level failure: record=None."""
     bad = tmp_path / "bad name"
     _write(
         bad / "sample.toml",
@@ -157,12 +158,13 @@ def test_bad_sample_folder_name(tmp_path):
         project = "chromatin"
         """,
     )
-    record, errors, _ = validate_dir(bad)
-    assert record is None
-    assert any("sample_id" in e for e in errors)
+    result = load_sample_record(bad)
+    assert result.record is None
+    assert any("sample_id" in e for e in result.sample_errors)
 
 
 def test_bad_acquisition_folder_name(tmp_path):
+    """Bad acquisition_id is a per-acquisition failure under the new isolation rules."""
     _write(
         tmp_path / "sample.toml",
         """
@@ -172,12 +174,15 @@ def test_bad_acquisition_folder_name(tmp_path):
         """,
     )
     _write(tmp_path / "Position*86" / "acquisition.toml", "[acquisition]\n")
-    record, errors, _ = validate_dir(tmp_path)
-    assert record is None
-    assert any("acquisition_id" in e for e in errors)
+    result = load_sample_record(tmp_path)
+    assert result.record is not None
+    assert "Position*86" in result.acquisition_errors
+    assert "acquisition_id" in result.acquisition_errors["Position*86"]
+    assert "Position*86" not in result.record.acquisitions
 
 
 def test_acquisition_case_insensitive_collision(tmp_path):
+    """Cross-acquisition collision is detected at SampleRecord level → sample_errors."""
     _write(
         tmp_path / "sample.toml",
         """
@@ -188,12 +193,16 @@ def test_acquisition_case_insensitive_collision(tmp_path):
     )
     _write(tmp_path / "Position_86" / "acquisition.toml", "[acquisition]\n")
     _write(tmp_path / "position_86" / "acquisition.toml", "[acquisition]\n")
-    record, errors, _ = validate_dir(tmp_path)
-    assert record is None
-    assert any("collides case-insensitively" in e and "acquisition" in e for e in errors)
+    result = load_sample_record(tmp_path)
+    assert result.record is None
+    assert any(
+        "collides case-insensitively" in e and "acquisition" in e
+        for e in result.sample_errors
+    )
 
 
 def test_tomogram_case_insensitive_collision(tmp_path):
+    """Within-acquisition collision is per-acquisition under the new isolation rules."""
     _write(
         tmp_path / "sample.toml",
         """
@@ -214,12 +223,16 @@ def test_tomogram_case_insensitive_collision(tmp_path):
         id = "Tomo_001"
         """,
     )
-    record, errors, _ = validate_dir(tmp_path)
-    assert record is None
-    assert any("collides case-insensitively" in e and "tomogram" in e for e in errors)
+    result = load_sample_record(tmp_path)
+    assert result.record is not None
+    assert "acq1" in result.acquisition_errors
+    msg = result.acquisition_errors["acq1"]
+    assert "collides case-insensitively" in msg and "tomogram" in msg
+    assert "acq1" not in result.record.acquisitions
 
 
 def test_annotation_case_insensitive_collision(tmp_path):
+    """Within-acquisition annotation-id collision → acquisition_errors."""
     _write(
         tmp_path / "sample.toml",
         """
@@ -243,9 +256,12 @@ def test_annotation_case_insensitive_collision(tmp_path):
         id = "ANN_001"
         """,
     )
-    record, errors, _ = validate_dir(tmp_path)
-    assert record is None
-    assert any("collides case-insensitively" in e and "annotation" in e for e in errors)
+    result = load_sample_record(tmp_path)
+    assert result.record is not None
+    assert "acq1" in result.acquisition_errors
+    msg = result.acquisition_errors["acq1"]
+    assert "collides case-insensitively" in msg and "annotation" in msg
+    assert "acq1" not in result.record.acquisitions
 
 
 def test_tomogram_and_annotation_sharing_id_is_allowed(tmp_path):
@@ -269,12 +285,14 @@ def test_tomogram_and_annotation_sharing_id_is_allowed(tmp_path):
         id = "shared_id"
         """,
     )
-    record, errors, _ = validate_dir(tmp_path)
-    assert errors == []
-    assert record is not None
+    result = load_sample_record(tmp_path)
+    assert result.sample_errors == []
+    assert result.acquisition_errors == {}
+    assert result.record is not None
 
 
 def test_bad_tomogram_id_in_toml(tmp_path):
+    """Bad tomogram id is a per-acquisition failure under the new isolation rules."""
     _write(
         tmp_path / "sample.toml",
         """
@@ -292,6 +310,9 @@ def test_bad_tomogram_id_in_toml(tmp_path):
         id = "has space"
         """,
     )
-    record, errors, _ = validate_dir(tmp_path)
-    assert record is None
-    assert any("tomogram" in e.lower() and "id" in e.lower() for e in errors)
+    result = load_sample_record(tmp_path)
+    assert result.record is not None
+    assert "acq1" in result.acquisition_errors
+    msg = result.acquisition_errors["acq1"]
+    assert "tomogram" in msg.lower() and "id" in msg.lower()
+    assert "acq1" not in result.record.acquisitions

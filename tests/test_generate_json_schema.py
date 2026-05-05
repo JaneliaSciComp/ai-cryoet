@@ -1,4 +1,4 @@
-"""Tests for scripts/generate_json_schema.py and the committed schema.json."""
+"""Tests for cryoet_schema.generate_json_schema and the committed schema.json."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from cryoet_schema import SampleRecord
-from scripts.generate_json_schema import _DEFAULT_OUT, main
+from cryoet_schema.generate_json_schema import _DEFAULT_OUT, main
 
 
 def test_writes_valid_json_schema_to_given_path(tmp_path, capsys):
