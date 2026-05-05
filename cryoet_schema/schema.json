@@ -4,239 +4,87 @@
       "additionalProperties": true,
       "properties": {
         "acquisition_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Acquisition Id"
+          "title": "Acquisition Id",
+          "type": "string"
         },
         "resolution": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Resolution"
+          "title": "Resolution",
+          "type": "number"
         },
         "tilt_spacing": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Tilt Spacing"
+          "title": "Tilt Spacing",
+          "type": "number"
         },
         "defocus_range": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Defocus Range"
+          "title": "Defocus Range",
+          "type": "string"
         },
         "energy_filter": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Energy Filter"
+          "title": "Energy Filter",
+          "type": "string"
         },
         "phase_plate": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Phase Plate"
+          "title": "Phase Plate",
+          "type": "boolean"
         },
         "microscope": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Microscope"
+          "title": "Microscope",
+          "type": "string"
         },
         "pixel_size": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Pixel Size"
+          "title": "Pixel Size",
+          "type": "number"
         },
         "dose_per_tilt": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "number"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Dose Per Tilt"
+          "title": "Dose Per Tilt",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
         },
         "total_dose": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Total Dose"
+          "title": "Total Dose",
+          "type": "number"
         },
         "tilt_min": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Tilt Min"
+          "title": "Tilt Min",
+          "type": "number"
         },
         "tilt_max": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Tilt Max"
+          "title": "Tilt Max",
+          "type": "number"
         },
         "tilt_axis": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Tilt Axis"
+          "title": "Tilt Axis",
+          "type": "number"
         },
         "defocus_per_image": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "number"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Defocus Per Image"
+          "title": "Defocus Per Image",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
         },
         "date_collected": {
-          "anyOf": [
-            {
-              "format": "date",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Date Collected"
+          "title": "Date Collected",
+          "format": "date",
+          "type": "string"
         },
         "voltage": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Voltage"
+          "title": "Voltage",
+          "type": "number"
         },
         "energy_filter_slit_width": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Energy Filter Slit Width"
+          "title": "Energy Filter Slit Width",
+          "type": "number"
         },
         "frame_count": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Frame Count"
+          "title": "Frame Count",
+          "type": "integer"
         },
         "camera": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Camera"
+          "title": "Camera",
+          "type": "string"
         }
       },
       "title": "Acquisition",
@@ -278,28 +126,12 @@
           "type": "string"
         },
         "type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Type"
+          "title": "Type",
+          "type": "string"
         },
         "target_tomogram": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Target Tomogram"
+          "title": "Target Tomogram",
+          "type": "string"
         },
         "files": {
           "items": {
@@ -319,100 +151,36 @@
       "additionalProperties": true,
       "properties": {
         "size_nm": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Size Nm"
+          "title": "Size Nm",
+          "type": "number"
         },
         "type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Type"
+          "title": "Type",
+          "type": "string"
         },
         "fluorophore": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Fluorophore"
+          "title": "Fluorophore",
+          "type": "string"
         },
         "concentration_value": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Concentration Value"
+          "title": "Concentration Value",
+          "type": "number"
         },
         "concentration_unit": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Concentration Unit"
+          "title": "Concentration Unit",
+          "type": "string"
         },
         "conjugation": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Conjugation"
+          "title": "Conjugation",
+          "type": "string"
         },
         "conjugation_target": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Conjugation Target"
+          "title": "Conjugation Target",
+          "type": "string"
         },
         "notes": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Notes"
+          "title": "Notes",
+          "type": "string"
         }
       },
       "title": "Aunp",
@@ -422,178 +190,66 @@
       "additionalProperties": true,
       "properties": {
         "substrate": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Substrate"
+          "title": "Substrate",
+          "type": "string"
         },
         "linker_length_bp": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Linker Length Bp"
+          "title": "Linker Length Bp",
+          "type": "number"
         },
         "linker_pattern": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "integer"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Linker Pattern"
+          "title": "Linker Pattern",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
         },
         "linker_distribution": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Linker Distribution"
+          "title": "Linker Distribution",
+          "type": "string"
         },
         "buffer": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Buffer"
+          "title": "Buffer",
+          "type": "string"
         },
         "ptm": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Ptm"
+          "title": "Ptm",
+          "type": "string"
         },
         "histone_variants": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Histone Variants"
+          "title": "Histone Variants",
+          "type": "string"
         },
         "transcription_factors": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Transcription Factors"
+          "title": "Transcription Factors",
+          "type": "string"
         },
         "nucleosome_count": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Nucleosome Count"
+          "title": "Nucleosome Count",
+          "type": "integer"
         },
         "dna_length_bp": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Dna Length Bp"
+          "title": "Dna Length Bp",
+          "type": "integer"
         },
         "nucleosome_uM": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Nucleosome Um"
+          "title": "Nucleosome Um",
+          "type": "number"
         },
         "sequence_identity": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sequence Identity"
+          "title": "Sequence Identity",
+          "type": "string"
         },
         "nucleosome_footprint": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "integer"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Nucleosome Footprint"
+          "title": "Nucleosome Footprint",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
         },
         "linker_length_fraction": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Linker Length Fraction"
+          "title": "Linker Length Fraction",
+          "type": "number"
         }
       },
       "title": "Chromatin",
@@ -611,64 +267,24 @@
       "additionalProperties": true,
       "properties": {
         "grid_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Grid Type"
+          "title": "Grid Type",
+          "type": "string"
         },
         "cryoprotectant": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Cryoprotectant"
+          "title": "Cryoprotectant",
+          "type": "string"
         },
         "method": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Method"
+          "title": "Method",
+          "type": "string"
         },
         "planchette_size": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Planchette Size"
+          "title": "Planchette Size",
+          "type": "string"
         },
         "spacer_thickness": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Spacer Thickness"
+          "title": "Spacer Thickness",
+          "type": "string"
         }
       },
       "title": "Freezing",
@@ -678,29 +294,13 @@
       "additionalProperties": true,
       "properties": {
         "scheme": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Scheme"
+          "title": "Scheme",
+          "type": "string"
         },
         "date": {
-          "anyOf": [
-            {
-              "format": "date",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Date"
+          "title": "Date",
+          "format": "date",
+          "type": "string"
         }
       },
       "title": "Milling",
@@ -718,16 +318,8 @@
       "additionalProperties": true,
       "properties": {
         "sample_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sample Id"
+          "title": "Sample Id",
+          "type": "string"
         },
         "data_source": {
           "$ref": "#/$defs/DataSource"
@@ -736,40 +328,16 @@
           "$ref": "#/$defs/Project"
         },
         "type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Type"
+          "title": "Type",
+          "type": "string"
         },
         "cell_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Cell Type"
+          "title": "Cell Type",
+          "type": "string"
         },
         "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Description"
+          "title": "Description",
+          "type": "string"
         }
       },
       "required": [
@@ -783,16 +351,8 @@
       "additionalProperties": true,
       "properties": {
         "dataset_type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Dataset Type"
+          "title": "Dataset Type",
+          "type": "string"
         }
       },
       "title": "Simulation",
@@ -802,28 +362,12 @@
       "additionalProperties": true,
       "properties": {
         "label_target": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label Target"
+          "title": "Label Target",
+          "type": "string"
         },
         "label_strategy": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Label Strategy"
+          "title": "Label Strategy",
+          "type": "string"
         }
       },
       "title": "Synapse",
@@ -837,40 +381,16 @@
           "type": "string"
         },
         "pipeline": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Pipeline"
+          "title": "Pipeline",
+          "type": "string"
         },
         "software": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Software"
+          "title": "Software",
+          "type": "string"
         },
         "voxel_bin": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Voxel Bin"
+          "title": "Voxel Bin",
+          "type": "integer"
         },
         "derived_from": {
           "items": {
@@ -880,103 +400,39 @@
           "type": "array"
         },
         "is_raw": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Is Raw"
+          "title": "Is Raw",
+          "type": "boolean"
         },
         "image_size_x": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Image Size X"
+          "title": "Image Size X",
+          "type": "integer"
         },
         "image_size_y": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Image Size Y"
+          "title": "Image Size Y",
+          "type": "integer"
         },
         "image_size_z": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Image Size Z"
+          "title": "Image Size Z",
+          "type": "integer"
         },
         "mrc_path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Mrc Path"
+          "title": "Mrc Path",
+          "type": "string"
         },
         "zarr_path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Zarr Path"
+          "title": "Zarr Path",
+          "type": "string"
         },
         "zarr_axes": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Zarr Axes"
+          "title": "Zarr Axes",
+          "type": "string"
         },
         "zarr_scale": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "number"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Zarr Scale"
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -993,37 +449,13 @@
       "$ref": "#/$defs/Sample"
     },
     "simulation": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Simulation"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
+      "$ref": "#/$defs/Simulation"
     },
     "chromatin": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Chromatin"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
+      "$ref": "#/$defs/Chromatin"
     },
     "synapse": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Synapse"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
+      "$ref": "#/$defs/Synapse"
     },
     "aunp": {
       "items": {
@@ -1033,26 +465,10 @@
       "type": "array"
     },
     "freezing": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Freezing"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
+      "$ref": "#/$defs/Freezing"
     },
     "milling": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Milling"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
+      "$ref": "#/$defs/Milling"
     },
     "acquisitions": {
       "additionalProperties": {
