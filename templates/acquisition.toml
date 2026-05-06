@@ -51,13 +51,13 @@
 # ════════════════════════════════════════════════════════════════
 
 # [[tomogram]]
-# id              = "<FILL IN>"   # text, processing pipeline label and folder name, e.g. "bp_3dctf_bin4"
+# id              = "<FILL IN>"   # text, MUST equal the tomogram's folder name, e.g. "bp_3dctf_bin4"
 # pipeline        = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
 # software        = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
 # voxel_bin       = "<FILL IN>"   # integer, e.g. 4
 # derived_from    = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[annotation]]
-# id              = "<FILL IN>"   # text, unique annotation label and folder name, e.g. "membrain_seg_v10"
+# id              = "<FILL IN>"   # text, MUST equal the annotation's folder name, e.g. "membrain_seg_v10"
 # type            = "<FILL IN>"   # text, e.g. membrane_segmentation | nucleosome_placement | active_zone
 # target_tomogram = "<FILL IN>"   # text, id of the tomogram in this acquisition that this was generated from
