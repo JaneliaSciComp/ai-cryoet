@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
+from rapidfuzz import process
 
 from cryoet_schema import (
     AcquisitionFile,
@@ -36,6 +37,14 @@ from cryoet_schema import (
 
 
 _PLACEHOLDER = "<FILL IN>"
+
+# Subdirectory layouts probed when cross-checking tomogram/annotation ids
+# against folders on disk. Tomograms live under one of two layouts (real
+# data vs simulated); annotations live under one. Kept in sync with
+# cryoet_catalog.discovery.iter_tomograms / iter_annotations.
+_TOMOGRAM_PARENT_DIRS = ("Reconstructions/Tomograms", "SyntheticCryoET")
+_ANNOTATION_PARENT_DIRS = ("Reconstructions/Annotations",)
+_FOLDER_SUGGEST_CUTOFF = 80
 
 
 @dataclass
@@ -145,6 +154,78 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
         # entity_pk = (sample_id, acq_id, annotation_id)
         return f"acquisitions.{pk[1]}.annotation[{pk[2]}]"
     return et
+
+
+# ── id ↔ folder cross-check ──────────────────────────────────────────────────
+
+
+def _candidate_folder_names(acq_dir: Path, parent_dirs: tuple[str, ...]) -> list[str]:
+    """Return on-disk folder names from any of the candidate parent dirs.
+
+    Used to suggest the closest match when a TOML-declared id has no
+    matching folder. Missing parents contribute nothing rather than
+    erroring.
+    """
+    names: list[str] = []
+    for sub in parent_dirs:
+        d = acq_dir / sub
+        if d.is_dir():
+            names.extend(p.name for p in d.iterdir() if p.is_dir())
+    return names
+
+
+def _has_matching_folder(
+    acq_dir: Path, parent_dirs: tuple[str, ...], entity_id: str
+) -> bool:
+    return any((acq_dir / sub / entity_id).is_dir() for sub in parent_dirs)
+
+
+def _check_id_folder_alignment(
+    acq_dir: Path, acq_model: AcquisitionFile
+) -> list[str]:
+    """Verify each declared tomogram/annotation id has a matching folder.
+
+    The TOML-authored ``id`` field MUST equal the folder's directory name
+    on disk so the two cannot drift. If no matching folder exists, return
+    a one-line error per offender (with a fuzzy suggestion when the
+    closest folder name is plausibly the intended target).
+    """
+    errors: list[str] = []
+
+    tomo_candidates = _candidate_folder_names(acq_dir, _TOMOGRAM_PARENT_DIRS)
+    for tomo in acq_model.tomogram:
+        if _has_matching_folder(acq_dir, _TOMOGRAM_PARENT_DIRS, tomo.tomogram_id):
+            continue
+        joined_parents = " or ".join(repr(p) for p in _TOMOGRAM_PARENT_DIRS)
+        msg = (
+            f"tomogram[{tomo.tomogram_id}]: id has no matching folder under "
+            f"{joined_parents}; "
+            f"the id must equal the tomogram's directory name"
+        )
+        match = process.extractOne(
+            tomo.tomogram_id, tomo_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
+        )
+        if match:
+            msg += f" (did you mean '{match[0]}'?)"
+        errors.append(msg)
+
+    ann_candidates = _candidate_folder_names(acq_dir, _ANNOTATION_PARENT_DIRS)
+    for ann in acq_model.annotation:
+        if _has_matching_folder(acq_dir, _ANNOTATION_PARENT_DIRS, ann.annotation_id):
+            continue
+        msg = (
+            f"annotation[{ann.annotation_id}]: id has no matching folder under "
+            f"{_ANNOTATION_PARENT_DIRS[0]!r}; "
+            f"the id must equal the annotation's directory name"
+        )
+        match = process.extractOne(
+            ann.annotation_id, ann_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
+        )
+        if match:
+            msg += f" (did you mean '{match[0]}'?)"
+        errors.append(msg)
+
+    return errors
 
 
 # ── walker ───────────────────────────────────────────────────────────────────
@@ -285,7 +366,15 @@ def load_sample_record(sample_dir: Path) -> LoadResult:
                 result.warnings.append(str(w.message))
 
         if acq_model is not None:
-            validated_acqs[acq_name] = acq_model
+            layout_errors = _check_id_folder_alignment(acq_toml.parent, acq_model)
+            if layout_errors:
+                joined = "; ".join(layout_errors)
+                existing = result.acquisition_errors.get(acq_name)
+                result.acquisition_errors[acq_name] = (
+                    f"{existing}; {joined}" if existing else joined
+                )
+            else:
+                validated_acqs[acq_name] = acq_model
 
     # Build the full record. Pass already-validated acquisitions through
     # by dumping back to dict (preserves alias round-tripping for the

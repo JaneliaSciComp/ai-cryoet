@@ -105,6 +105,8 @@ def test_unknown_key_on_tomogram_uses_id_not_index(tmp_path):
         unknown_tomo_key = "value"
         """,
     )
+    (tmp_path / "Position_86" / "Reconstructions" / "Tomograms" / "first_tomo").mkdir(parents=True)
+    (tmp_path / "Position_86" / "Reconstructions" / "Tomograms" / "my_tomo").mkdir(parents=True)
     result = load_sample_record(tmp_path)
     assert result.record is not None
     entry = _find(result.extras, "tomogram", "unknown_tomo_key")
