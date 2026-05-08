@@ -13,7 +13,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import fontsourceVariableRobotoCss from '@fontsource-variable/roboto?url'
 import React from 'react'
-import { theme } from '~/setup/theme'
+import { theme } from '~/styles/theme'
 import { Header } from '~/components/Header'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({

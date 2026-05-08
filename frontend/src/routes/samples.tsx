@@ -1,29 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Typography } from '@mui/material'
-
-type SampleSummary = {
-  sample_id: string
-  project: string
-  data_source: string
-  description: string | null
-  warning_count: number
-}
-
-const API_BASE = import.meta.env.SSR ? 'http://localhost:8000' : '/api'
-
-async function fetchSamples(): Promise<Array<SampleSummary>> {
-  const res = await fetch(`${API_BASE}/samples`)
-  if (!res.ok) throw new Error(`GET /samples failed: ${res.status}`)
-  return res.json()
-}
+import { samplesQueryOptions, useSamplesQuery } from '~/hooks/useSamples'
 
 export const Route = createFileRoute('/samples')({
-  loader: () => fetchSamples(),
+  loader: ({ context: { queryClient } }) =>
+    queryClient.ensureQueryData(samplesQueryOptions),
   component: SamplesList,
 })
 
 function SamplesList() {
-  const data = Route.useLoaderData()
+  const { data } = useSamplesQuery()
 
   return (
     <div>
