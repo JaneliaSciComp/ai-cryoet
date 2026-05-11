@@ -22,7 +22,14 @@ from alembic import context
 
 # Set up Alembic config + logging.
 config = context.config
-if config.config_file_name is not None:
+# Skip fileConfig when invoked programmatically (init_schema passes an
+# engine via cfg.attributes['connection']). The ini's [loggers]/[handlers]
+# sections install a fresh StreamHandler(sys.stderr) on the root logger
+# every call — which clobbers the loguru intercept the API installs at
+# lifespan startup. CLI invocations (`pixi run migrate`) still get the
+# pretty alembic console formatting.
+_programmatic = config.attributes.get("connection") is not None
+if config.config_file_name is not None and not _programmatic:
     fileConfig(config.config_file_name)
 
 # Wire ORM metadata for autogenerate. Imported here (not at module top) to

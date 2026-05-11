@@ -10,6 +10,8 @@ Configuration via environment:
 """
 from __future__ import annotations
 import asyncio
+import inspect
+import logging
 import os
 from collections import OrderedDict
 from contextlib import asynccontextmanager
@@ -41,6 +43,47 @@ from cryoet_catalog.api.routes import (
 )
 
 
+class _LoguruInterceptHandler(logging.Handler):
+    """Forward stdlib ``logging`` records into loguru.
+
+    Without this, uvicorn's startup/access logs and alembic's migration
+    output go through stdlib ``StreamHandler`` writes to a piped stderr,
+    which the OS may hold until the process exits when running under
+    pixi/docker/etc. Loguru flushes its sink after every write, so once
+    records pass through here they appear immediately. Frame-walking
+    matches the upstream loguru-docs recipe (avoids attributing the call
+    site to ``logging/__init__.py``).
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level: int | str = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = inspect.currentframe(), 0
+        while frame and (depth == 0 or frame.f_code.co_filename == logging.__file__):
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
+
+def _install_log_intercept() -> None:
+    """Route stdlib loggers (root + uvicorn) through loguru.
+
+    Uvicorn pins ``propagate=False`` on its own loggers, so a root-only
+    handler doesn't catch its access/error output — we have to replace
+    handlers on each uvicorn logger explicitly.
+    """
+    handler = _LoguruInterceptHandler()
+    logging.basicConfig(handlers=[handler], level=logging.INFO, force=True)
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvi_logger = logging.getLogger(name)
+        uvi_logger.handlers = [handler]
+        uvi_logger.propagate = False
+
+
 def _parse_origins(raw: str) -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
@@ -62,6 +105,11 @@ def _detect_multi_worker() -> int | None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    # Reroute stdlib logging through loguru's flushing sink — fixes the
+    # "Application startup complete." / access-log buffering you hit when
+    # running under pixi (piped stderr).
+    _install_log_intercept()
+
     # Tests may pre-seed app.state.engine to bypass DB URL config; respect that.
     pre_seeded_engine = getattr(app.state, "engine", None) is not None
     if not pre_seeded_engine:
