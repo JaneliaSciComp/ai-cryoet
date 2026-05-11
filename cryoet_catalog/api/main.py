@@ -35,6 +35,7 @@ from cryoet_catalog.api.routes import (
     samples,
     scans,
     stats,
+    tilt_series as tilt_series_routes,
     tomograms,
     warnings as warnings_routes,
 )
@@ -134,6 +135,9 @@ def create_app() -> FastAPI:
     app.include_router(filters.router, prefix="/filters", tags=["filters"])
     app.include_router(stats.router, prefix="/stats", tags=["stats"])
     app.include_router(tomograms.router, prefix="/tomograms", tags=["tomograms"])
+    app.include_router(
+        tilt_series_routes.router, prefix="/tilt-series", tags=["tilt-series"]
+    )
     return app
 
 
