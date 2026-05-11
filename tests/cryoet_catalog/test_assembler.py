@@ -448,7 +448,11 @@ def test_typo_warning_categorized(tmp_path):
         """,
     )
     loc = _sample_loc(sample_dir)
-    result = assemble_sample(loc)
+    # The underlying Pydantic typo-detector emits a UserWarning; the assembler
+    # then re-emits it as a categorized ScanWarning. We assert the UserWarning
+    # is raised (and capture it) so it doesn't leak into the test summary.
+    with pytest.warns(UserWarning, match="closely matches"):
+        result = assemble_sample(loc)
 
     typos = [w for w in result.warnings if w.category == "possible_typo"]
     assert len(typos) == 1
