@@ -31,6 +31,7 @@ from cryoet_catalog.api.routes import (
     filters,
     samples,
     scans,
+    stats,
     warnings as warnings_routes,
 )
 
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(warnings_routes.router, prefix="/samples", tags=["warnings"])
     app.include_router(extras.router, prefix="/extras", tags=["extras"])
     app.include_router(filters.router, prefix="/filters", tags=["filters"])
+    app.include_router(stats.router, prefix="/stats", tags=["stats"])
     return app
 
 
