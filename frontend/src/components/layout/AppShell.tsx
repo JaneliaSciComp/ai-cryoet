@@ -15,9 +15,20 @@ export function AppShell(props: AppShellProps) {
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'))
   const variant = isDesktop ? 'persistent' : 'temporary'
 
+  // The persistent Drawer paper is `position: fixed; top: 0` by default and
+  // sits above the AppBar (drawer z-index 1200 > app-bar 1100), which would
+  // hide the nav links on the left of the AppBar. Offset the paper top by the
+  // AppBar height so the drawer slides in below it. Only apply to the
+  // persistent variant — the temporary (mobile) variant covers the screen on
+  // purpose so the backdrop can dismiss it.
+  const APP_BAR_HEIGHT = 64
+  const persistentPaperSx =
+    variant === 'persistent'
+      ? { top: APP_BAR_HEIGHT, height: `calc(100% - ${APP_BAR_HEIGHT}px)` }
+      : {}
+
   return (
-    // Assumes the parent route renders a 64 px AppBar above this shell.
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+    <Box sx={{ display: 'flex', height: `calc(100vh - ${APP_BAR_HEIGHT}px)` }}>
       <Drawer
         variant={variant}
         open={open}
@@ -28,6 +39,7 @@ export function AppShell(props: AppShellProps) {
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
+            ...persistentPaperSx,
           },
         }}
       >
