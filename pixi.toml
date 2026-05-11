@@ -29,9 +29,12 @@ test = "pytest"
 [feature.catalog.dependencies]
 sqlalchemy = ">=2.0"
 mrcfile    = ">=1.5"
+alembic    = ">=1.13"
 
 [feature.catalog.tasks]
-scan = "python -m cryoet_catalog scan"
+scan             = "python -m cryoet_catalog scan"
+migrate          = "alembic -c cryoet_catalog/migrations/alembic.ini upgrade head"
+migrate-revision = "alembic -c cryoet_catalog/migrations/alembic.ini revision --autogenerate -m"
 
 [feature.api.dependencies]
 fastapi = ">=0.110"

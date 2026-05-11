@@ -1,8 +1,14 @@
-"""SQLAlchemy engine + session helpers for the CryoET catalog."""
+"""SQLAlchemy engine + session helpers for the CryoET catalog.
+
+Schema initialization is delegated to Alembic. ``init_schema(engine)`` runs
+``alembic upgrade head`` against the engine. See
+``cryoet_catalog/migrations/README.md``.
+"""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import Engine, create_engine
@@ -10,17 +16,42 @@ from sqlalchemy.orm import Session, sessionmaker
 
 DEFAULT_DB_URL = "sqlite:///cryoet_catalog.db"
 
+_MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+_ALEMBIC_INI = _MIGRATIONS_DIR / "alembic.ini"
+
 
 def make_engine(url: str = DEFAULT_DB_URL) -> Engine:
     """Create a SQLAlchemy engine. Accepts any URL — sqlite:// or postgresql://."""
     return create_engine(url, future=True)
 
 
-def init_schema(engine: Engine) -> None:
-    """Create all tables defined on the ORM metadata. Idempotent (create_all)."""
-    from cryoet_catalog.orm import Base
+def _alembic_cfg(engine: Engine):
+    """Build an Alembic Config bound to ``engine`` for in-process use.
 
-    Base.metadata.create_all(engine)
+    The config file lives next to the migrations directory and is the same
+    one the ``pixi run migrate`` task uses. We override ``sqlalchemy.url``
+    from the engine and stash a live connection in ``cfg.attributes`` so
+    ``env.py`` can use it directly (avoiding a second engine for the same
+    DB, which on SQLite means a second file handle).
+    """
+    from alembic.config import Config  # local import: alembic is optional
+
+    cfg = Config(str(_ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
+    cfg.set_main_option("sqlalchemy.url", str(engine.url))
+    cfg.attributes["connection"] = engine
+    return cfg
+
+
+def init_schema(engine: Engine) -> None:
+    """Bring the DB at ``engine`` up to the head ORM revision via Alembic.
+
+    Runs ``alembic upgrade head``. Works for both fresh DBs and any DB
+    already under Alembic management.
+    """
+    from alembic import command  # local import: alembic is optional
+
+    command.upgrade(_alembic_cfg(engine), "head")
 
 
 @contextmanager
