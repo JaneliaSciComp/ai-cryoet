@@ -10,7 +10,7 @@ import {
   TextField,
 } from '@mui/material'
 import type { FiltersOptionsOut, RangeOut } from '~/types'
-import type { SamplesSearchParams } from '~/routes/samples'
+import type { SamplesSearchParams } from '~/utils/samplesSearch'
 import { useDebounce } from '~/hooks/useDebounce'
 import { ChipSelect, NumberChipSelect } from './ChipSelect'
 import { RangeSlider } from './RangeSlider'
