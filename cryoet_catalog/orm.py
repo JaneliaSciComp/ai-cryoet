@@ -177,6 +177,7 @@ class AcquisitionORM(Base):
     energy_filter_slit_width: Mapped[float | None] = mapped_column(Float, nullable=True)
     frame_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     camera: Mapped[str | None] = mapped_column(String, nullable=True)
+    path: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (PrimaryKeyConstraint("sample_id", "acquisition_id"),)
 
@@ -204,6 +205,7 @@ class TomogramORM(Base):
     voxel_spacing_angstrom_implied: Mapped[float | None] = mapped_column(
         Float, nullable=True
     )
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         PrimaryKeyConstraint("sample_id", "acquisition_id", "tomogram_id"),
@@ -228,6 +230,44 @@ class AnnotationORM(Base):
 
     __table_args__ = (
         PrimaryKeyConstraint("sample_id", "acquisition_id", "annotation_id"),
+        ForeignKeyConstraint(
+            ["sample_id", "acquisition_id"],
+            ["acquisitions.sample_id", "acquisitions.acquisition_id"],
+        ),
+    )
+
+
+class TiltSeriesORM(Base):
+    """One tilt series per row, FK on the parent acquisition.
+
+    Composite PK ``(sample_id, acquisition_id, tilt_series_id)`` mirrors the
+    Pydantic ``TiltSeries`` model. ``tilt_angles`` is a JSON column carrying
+    the full per-image angles list so the polar-plot endpoint never has to
+    re-parse the MDOC.
+    """
+
+    __tablename__ = "tilt_series"
+
+    sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    tilt_series_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    mdoc_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    st_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    zarr_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    n_tilts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tilt_range_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tilt_range_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tilt_axis_angle: Mapped[float | None] = mapped_column(Float, nullable=True)
+    voltage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pixel_spacing: Mapped[float | None] = mapped_column(Float, nullable=True)
+    image_format: Mapped[str | None] = mapped_column(String, nullable=True)
+    microscope: Mapped[str | None] = mapped_column(String, nullable=True)
+    camera: Mapped[str | None] = mapped_column(String, nullable=True)
+    tilt_angles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    mtime: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("sample_id", "acquisition_id", "tilt_series_id"),
         ForeignKeyConstraint(
             ["sample_id", "acquisition_id"],
             ["acquisitions.sample_id", "acquisitions.acquisition_id"],

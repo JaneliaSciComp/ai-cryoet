@@ -13,6 +13,7 @@ from .schema import (
     SampleRecord,
     Simulation,
     Synapse,
+    TiltSeries,
     Tomogram,
 )
 
@@ -31,5 +32,6 @@ __all__ = [
     "SampleRecord",
     "Simulation",
     "Synapse",
+    "TiltSeries",
     "Tomogram",
 ]

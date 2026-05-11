@@ -21,7 +21,7 @@ import datetime as _dt
 import re as _re
 import warnings as _warnings
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from rapidfuzz import fuzz, process
@@ -209,6 +209,10 @@ class Acquisition(_Base):
     frame_count: int | None = None
     # .eer / .tiff (frame extension)
     camera: str | None = None
+    # directory (acquisition directory; surfaced for the UI's copy-path /
+    # open-in-file-browser buttons; synthesized acquisitions get the dir
+    # the scanner walked)
+    path: str | None = None
 
 
 class Tomogram(_Base):
@@ -230,6 +234,9 @@ class Tomogram(_Base):
     # OME-Zarr .zattrs
     zarr_axes: str | None = None
     zarr_scale: list[float] | None = None
+    # filesystem (recorded by scanner via os.stat at parse time; powers
+    # home-page size stats and per-card size badges)
+    size_bytes: int | None = None
 
 
 class Annotation(_Base):
@@ -241,12 +248,57 @@ class Annotation(_Base):
     files: list[str] = Field(default_factory=list)
 
 
+class TiltSeries(_Base):
+    """One tilt series within an acquisition (composite-PK child of Acquisition).
+
+    Composite primary key: ``(sample_id, acquisition_id, tilt_series_id)``.
+    ``tilt_series_id`` is the MDOC stem (with collision-disambiguating suffix
+    when needed; see plan §11.23). Powers the per-tilt-series UI cards
+    (polar plot + median-tilt preview + Neuroglancer launch). All non-PK
+    fields are optional so a tilt series can be ingested before MDOC parse
+    succeeds.
+    """
+
+    # composite PK fields (path-injected by the scanner; optional in
+    # Pydantic so partial loads don't blow up but pinned NOT NULL in the DB)
+    sample_id: IdStr | None = None
+    acquisition_id: IdStr | None = None
+    tilt_series_id: IdStr | None = None
+    # filesystem (parser-discovered)
+    mdoc_path: str | None = None
+    st_path: str | None = None
+    zarr_path: str | None = None
+    # MDOC-derived geometry
+    n_tilts: int | None = None
+    tilt_range_min: float | None = None
+    tilt_range_max: float | None = None
+    tilt_axis_angle: float | None = None
+    # MDOC-derived imaging
+    voltage: float | None = None
+    pixel_spacing: float | None = None
+    image_format: Literal["EER", "TIFF", "MRC"] | None = None
+    microscope: str | None = None
+    camera: str | None = None
+    # full per-image angle list — cached on the row so polar-plot renders
+    # don't re-parse the MDOC. ~1 KB for ~120 floats; see plan §11.7.
+    tilt_angles: list[float] | None = None
+    # filesystem mtime gating
+    mtime: float | None = None
+
+
 class AcquisitionFile(_Base):
-    """Parsed contents of one acquisition.toml."""
+    """Parsed contents of one acquisition.toml.
+
+    ``tilt_series`` is populated by the scanner (from MDOC parsing) rather
+    than authored by researchers; the field is included on the schema so
+    downstream consumers (DB upsert, API responses, JSON Schema dumps) have
+    a stable shape.
+    """
 
     acquisition: Acquisition
     tomogram: list[Tomogram] = Field(default_factory=list)
     annotation: list[Annotation] = Field(default_factory=list)
+    tilt_series: list[TiltSeries] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_cross_refs(self) -> "AcquisitionFile":

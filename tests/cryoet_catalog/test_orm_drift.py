@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as _dt
 import types
 from enum import Enum
-from typing import Annotated, Union, get_args, get_origin
+from typing import Annotated, Literal, Union, get_args, get_origin
 
 import pytest
 
@@ -32,6 +32,7 @@ from cryoet_schema.schema import (
     Sample,
     Simulation,
     Synapse,
+    TiltSeries,
     Tomogram,
 )
 
@@ -59,6 +60,12 @@ MAPPING = [
         set(),
     ),
     (Annotation, orm.AnnotationORM, {"sample_id", "acquisition_id"}, set()),
+    (
+        TiltSeries,
+        orm.TiltSeriesORM,
+        set(),
+        {"sample_id", "acquisition_id", "tilt_series_id"},
+    ),
 ]
 
 
@@ -76,6 +83,7 @@ def _expected_sa_type(annotation):
         args = [a for a in get_args(annotation) if a is not type(None)]
         if len(args) == 1:
             annotation = _strip_annotated(args[0])
+            origin = get_origin(annotation)
     if annotation is str:
         return String
     if annotation is int:
@@ -88,6 +96,19 @@ def _expected_sa_type(annotation):
         return Date
     if isinstance(annotation, type) and issubclass(annotation, Enum):
         return SAEnum
+    if origin is Literal:
+        # Literal[<str>,<str>,...] is stored as a plain String column on the
+        # ORM (no SAEnum proliferation for ad-hoc enums). All literal members
+        # must share the same scalar type for this branch to make sense.
+        members = get_args(annotation)
+        member_types = {type(m) for m in members}
+        if member_types == {str}:
+            return String
+        if member_types == {int}:
+            return Integer
+        raise AssertionError(
+            f"Literal with mixed member types not supported: {annotation!r}"
+        )
     if get_origin(annotation) is list:
         return JSON
     raise AssertionError(f"unexpected pydantic annotation: {annotation!r}")
