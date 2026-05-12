@@ -10,6 +10,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -23,7 +24,13 @@ def _build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser(
         "scan", help="Scan a data root and ingest into the catalog DB."
     )
-    scan.add_argument("root", type=Path, help="path to data root")
+    scan.add_argument(
+        "root",
+        type=Path,
+        nargs="?",
+        default=None,
+        help="path to data root (defaults to $CATALOG_DATA_ROOT)",
+    )
     scan.add_argument(
         "--db", default=db.DEFAULT_DB_URL, help="SQLAlchemy URL"
     )
@@ -71,9 +78,20 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_scan(args) -> int:
-    if not args.root.is_dir():
-        print(f"error: {args.root} is not a directory", file=sys.stderr)
+    root = args.root
+    if root is None:
+        env_root = os.environ.get("CATALOG_DATA_ROOT")
+        if not env_root:
+            print(
+                "error: no root provided and CATALOG_DATA_ROOT is not set",
+                file=sys.stderr,
+            )
+            return 2
+        root = Path(env_root)
+    if not root.is_dir():
+        print(f"error: {root} is not a directory", file=sys.stderr)
         return 2
+    args.root = root
 
     engine = db.make_engine(args.db)
     if args.init:

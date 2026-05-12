@@ -7,18 +7,22 @@ version = "0.1.0"
 
 [environments]
 default = { solve-group = "default" }
-test    = { features = ["test"],                          solve-group = "default" }
-catalog = { features = ["catalog", "test"],               solve-group = "default" }
-api     = { features = ["catalog", "api", "test"],        solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
+catalog = { features = ["catalog", "test"], solve-group = "default" }
+api = { features = ["catalog", "api", "test"], solve-group = "default" }
 
 [dependencies]
-python    = ">=3.11"
-pydantic  = ">=2.6"
+python = ">=3.11"
+pydantic = ">=2.6"
 rapidfuzz = ">=3.0"
 
+[activation.env]
+CATALOG_DATA_ROOT = "/groups/cryoet/cryoet/data/scratch/data"
+
 [tasks]
-validate    = "python -m cryoet_schema.validate"
+validate = "python -m cryoet_schema.validate"
 json-schema = "python -m cryoet_schema.generate_json_schema"
+scan = { cmd = "python -m cryoet_catalog scan", default-environment = "catalog" }
 
 [feature.test.dependencies]
 pytest = ">=7.0"
@@ -28,29 +32,35 @@ test = "pytest"
 
 [feature.catalog.dependencies]
 sqlalchemy = ">=2.0"
-mrcfile    = ">=1.5"
-alembic    = ">=1.13"
+mrcfile = ">=1.5"
+alembic = ">=1.13"
 
 [feature.catalog.tasks]
-scan             = "python -m cryoet_catalog scan"
-migrate          = "alembic -c cryoet_catalog/migrations/alembic.ini upgrade head"
+migrate = "alembic -c cryoet_catalog/migrations/alembic.ini upgrade head"
 migrate-revision = "alembic -c cryoet_catalog/migrations/alembic.ini revision --autogenerate -m"
 
 [feature.api.dependencies]
-fastapi         = ">=0.110"
-uvicorn         = "*"
-loguru          = ">=0.7"
-numpy           = ">=1.26"
+fastapi = ">=0.110"
+uvicorn = "*"
+loguru = ">=0.7"
+numpy = ">=1.26"
 matplotlib-base = ">=3.8"
-pillow          = ">=10"
-neuroglancer    = ">=2.40"
-zarr            = ">=2.16"
-tifffile        = ">=2024.1"
+pillow = ">=10"
+neuroglancer = ">=2.40"
+zarr = ">=2.16"
+tifffile = ">=2024.1"
 
 [feature.api.pypi-dependencies]
 eerfile = "*"
 
 [feature.api.tasks]
-api      = "uvicorn cryoet_catalog.api.main:app --reload --port 8000"
-frontend = { cmd = "npm run dev", cwd = "frontend", depends-on = ["frontend-install"] }
-frontend-install = { cmd = "npm install", cwd = "frontend", inputs = ["frontend/package.json", "frontend/package-lock.json"], outputs = ["frontend/node_modules/.package-lock.json"] }
+api = "uvicorn cryoet_catalog.api.main:app --reload --port 8000"
+frontend = { cmd = "npm run dev", cwd = "frontend", depends-on = [
+    "frontend-install",
+] }
+frontend-install = { cmd = "npm install", cwd = "frontend", inputs = [
+    "frontend/package.json",
+    "frontend/package-lock.json",
+], outputs = [
+    "frontend/node_modules/.package-lock.json",
+] }
