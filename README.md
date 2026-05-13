@@ -56,6 +56,23 @@ pixi run frontend
 ```
 Open the data portal at `http://localhost:3000`.
 
+### Alternate port
+
+If port 8000 is taken, pass uvicorn flags through to use an alternate port. You can also change the IP binding:
+```
+pixi run api --host 0.0.0.0 --port 8034
+```
+
+If you change the backend host/port, you will also need to point the frontend to it. The frontend reads its dev-server settings from `frontend/.env.local` (gitignored). Create it like this:
+
+```
+# Backend the /api proxy points to (default: http://localhost:8000)
+API_PROXY_TARGET=http://localhost:8034
+
+# Port the Vite dev server listens on (default: 3000)
+FRONTEND_PORT=3030
+```
+
 ---
 
 ## Schema authoring & validation
