@@ -32,7 +32,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="path to data root (defaults to $CATALOG_DATA_ROOT)",
     )
     scan.add_argument(
-        "--db", default=db.DEFAULT_DB_URL, help="SQLAlchemy URL"
+        "--db",
+        default=os.environ.get("CATALOG_DB_URL", db.DEFAULT_DB_URL),
+        help="SQLAlchemy URL (defaults to $CATALOG_DB_URL, else sqlite:///cryoet_catalog.db)",
     )
     scan.add_argument(
         "--force", action="store_true", help="bypass mtime gating"
