@@ -17,7 +17,7 @@ The central design goal is answering one question across both the experimental a
 | `templates/sample_name` | Starter directory structure containing `sample.toml` and `acquistion.toml`. Copy this directory to start a new sample. |
 | `templates/sample.toml` | Starter template for `sample.toml`. If you didn't start a new sample from the starter directory `sample_name/`, copy this template into your sample directory and fill in. |
 | `templates/acquisition.toml` | Starter template for `acquisition.toml`. If you didn't start a new sample from the starter directory `sample_name/`, copy this template into each acquisition directory and fill in. |
-| `pixi.toml` / `pixi.lock` | Pinned default and testing environments, with pixi tasks defined for each.  |
+| `pyproject.toml` / `pixi.lock` | Project metadata, PyPI dependencies (`[project]`), and pixi config (`[tool.pixi.*]`). Pixi resolves the duplicated runtime deps from conda-forge; `tests/test_deps_in_sync.py` enforces that the two lists stay aligned.  |
 
 ---
 
@@ -194,14 +194,35 @@ Each `acquisition.toml` grows over time. For each new output — a new tomogram 
 
 ### 5. Validate
 
-> [!NOTE]
-> You must [install pixi](https://pixi.prefix.dev/latest/installation/) to run the validation. Then, the first time you use pixi for this repo, you will need to run `pixi install` to install the environment.
+The validation script validates `sample.toml` and every `acquisition.toml` under the sample directory and will notify the researcher of any fields that violate the schema. Validation will also run during database ingestion — see `schema_info.md` for the full list of fields that will be stored, including those auto-derived from MDOCs, MRC headers, OME-Zarr metadata, and directory structure.
+
+#### Option 1: With pixi
+
+1. [Install pixi](https://pixi.prefix.dev/latest/installation/). 
+2. The first time you use pixi for this repo, run `pixi install` to install the environment.
+3. Run the validation with this command:
 
 ```
 pixi run validate {sample_dir}
 ```
 
-This validates `sample.toml` and every `acquisition.toml` under the sample directory and will notify the researcher of any fields that violate the schema. Validation will also run during database ingestion — see `schema_info.md` for the full list of fields that will be stored, including those auto-derived from MDOCs, MRC headers, OME-Zarr metadata, and directory structure.
+#### Option 2: Without pixi
+
+Alternatively, you can run the validator with any Python ≥3.11 — the only runtime dependencies are `pydantic` and `rapidfuzz`, both pure-Python. 
+
+For example, using Python's built-in `venv` module:
+
+```bash
+# from the repo root
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e .
+python -m cryoet_schema.validate {sample_dir}
+```
+
+`pip install -e .` reads the same dependency list pixi uses (`[project.dependencies]` in `pyproject.toml`).
+
+[`uv`](https://docs.astral.sh/uv/) works as a drop-in for `pip`/`venv`.
 
 ---
 

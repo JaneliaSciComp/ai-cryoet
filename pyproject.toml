@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cryoet-schema"
+version = "0.1.0"
+description = "Pydantic schema and validator for the CryoET + AI data portal."
+requires-python = ">=3.11"
+authors = [{ name = "allison-truhlar", email = "truhlara@janelia.hhmi.org" }]
+dependencies = [
+    "pydantic>=2.6",
+    "rapidfuzz>=3.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["cryoet_schema*"]
+
+# ---------------------------------------------------------------------------
+# Pixi configuration. Runtime deps below are duplicated from [project] so pixi
+# can resolve them from conda-forge. tests/test_deps_in_sync.py enforces that
+# the two lists stay aligned — bump one, you must bump the other.
+# ---------------------------------------------------------------------------
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.dependencies]
+python = ">=3.11"
+pydantic = ">=2.6"
+rapidfuzz = ">=3.0"
+
+[tool.pixi.tasks]
+validate = "python -m cryoet_schema.validate"
+json-schema = "python -m cryoet_schema.generate_json_schema"
+
+[tool.pixi.feature.test.dependencies]
+pytest = ">=7.0"
+
+[tool.pixi.feature.test.tasks]
+test = "pytest"
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
