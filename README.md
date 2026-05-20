@@ -17,7 +17,7 @@ A Pydantic-validated metadata schema, a directory-walking catalog scanner, a Fas
 | `docs/data_organization.md` | The on-disk layout and TOML metadata authoring guide for researchers. |
 | `docs/architecture.md` | System architecture overview. |
 | `.claude/plans/` | Implementation plans, including the catalog scanner plan. |
-| `pixi.toml` / `pixi.lock` | Pinned environments and tasks. |
+| `pyproject.toml` / `pixi.lock` | PyPI dependencies (`[project]`), and pixi config (`[tool.pixi.*]`). |
 
 For the schema itself, see `cryoet_schema/schema_info.md` (human reference) and `cryoet_schema/schema.py` (Pydantic source of truth).
 

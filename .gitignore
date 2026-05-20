@@ -4,6 +4,7 @@
 # Python
 __pycache__
 .pytest_cache
+*.egg-info
 
 # datasets
 data
@@ -21,3 +22,6 @@ dist
 .tanstack
 .env.local
 .env.*.local
+
+# general
+.env

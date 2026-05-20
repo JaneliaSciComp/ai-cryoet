@@ -8,6 +8,83 @@ The central design goal is answering one question across both the experimental a
 
 ---
 
+## Quick start: Researcher workflow for creating a new sample directory and adding metadata
+
+### 0. (Optional) Set up VSCode for live TOML validation
+
+Authoring TOML in **VSCode** with the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension gives you in-editor type checking, enum suggestions, and field hints as you fill in the templates. The `#:schema` directive at the top of each template points the extension at `cryoet_schema/schema.json` (for `sample.toml`) and `cryoet_schema/acquisition.schema.json` (for `acquisition.toml`).
+
+Skipping the editor setup is fine — `pixi run validate {sample_dir}` (step 5) catches the same errors at the end.
+
+### 1. Lay out the sample directory
+
+Copy the starter directory `templates/sample_name/` into the `data/` directory. The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
+
+Replace `sample_name` with the desired sample id.
+
+```
+gouauxlab_20250418_AMmilled29-2/
+```
+
+Inside, make a copy of `acquistion_name`. Then update one of the directories to the desired acquistion id for your first acquisition. Repeat this process every time you want to add a new acquisition.
+
+```
+gouauxlab_20250418_AMmilled29-2/
+  Position_86/
+  Position_87/
+```
+
+### 2. Fill out `sample_name/sample.toml`
+
+- Complete as many fields marked `<FILL IN>` as you can. For now, the only required fields are `sample.data_source` and `sample.project`.
+- Delete the `[synapse]` block if your project is `chromatin`, or vice versa.
+- Optionally, uncomment and complete the `[[aunp]]`, `[freezing]`, and `[milling]` blocks.
+
+### 3. Fill out `sample_name/acquistion_name/acquisition.toml` in each acquisition directory
+
+- Complete as many fields marked `<FILL IN>` as you can. For now, no fields are required.
+
+### 4. Append to the processing log as outputs are produced
+
+Each `acquisition.toml` grows over time. For each new output — a new tomogram reconstruction, a denoised version, a segmentation, an STA result — append a new `[[tomogram]]` or `[[annotation]]` entry to the relevant acquisition's file.
+
+**Rules:**
+- Do **not** delete or modify a tomogram or annotation entry once added. Reprocessing produces a **new** entry with a new `id`, placed at the bottom of the file.
+- The `id` must match one folder name under either `Reconstructions/Tomograms/` or `Reconstructions/Annotations/`.
+- Use `derived_from` and `target_tomogram` to record lineage (see above).
+
+### 5. Validate
+
+The validate script checks `sample.toml` and every `acquisition.toml` under the sample directory and reports any fields that violate the schema. Validation also runs during database ingestion — see `cryoet_schema/schema_info.md` for the full list of fields that will be stored, including those auto-derived from MDOCs, MRC headers, OME-Zarr metadata, and directory structure.
+
+#### Option 1: Without pixi (pure Python)
+
+For example, using Python's built-in `venv` module:
+
+```bash
+# from the repo root
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e .
+python -m cryoet_schema.validate {sample_dir}
+```
+
+`pip install -e .` reads `[project.dependencies]` from `pyproject.toml`. 
+
+[`uv`](https://docs.astral.sh/uv/) works as a drop-in for `pip`/`venv`.
+
+#### Option 2: With pixi
+
+1. [Install pixi](https://pixi.prefix.dev/latest/installation/).
+2. The first time you use pixi for this repo, run `pixi install` to install the environment.
+3. Run the validation with this command:
+
+```
+pixi run validate {sample_dir}
+```
+
+---
+
 ## Directory structure
 
 ### CryoET (experimental) data
@@ -54,6 +131,53 @@ The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chan
 - **No `VoxelSpacing{N}/` subfolder.** Voxel binning is recorded directly in `acquisition.toml` (as `voxel_bin` on each `[[tomogram]]` entry); the absolute voxel spacing in Ångström is read from the MRC header by the catalog scanner. Keeping voxel info out of the path avoids duplicating information that lives in the file itself.
 
 Simulation data uses a parallel structure with domain-appropriate folder names. Both share the same schema, which is what makes cross-comparison possible.
+
+### Example: mapping Gouaux lab data to this structure
+
+```
+gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
+  sample.toml                                # sample-level conditions
+  Position_86/                               # acquisition identity = directory name
+    acquisition.toml                         # per-acquisition params + processing log
+    Frames/
+      *.eer
+      *.eer.mdoc                             # acquisition metadata lives here
+    Gains/
+      gain_reference.gain
+    TiltSeries/                              # TO CREATE: from .eer conversion
+      *.mrc
+      *.zarr
+      *.rawtlt
+    Reconstructions/
+      Tomograms/
+        bp_3dctf_bin4/                       # renamed from "raw/"
+          *_BP_3DCTF_BIN4.mrc
+          *_BP_3DCTF_BIN4.zarr
+        bp_3dctf_bin4_ddw/                   # renamed from "ddw/"
+          *_BP_3DCTF_BIN4_ddw.mrc
+          *_BP_3DCTF_BIN4_ddw.zarr
+      Annotations/
+        activezone_1/                        # renamed to match star-file id
+          activezone_1.star
+          active_zonogram_0.mrc
+          active_zonogram_0.zarr
+          active_zonogram_0_annotated.png
+        membrain_seg_v10/
+          *_MemBrain_seg_v10_*_smooth.mrc
+          *_MemBrain_seg_v10_*_smooth.zarr
+  Position_87/
+    acquisition.toml
+    Frames/
+    ...
+```
+
+Changes from the current `annotation_HHMI_reorg` layout:
+
+1. Rename `raw/` → `bp_3dctf_bin4/` and `ddw/` → `bp_3dctf_bin4_ddw/`.
+2. Rename `activezone/` → `activezone_{N}/` to match the star-file id (schema rule: annotation `id` = folder name).
+3. Add `sample.toml` at the sample level.
+4. Add `acquisition.toml` in each acquisition directory.
+5. Create `TiltSeries/` (pending `.eer` conversion).
 
 ---
 
@@ -131,107 +255,3 @@ id              = "membrain_seg_v10"
 type            = "membrane_segmentation"
 target_tomogram = "bp_3dctf_bin4_ddw"
 ```
-
----
-
-## Researcher workflow: creating metadata
-
-### 0. (Optional) Set up VSCode for live TOML validation
-
-Authoring TOML in **VSCode** with the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension gives you in-editor type checking, enum suggestions, and field hints as you fill in the templates. The `#:schema` directive at the top of each template points the extension at `cryoet_schema/schema.json` (for `sample.toml`) and `cryoet_schema/acquisition.schema.json` (for `acquisition.toml`).
-
-Skipping the editor setup is fine — `pixi run validate {sample_dir}` (step 5) catches the same errors at the end.
-
-### 1. Lay out the sample directory
-
-Copy the starter directory `templates/sample_name/` into the `data/` directory. The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
-
-Replace `sample_name` with the desired sample id.
-
-```
-gouauxlab_20250418_AMmilled29-2/
-```
-
-Inside, make a copy of `acquistion_name`. Then update one of the directories to the desired acquistion id for your first acquisition. Repeat this process every time you want to add a new acquisition.
-
-```
-gouauxlab_20250418_AMmilled29-2/
-  Position_86/
-  Position_87/
-```
-
-### 2. Fill out `sample_name/sample.toml`
-
-- Complete as many fields marked `<FILL IN>` as you can. For now, the only required fields are `sample.data_source` and `sample.project`.
-- Delete the `[synapse]` block if your project is `chromatin`, or vice versa.
-- Optionally, uncomment and complete the `[[aunp]]`, `[freezing]`, and `[milling]` blocks.
-
-### 3. Fill out `sample_name/acquistion_name/acquisition.toml` in each acquisition directory
-
-- Complete as many fields marked `<FILL IN>` as you can. For now, no fields are required.
-
-### 4. Append to the processing log as outputs are produced
-
-Each `acquisition.toml` grows over time. For each new output — a new tomogram reconstruction, a denoised version, a segmentation, an STA result — append a new `[[tomogram]]` or `[[annotation]]` entry to the relevant acquisition's file.
-
-**Rules:**
-- Do **not** delete or modify a tomogram or annotation entry once added. Reprocessing produces a **new** entry with a new `id`, placed at the bottom of the file.
-- The `id` must match one folder name under either `Reconstructions/Tomograms/` or `Reconstructions/Annotations/`.
-- Use `derived_from` and `target_tomogram` to record lineage (see above).
-
-### 5. Validate
-
-```
-pixi run validate {sample_dir}
-```
-
-This validates `sample.toml` and every `acquisition.toml` under the sample directory and will notify the researcher of any fields that violate the schema. Validation will also run during database ingestion — see `cryoet_schema/schema_info.md` for the full list of fields that will be stored, including those auto-derived from MDOCs, MRC headers, OME-Zarr metadata, and directory structure.
-
----
-
-## Example: mapping Gouaux lab data to this structure
-
-```
-gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
-  sample.toml                                # sample-level conditions
-  Position_86/                               # acquisition identity = directory name
-    acquisition.toml                         # per-acquisition params + processing log
-    Frames/
-      *.eer
-      *.eer.mdoc                             # acquisition metadata lives here
-    Gains/
-      gain_reference.gain
-    TiltSeries/                              # TO CREATE: from .eer conversion
-      *.mrc
-      *.zarr
-      *.rawtlt
-    Reconstructions/
-      Tomograms/
-        bp_3dctf_bin4/                       # renamed from "raw/"
-          *_BP_3DCTF_BIN4.mrc
-          *_BP_3DCTF_BIN4.zarr
-        bp_3dctf_bin4_ddw/                   # renamed from "ddw/"
-          *_BP_3DCTF_BIN4_ddw.mrc
-          *_BP_3DCTF_BIN4_ddw.zarr
-      Annotations/
-        activezone_1/                        # renamed to match star-file id
-          activezone_1.star
-          active_zonogram_0.mrc
-          active_zonogram_0.zarr
-          active_zonogram_0_annotated.png
-        membrain_seg_v10/
-          *_MemBrain_seg_v10_*_smooth.mrc
-          *_MemBrain_seg_v10_*_smooth.zarr
-  Position_87/
-    acquisition.toml
-    Frames/
-    ...
-```
-
-Changes from the current `annotation_HHMI_reorg` layout:
-
-1. Rename `raw/` → `bp_3dctf_bin4/` and `ddw/` → `bp_3dctf_bin4_ddw/`.
-2. Rename `activezone/` → `activezone_{N}/` to match the star-file id (schema rule: annotation `id` = folder name).
-3. Add `sample.toml` at the sample level.
-4. Add `acquisition.toml` in each acquisition directory.
-5. Create `TiltSeries/` (pending `.eer` conversion).
