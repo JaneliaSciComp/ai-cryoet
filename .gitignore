@@ -23,5 +23,5 @@ dist
 .env.local
 .env.*.local
 
-# general
+# env vars
 .env

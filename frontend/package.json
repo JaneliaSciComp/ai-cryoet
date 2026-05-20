@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "build": "vite build && tsc --noEmit",
     "preview": "vite preview",
-    "start": "pnpx srvx --prod -s ../client dist/server/server.js"
+    "start": "srvx --prod -s ../client dist/server/server.js"
   },
   "dependencies": {
     "@emotion/cache": "11.14.0",
