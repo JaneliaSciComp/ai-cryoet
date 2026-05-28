@@ -147,45 +147,6 @@
       "title": "Annotation",
       "type": "object"
     },
-    "Aunp": {
-      "additionalProperties": true,
-      "properties": {
-        "size_nm": {
-          "title": "Size Nm",
-          "type": "number"
-        },
-        "type": {
-          "title": "Type",
-          "type": "string"
-        },
-        "fluorophore": {
-          "title": "Fluorophore",
-          "type": "string"
-        },
-        "concentration_value": {
-          "title": "Concentration Value",
-          "type": "number"
-        },
-        "concentration_unit": {
-          "title": "Concentration Unit",
-          "type": "string"
-        },
-        "conjugation": {
-          "title": "Conjugation",
-          "type": "string"
-        },
-        "conjugation_target": {
-          "title": "Conjugation Target",
-          "type": "string"
-        },
-        "notes": {
-          "title": "Notes",
-          "type": "string"
-        }
-      },
-      "title": "Aunp",
-      "type": "object"
-    },
     "Chromatin": {
       "additionalProperties": true,
       "properties": {
@@ -263,6 +224,37 @@
       "title": "DataSource",
       "type": "string"
     },
+    "Fiducial": {
+      "additionalProperties": true,
+      "properties": {
+        "aunp_size_nm": {
+          "title": "Aunp Size Nm",
+          "type": "number"
+        },
+        "vendor": {
+          "title": "Vendor",
+          "type": "string"
+        },
+        "catalog_number": {
+          "title": "Catalog Number",
+          "type": "string"
+        },
+        "product_name": {
+          "title": "Product Name",
+          "type": "string"
+        },
+        "concentration_value": {
+          "title": "Concentration Value",
+          "type": "number"
+        },
+        "concentration_unit": {
+          "title": "Concentration Unit",
+          "type": "string"
+        }
+      },
+      "title": "Fiducial",
+      "type": "object"
+    },
     "Freezing": {
       "additionalProperties": true,
       "properties": {
@@ -288,6 +280,51 @@
         }
       },
       "title": "Freezing",
+      "type": "object"
+    },
+    "Label": {
+      "additionalProperties": true,
+      "properties": {
+        "label_target": {
+          "title": "Label Target",
+          "type": "string"
+        },
+        "aunp_type": {
+          "title": "Aunp Type",
+          "type": "string"
+        },
+        "aunp_size_nm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Aunp Size Nm"
+        },
+        "conjugation": {
+          "title": "Conjugation",
+          "type": "string"
+        },
+        "conjugation_target": {
+          "title": "Conjugation Target",
+          "type": "string"
+        },
+        "fluorophore": {
+          "title": "Fluorophore",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "Label",
       "type": "object"
     },
     "Milling": {
@@ -439,12 +476,15 @@
     "chromatin": {
       "$ref": "#/$defs/Chromatin"
     },
-    "aunp": {
+    "label": {
       "items": {
-        "$ref": "#/$defs/Aunp"
+        "$ref": "#/$defs/Label"
       },
-      "title": "Aunp",
+      "title": "Label",
       "type": "array"
+    },
+    "fiducial": {
+      "$ref": "#/$defs/Fiducial"
     },
     "freezing": {
       "$ref": "#/$defs/Freezing"

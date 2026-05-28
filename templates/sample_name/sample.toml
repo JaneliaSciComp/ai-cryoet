@@ -45,6 +45,7 @@ project     = "<FILL IN>"     # enum: synapse | chromatin
 # cell_type   = "<FILL IN>"   # text, required if type = "cellular"
 # description = "<FILL IN>"   # text, optional free-text description
 
+
 # ── Chromatin-specific  (delete this block if project = "synapse") ───────────
 # Uncomment and complete the fields that apply to your substrate.
 
@@ -72,17 +73,27 @@ project     = "<FILL IN>"     # enum: synapse | chromatin
 
 
 # ── Gold nanoparticle labeling (uncomment and fill in) ──────────
-# Copy the [[aunp]] block for each distinct AuNP label.
+# Copy-paste this block to add as many [[label]] entries as you have targets
 
-# [[aunp]]
-# size_nm             = "<FILL IN>"   # float, AuNP diameter in nm
-# type                = "<FILL IN>"   # text, e.g. colloidal, cluster
-# fluorophore         = "<FILL IN>"   # text, e.g. Alexa647, Alexa488, or "none"
-# concentration_value = "<FILL IN>"   # float, numeric concentration
-# concentration_unit  = "<FILL IN>"   # text, unit string, e.g. "nM", "ug/mL"
-# conjugation         = "<FILL IN>"   # text, e.g. Fab | nanobody | chemical_tag | none
-# conjugation_target  = "<FILL IN>"   # text, e.g. GluA2, H3K9me3
-# notes               = "<FILL IN>"   # text, optional free-text notes
+# [[label]]
+# label_target       = "<FILL IN>"   # text, protein name (e.g. AMPAR, NMDAR, etc.)
+# aunp_type          = "<FILL IN>"   # text, monomer, dimer, trimer, etc.
+# aunp_size_nm       = "<FILL IN>"   # float or list, e.g. [1.4, 2.2]
+# conjugation        = "<FILL IN>"   # text, e.g. Fab | nanobody | chemical_tag | none
+# conjugation_target = "<FILL IN>"   # text, e.g. GluA2, H3K9me3
+# fluorophore        = "<FILL IN>"   # text, this entry was suggested by Julia P originally, so carrying it over here from [[aunp]]
+# notes              = "<FILL IN>"   # text, optional
+
+
+# ── Fiducial AuNPs (uncomment if used) ─────────────────────────────
+
+# [fiducial]
+# aunp_size_nm        = "<FILL IN>"   # float, fiducial diameter in nm
+# vendor              = "<FILL IN>"   # text, vendor name
+# catalog_number      = "<FILL IN>"   # text
+# product_name        = "<FILL IN>"   # text
+# concentration_value = "<FILL IN>"   # float
+# concentration_unit  = "<FILL IN>"   # text
 
 
 # ── Freezing / grid preparation (uncomment and fill in) ─────────

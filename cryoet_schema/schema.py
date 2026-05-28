@@ -156,15 +156,23 @@ class Chromatin(_Base):
     linker_length_fraction: float | None = None
 
 
-class Aunp(_Base):
-    size_nm: float | None = None
-    type: str | None = None
-    fluorophore: str | None = None
-    concentration_value: float | None = None
-    concentration_unit: str | None = None
+class Label(_Base):
+    label_target: str | None = None
+    aunp_type: str | None = None
+    aunp_size_nm: float | list[float] | None = None
     conjugation: str | None = None
     conjugation_target: str | None = None
+    fluorophore: str | None = None
     notes: str | None = None
+
+
+class Fiducial(_Base):
+    aunp_size_nm: float | None = None
+    vendor: str | None = None
+    catalog_number: str | None = None
+    product_name: str | None = None
+    concentration_value: float | None = None
+    concentration_unit: str | None = None
 
 
 class Freezing(_Base):
@@ -280,7 +288,8 @@ class SampleRecord(_Base):
     sample: Sample
     simulation: Simulation | None = None
     chromatin: Chromatin | None = None
-    aunp: list[Aunp] = Field(default_factory=list)
+    label: list[Label] = Field(default_factory=list)
+    fiducial: Fiducial | None = None
     freezing: Freezing | None = None
     milling: Milling | None = None
     acquisitions: dict[str, AcquisitionFile] = Field(default_factory=dict)

@@ -58,7 +58,7 @@ def test_unknown_key_on_chromatin(tmp_path):
     assert entry.value == 42
 
 
-def test_unknown_key_on_second_aunp_uses_positional_pk(tmp_path):
+def test_unknown_key_on_second_label_uses_positional_pk(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
@@ -66,17 +66,17 @@ def test_unknown_key_on_second_aunp_uses_positional_pk(tmp_path):
         data_source = "experimental"
         project = "chromatin"
 
-        [[aunp]]
-        size_nm = 5.0
+        [[label]]
+        aunp_size_nm = 5.0
 
-        [[aunp]]
-        size_nm = 10.0
-        unknown_aunp_key = "second"
+        [[label]]
+        aunp_size_nm = 10.0
+        unknown_label_key = "second"
         """,
     )
     result = load_sample_record(tmp_path)
     assert result.record is not None
-    entry = _find(result.extras, "aunp", "unknown_aunp_key")
+    entry = _find(result.extras, "label", "unknown_label_key")
     assert entry is not None
     assert entry.entity_pk == (tmp_path.name, 1)
     assert entry.value == "second"

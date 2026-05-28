@@ -213,7 +213,7 @@ def test_simulation_block_rejected_for_cryoet(tmp_path):
     assert any("experimental" in e and "simulation" in e for e in result.sample_errors)
 
 
-def test_aunp_block_happy_path(tmp_path):
+def test_label_block_happy_path(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
@@ -221,28 +221,26 @@ def test_aunp_block_happy_path(tmp_path):
         data_source = "experimental"
         project = "chromatin"
 
-        [[aunp]]
-        size_nm = 5.0
-        type = "colloidal"
+        [[label]]
+        aunp_size_nm = 5.0
+        aunp_type = "colloidal"
         fluorophore = "Alexa647"
-        concentration_value = 2.5
-        concentration_unit = "nM"
         conjugation = "Fab"
         conjugation_target = "GluA2"
 
-        [[aunp]]
-        size_nm = 10.0
-        type = "cluster"
+        [[label]]
+        aunp_size_nm = 10.0
+        aunp_type = "cluster"
         """,
     )
     result = load_sample_record(tmp_path)
     assert result.sample_errors == []
     assert result.warnings == []
     assert result.record is not None
-    assert len(result.record.aunp) == 2
-    assert result.record.aunp[0].size_nm == 5.0
-    assert result.record.aunp[0].conjugation_target == "GluA2"
-    assert result.record.aunp[1].type == "cluster"
+    assert len(result.record.label) == 2
+    assert result.record.label[0].aunp_size_nm == 5.0
+    assert result.record.label[0].conjugation_target == "GluA2"
+    assert result.record.label[1].aunp_type == "cluster"
 
 
 def test_freezing_block_happy_path(tmp_path):

@@ -43,10 +43,10 @@ class ExtrasEntry:
     """One top-level unknown key on a validated entity.
 
     ``entity_type`` is the lowercase table-name string (``"sample"``,
-    ``"chromatin"``, ``"aunp"``, ``"acquisition"``, ``"tomogram"``,
+    ``"chromatin"``, ``"label"``, ``"acquisition"``, ``"tomogram"``,
     ``"annotation"``, …). ``entity_pk`` is the parent row's PK as a tuple
     of native Python values (e.g. ``("my_sample",)`` for ``chromatin``,
-    ``("my_sample", 2)`` for the third aunp entry, ``("my_sample",
+    ``("my_sample", 2)`` for the third label entry, ``("my_sample",
     "Position_86", "my_tomo")`` for a tomogram). ``key`` is the unknown
     top-level TOML key. ``value`` is the raw Python value Pydantic stored
     on ``model_extra`` (may be a nested dict — inner keys are NOT
@@ -132,9 +132,9 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
         return "sample"
     if et in ("chromatin", "synapse", "simulation", "freezing", "milling"):
         return et
-    if et == "aunp":
+    if et == "label":
         # entity_pk = (sample_id, index)
-        return f"aunp[{pk[1]}]"
+        return f"label[{pk[1]}]"
     if et == "acquisition":
         # entity_pk = (sample_id, acq_id)
         return f"acquisitions.{pk[1]}.acquisition"
@@ -165,16 +165,16 @@ def _walk_extras(record: SampleRecord) -> list[ExtrasEntry]:
         out.append(ExtrasEntry("sample", (sample_id,), k, v))
 
     # optional 1:1 sub-entities
-    for attr in ("chromatin", "synapse", "simulation", "freezing", "milling"):
+    for attr in ("chromatin", "simulation", "fiducial", "freezing", "milling"):
         sub = getattr(record, attr)
         if sub is not None:
             for k, v in (sub.model_extra or {}).items():
                 out.append(ExtrasEntry(attr, (sample_id,), k, v))
 
-    # aunp - positional
-    for i, aunp in enumerate(record.aunp):
-        for k, v in (aunp.model_extra or {}).items():
-            out.append(ExtrasEntry("aunp", (sample_id, i), k, v))
+    # label - positional
+    for i, label in enumerate(record.label):
+        for k, v in (label.model_extra or {}).items():
+            out.append(ExtrasEntry("label", (sample_id, i), k, v))
 
     # acquisitions - dict
     for acq_id, acq_file in record.acquisitions.items():
@@ -238,7 +238,7 @@ def load_sample_record(sample_dir: Path) -> LoadResult:
     sample_data.setdefault("sample", {})["sample_id"] = sample_dir.name
 
     # Validate the sample-level portion. The Sample model only consumes
-    # the [sample] table; the rest of sample.toml ([chromatin], [aunp],
+    # the [sample] table; the rest of sample.toml ([chromatin], [label],
     # etc.) is handled later by SampleRecord.model_validate of the full
     # dict.
     sample_block = sample_data.get("sample", {})

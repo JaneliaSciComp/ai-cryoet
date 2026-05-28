@@ -53,22 +53,32 @@ One row per sample. Primary key: `sample_id` (the sample directory name).
 | `nucleosome_footprint` | list | `sample.toml` (`[chromatin]`) | Native-substrate only. [researcher: nucleosome footprint] |
 | `linker_length_fraction` | float | `derived` | `sequence_footprint − 1`; computed on ingest. [researcher: linker length (size footprint-1)] |
 
-### 1b. AuNP labeling sub-entity (0..N per sample)
+### 1b. Label sub-entity (0..N per sample)
 
 [researcher: Gold NP's]
 
 | Field | Type | Source | Notes / researcher mapping |
 |---|---|---|---|
-| `size_nm` | float | `sample.toml` (`[aunp]`) | [researcher: Size] |
-| `type` | text | `sample.toml` (`[aunp]`) | [researcher: type] |
-| `fluorophore` | text | `sample.toml` (`[aunp]`) | [researcher: Fluorophore] |
-| `concentration_value` | float | `sample.toml` (`[aunp]`) | Numeric concentration. [researcher: Concentration] |
-| `concentration_unit` | text | `sample.toml` (`[aunp]`) | Unit string, e.g. `nM`, `µg/mL`. Kept separate so the numeric value is filterable/sortable in the UI. |
-| `conjugation` | text | `sample.toml` (`[aunp]`) | Fab / nanobody / chemical_tag / none. [researcher: Conjugation partner] |
-| `conjugation_target` | text | `sample.toml` (`[aunp]`) | e.g. GluA2. [researcher: Conjugation partner target] |
-| `notes` | text | `sample.toml` (`[aunp]`) | |
+| `label_target` | text | `sample.toml` (`[label]`) | |
+| `aunp_type` | text | `sample.toml` (`[label]`) | [researcher: type] |
+| `aunp_size_nm` | float or list of floats | `sample.toml` (`[label]`) | [researcher: Size] |
+| `conjugation` | text | `sample.toml` (`[label]`) | Fab / nanobody / chemical_tag / none. [researcher: Conjugation partner] |
+| `conjugation_target` | text | `sample.toml` (`[label]`) | e.g. GluA2. [researcher: Conjugation partner target] |
+| `fluorophore` | text | `sample.toml` (`[label]`) | [researcher: Fluorophore] |
+| `notes` | text | `sample.toml` (`[label]`) | |
 
-### 1c. Freezing sub-entity (one per sample)
+### 1c. Fiducial AuNP (one per sample)
+
+| Field | Type | Source |
+|---|---|---|
+| `aunp_size_nm` | float or list of floats | `sample.toml` (`[fiducial]`) |
+| `vendor` | text | `sample.toml` (`[fiducial]`) |
+| `catalog_number` | text | `sample.toml` (`[fiducial]`) |
+| `product_name` | text | `sample.toml` (`[fiducial]`) |
+| `concentration_value` | float | `sample.toml` (`[fiducial]`) |
+| `concentration_unit` | text | `sample.toml` (`[fiducial]`) |
+
+### 1d. Freezing sub-entity (one per sample)
 
 [researcher: Freezing conditions]
 
@@ -80,7 +90,7 @@ One row per sample. Primary key: `sample_id` (the sample directory name).
 | `planchette_size` | text | `sample.toml` (`[freezing]`) | HPF only. [researcher: planchette size] |
 | `spacer_thickness` | text | `sample.toml` (`[freezing]`) | HPF only. [researcher: spacer thickness] |
 
-### 1d. Milling sub-entity (one per sample)
+### 1e. Milling sub-entity (one per sample)
 
 [researcher: Milling]
 
@@ -89,7 +99,7 @@ One row per sample. Primary key: `sample_id` (the sample directory name).
 | `scheme` | text | `sample.toml` (`[milling]`) | [researcher: milling scheme] |
 | `date` | date | `sample.toml` (`[milling]`) | YYYY-MM-DD. [researcher: date] |
 
-### 1e. Simulation sub-entity (one row per sample when `data_source = simulation`)
+### 1f. Simulation sub-entity (one row per sample when `data_source = simulation`)
 
 | Field | Type | Source | Notes / researcher mapping |
 |---|---|---|---|
