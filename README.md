@@ -103,7 +103,7 @@ The acquisition directory name *is* the acquisition's identity, so `acquisition.
 
 ### Required fields
 
-Only two fields are required for all entries: `sample.data_source` and `sample.project`. All other fields are optional, allowing the schema to grow as researcher needs settle. These two fields are also the only enums — all other fields are open text, with the potential to be tightened into enums later based on how researchers use them.
+Only three fields are required for all entries: `sample.lab_name`, `sample.data_source` and `sample.project`. All other fields are optional, allowing the schema to grow as researcher needs settle. These three fields are also the only enums — all other fields are open text, with the potential to be tightened into enums later based on how researchers use them.
 
 ### Folder naming rules
 

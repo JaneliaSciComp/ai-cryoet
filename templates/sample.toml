@@ -39,6 +39,7 @@
 # ════════════════════════════════════════════════════════════════
 
 [sample]
+lab_name        = "<FILL IN>"   # enum: collepardo | gouaux | rosen | villa
 data_source     = "<FILL IN>"   # enum: experimental | simulation
 project         = "<FILL IN>"   # enum: synapse | chromatin | nanogold
 # type          = "<FILL IN>"   # text, e.g. tissue | cellular | reconstituted

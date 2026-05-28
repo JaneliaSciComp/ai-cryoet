@@ -112,6 +112,13 @@ class _Base(BaseModel):
         return self
 
 
+class LabName(str, Enum):
+    collepardo = "collepardo"
+    gouaux = "gouaux"
+    rosen = "rosen"
+    villa = "villa"
+
+
 class DataSource(str, Enum):
     experimental = "experimental"
     simulation = "simulation"

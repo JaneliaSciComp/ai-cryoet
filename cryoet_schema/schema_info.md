@@ -28,6 +28,7 @@ One row per sample. Primary key: `sample_id` (the sample directory name).
 | Field | Type | Source | Notes / researcher mapping |
 |---|---|---|---|
 | `sample_id` | text (PK) | `directory` | Sample folder name. |
+| `lab_name` | enum | `sample.toml` (`[sample]`) | | `collepardo`, `gouaux`, `rosen`, or `villa` |
 | `data_source` | enum | `sample.toml` (`[sample]`) | `experimental` or `simulation`. |
 | `project` | enum | `sample.toml` (`[sample]`) | `chromatin`, `synapse`, or `nanogold`. |
 | `type` | text | `sample.toml` (`[sample]`) | e.g. `cellular` / `reconstituted`. [researcher: Cellular vs Reconstituted branch] |
