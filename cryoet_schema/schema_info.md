@@ -125,6 +125,7 @@ One row per imaging position. Primary key: `(sample_id, acquisition_id)`.
 | `energy_filter` | text | `acquisition.toml` (`[acquisition]`) | Model name. [researcher: energy filter] |
 | `phase_plate` | boolean | `acquisition.toml` (`[acquisition]`) | [researcher: phase plate] |
 | `microscope` | text | `acquisition.toml` (`[acquisition]`) | Model name. [researcher: scope type] |
+| `quality` | text | `acquisition.toml` (`[acquisition]`) | e.g., "high", "medium", "low" |
 | `pixel_size` | float | `MDOC` | Angstrom. [researcher: pixel size] |
 | `dose_per_tilt` | list[float] | `MDOC` | e/Å² per tilt. [researcher: dose] |
 | `total_dose` | float | `MDOC` (summed) | e/Å². [researcher: dose (total)] |

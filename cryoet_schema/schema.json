@@ -31,6 +31,10 @@
           "title": "Microscope",
           "type": "string"
         },
+        "quality": {
+          "title": "Quality",
+          "type": "string"
+        },
         "pixel_size": {
           "title": "Pixel Size",
           "type": "number"

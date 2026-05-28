@@ -207,6 +207,7 @@ class Acquisition(_Base):
     energy_filter: str | None = None
     phase_plate: bool | None = None
     microscope: str | None = None
+    quality: str | None = None
     # MDOC
     pixel_size: float | None = None          # angstrom
     dose_per_tilt: list[float] | None = None # e/Å² per tilt
