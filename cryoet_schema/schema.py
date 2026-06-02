@@ -185,6 +185,7 @@ class Fiducial(_Base):
 
 class Freezing(_Base):
     grid_type: str | None = None
+    solution_type: str | None = None
     cryoprotectant: str | None = None
     method: str | None = None
     planchette_size: str | None = None

@@ -86,6 +86,7 @@ One row per sample. Primary key: `sample_id` (the sample directory name).
 | Field | Type | Source | Notes / researcher mapping |
 |---|---|---|---|
 | `grid_type` | text | `sample.toml` (`[freezing]`) | [researcher: grid type] |
+| `solution_type` | text | `sample.toml` (`[freezing]`) | |
 | `cryoprotectant` | text | `sample.toml` (`[freezing]`) | [researcher: cryo protectant] |
 | `method` | text | `sample.toml` (`[freezing]`) | `plunge_frozen` / `HPF`. [researcher: freezing method] |
 | `planchette_size` | text | `sample.toml` (`[freezing]`) | HPF only. [researcher: planchette size] |

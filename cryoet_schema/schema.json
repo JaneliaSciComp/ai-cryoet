@@ -275,6 +275,10 @@
           "title": "Grid Type",
           "type": "string"
         },
+        "solution_type": {
+          "title": "Solution Type",
+          "type": "string"
+        },
         "cryoprotectant": {
           "title": "Cryoprotectant",
           "type": "string"

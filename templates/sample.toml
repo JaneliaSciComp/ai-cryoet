@@ -110,6 +110,7 @@ project         = "<FILL IN>"   # enum: synapse | chromatin | nanogold
 
 # [freezing]
 # grid_type        = "<FILL IN>"   # text, e.g. "Quantifoil R2/2"
+# solution_type    = "<FILL IN>"   # text, e.g. "HEPES-based"
 # cryoprotectant   = "<FILL IN>"   # text, or "none"
 # method           = "<FILL IN>"   # text, plunge_frozen | HPF
 # # HPF-only:
