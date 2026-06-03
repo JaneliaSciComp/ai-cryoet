@@ -10,8 +10,8 @@
 # HOW TO USE
 # ──────────
 # 1. Replace every "<FILL IN>" placeholder with the appropriate value.
-# 2. Delete the [synapse] block if your project is "chromatin", or vice versa.
-# 3. Uncomment [[aunp]], [freezing], and [milling] blocks and fill in.
+# 2. Delete the [chromatin] block if your project is not "chromatin".
+# 3. Uncomment [[label]], [freezing], and [milling] blocks and fill in.
 #
 # EXTRA FIELDS
 # ────────────
@@ -35,22 +35,16 @@
 
 # ════════════════════════════════════════════════════════════════
 # Sample conditions
-# These power the coverage matrix across cryoET and simulation data.
+# These power the coverage matrix across experimental cryoET and simulation-derived synthetic cryoET data.
 # ════════════════════════════════════════════════════════════════
 
 [sample]
-data_source = "<FILL IN>"     # enum: cryoet | simulation
-project     = "<FILL IN>"     # enum: synapse | chromatin
-# type        = "<FILL IN>"   # text, e.g. tissue | cellular | reconstituted
-# cell_type   = "<FILL IN>"   # text, required if type = "cellular"
-# description = "<FILL IN>"   # text, optional free-text description
-
-
-# ── Synapse-specific  (delete this block if project = "chromatin") ────────────
-
-[synapse]
-label_target   = "<FILL IN>"   # text, e.g. none | glutamate_receptor | AMPA | NMDA | kainate
-label_strategy = "<FILL IN>"   # text, e.g. none | single_label | dual_label | dimer_label
+lab_name        = "<FILL IN>"   # enum: collepardo | gouaux | rosen | villa
+data_source     = "<FILL IN>"   # enum: experimental | simulation
+project         = "<FILL IN>"   # enum: synapse | chromatin | nanogold
+# type          = "<FILL IN>"   # text, e.g. tissue | cellular | reconstituted
+# cell_type     = "<FILL IN>"   # text, required if type = "cellular"
+# description   = "<FILL IN>"   # text, optional free-text description
 
 
 # ── Chromatin-specific  (delete this block if project = "synapse") ───────────
@@ -79,24 +73,44 @@ label_strategy = "<FILL IN>"   # text, e.g. none | single_label | dual_label | d
 # dataset_type = "<FILL IN>"   # text, e.g. single_molecule | slab | bulk
 
 
-# ── Gold nanoparticle labeling (uncomment and fill in) ──────────
-# Copy the [[aunp]] block for each distinct AuNP label.
+# ── MD runs  (simulation data only; copy the block for each run) ─────────────
+# Each [[md_run]] id MUST match a directory under {sample_dir}/md_runs/{id}.
 
-# [[aunp]]
-# size_nm             = "<FILL IN>"   # float, AuNP diameter in nm
-# type                = "<FILL IN>"   # text, e.g. colloidal, cluster
-# fluorophore         = "<FILL IN>"   # text, e.g. Alexa647, Alexa488, or "none"
-# concentration_value = "<FILL IN>"   # float, numeric concentration
-# concentration_unit  = "<FILL IN>"   # text, unit string, e.g. "nM", "ug/mL"
-# conjugation         = "<FILL IN>"   # text, e.g. Fab | nanobody | chemical_tag | none
-# conjugation_target  = "<FILL IN>"   # text, e.g. GluA2, H3K9me3
-# notes               = "<FILL IN>"   # text, optional free-text notes
+# [[md_run]]
+# id       = "<FILL IN>"   # text, MUST match a directory name under md_runs/
+# seed     = "<FILL IN>"   # integer, RNG seed for the run
+# computer = "<FILL IN>"   # text, name of the computer used
+
+
+# ── Gold nanoparticle labeling (uncomment and fill in) ──────────
+# Copy-paste this block to add as many [[label]] entries as you have targets
+
+# [[label]]
+# label_target       = "<FILL IN>"   # text, protein name (e.g. AMPAR, NMDAR, etc.)
+# aunp_type          = "<FILL IN>"   # text, monomer, dimer, trimer, etc.
+# aunp_size_nm       = "<FILL IN>"   # float or list, e.g. [1.4, 2.2]
+# conjugation        = "<FILL IN>"   # text, e.g. Fab | nanobody | chemical_tag | none
+# conjugation_target = "<FILL IN>"   # text, e.g. GluA2, H3K9me3
+# fluorophore        = "<FILL IN>"   # text, this entry was suggested by Julia P originally, so carrying it over here from [[aunp]]
+# notes              = "<FILL IN>"   # text, optional
+
+
+# ── Fiducial AuNPs (uncomment if used) ─────────────────────────────
+
+# [fiducial]
+# aunp_size_nm        = "<FILL IN>"   # float, fiducial diameter in nm
+# vendor              = "<FILL IN>"   # text, vendor name
+# catalog_number      = "<FILL IN>"   # text
+# product_name        = "<FILL IN>"   # text
+# concentration_value = "<FILL IN>"   # float
+# concentration_unit  = "<FILL IN>"   # text
 
 
 # ── Freezing / grid preparation (uncomment and fill in) ─────────
 
 # [freezing]
 # grid_type        = "<FILL IN>"   # text, e.g. "Quantifoil R2/2"
+# solution_type    = "<FILL IN>"   # text, e.g. "HEPES-based"
 # cryoprotectant   = "<FILL IN>"   # text, or "none"
 # method           = "<FILL IN>"   # text, plunge_frozen | HPF
 # # HPF-only:
@@ -107,5 +121,6 @@ label_strategy = "<FILL IN>"   # text, e.g. none | single_label | dual_label | d
 # ── Milling  (uncomment and fill in) ────
 
 # [milling]
-# scheme = "<FILL IN>"   # text, e.g. cryo-FIB
-# date   = "<FILL IN>"   # date, YYYY-MM-DD
+# scheme    = "<FILL IN>"   # text, e.g. cryo-FIB
+# date      = "<FILL IN>"   # date, YYYY-MM-DD
+# quality   = "<FILL IN>"   # text, comment on FIB quality

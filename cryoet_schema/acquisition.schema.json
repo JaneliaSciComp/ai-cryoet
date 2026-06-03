@@ -31,6 +31,10 @@
           "title": "Microscope",
           "type": "string"
         },
+        "quality": {
+          "title": "Quality",
+          "type": "string"
+        },
         "pixel_size": {
           "title": "Pixel Size",
           "type": "number"
@@ -123,6 +127,157 @@
       "title": "Annotation",
       "type": "object"
     },
+    "MdSource": {
+      "additionalProperties": true,
+      "properties": {
+        "md_run_id": {
+          "title": "Md Run Id",
+          "type": "string"
+        },
+        "frame": {
+          "title": "Frame",
+          "type": "integer"
+        }
+      },
+      "title": "MdSource",
+      "type": "object"
+    },
+    "PostProcessedTomogram": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "denoising_software": {
+          "title": "Denoising Software",
+          "type": "string"
+        },
+        "ctf_software": {
+          "title": "Ctf Software",
+          "type": "string"
+        },
+        "missing_wedge_software": {
+          "title": "Missing Wedge Software",
+          "type": "string"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
+        },
+        "derived_from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
+        },
+        "image_size_x": {
+          "title": "Image Size X",
+          "type": "integer"
+        },
+        "image_size_y": {
+          "title": "Image Size Y",
+          "type": "integer"
+        },
+        "image_size_z": {
+          "title": "Image Size Z",
+          "type": "integer"
+        },
+        "mrc_path": {
+          "title": "Mrc Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "zarr_axes": {
+          "title": "Zarr Axes",
+          "type": "string"
+        },
+        "zarr_scale": {
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "PostProcessedTomogram",
+      "type": "object"
+    },
+    "RawTomogram": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "pipeline": {
+          "title": "Pipeline",
+          "type": "string"
+        },
+        "software": {
+          "title": "Software",
+          "type": "string"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
+        },
+        "derived_from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
+        },
+        "image_size_x": {
+          "title": "Image Size X",
+          "type": "integer"
+        },
+        "image_size_y": {
+          "title": "Image Size Y",
+          "type": "integer"
+        },
+        "image_size_z": {
+          "title": "Image Size Z",
+          "type": "integer"
+        },
+        "mrc_path": {
+          "title": "Mrc Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "zarr_axes": {
+          "title": "Zarr Axes",
+          "type": "string"
+        },
+        "zarr_scale": {
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RawTomogram",
+      "type": "object"
+    },
     "TiltSeries": {
       "additionalProperties": true,
       "description": "One tilt series within an acquisition (composite-PK child of Acquisition).\n\nComposite primary key: ``(sample_id, acquisition_id, tilt_series_id)``.\n``tilt_series_id`` is the MDOC stem (with collision-disambiguating suffix\nwhen needed; see plan \u00a711.23). Powers the per-tilt-series UI cards\n(polar plot + median-tilt preview + Neuroglancer launch). All non-PK\nfields are optional so a tilt series can be ingested before MDOC parse\nsucceeds.",
@@ -206,78 +361,6 @@
       },
       "title": "TiltSeries",
       "type": "object"
-    },
-    "Tomogram": {
-      "additionalProperties": true,
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "pipeline": {
-          "title": "Pipeline",
-          "type": "string"
-        },
-        "software": {
-          "title": "Software",
-          "type": "string"
-        },
-        "voxel_bin": {
-          "title": "Voxel Bin",
-          "type": "integer"
-        },
-        "derived_from": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Derived From",
-          "type": "array"
-        },
-        "is_raw": {
-          "title": "Is Raw",
-          "type": "boolean"
-        },
-        "image_size_x": {
-          "title": "Image Size X",
-          "type": "integer"
-        },
-        "image_size_y": {
-          "title": "Image Size Y",
-          "type": "integer"
-        },
-        "image_size_z": {
-          "title": "Image Size Z",
-          "type": "integer"
-        },
-        "mrc_path": {
-          "title": "Mrc Path",
-          "type": "string"
-        },
-        "zarr_path": {
-          "title": "Zarr Path",
-          "type": "string"
-        },
-        "zarr_axes": {
-          "title": "Zarr Axes",
-          "type": "string"
-        },
-        "zarr_scale": {
-          "title": "Zarr Scale",
-          "items": {
-            "type": "number"
-          },
-          "type": "array"
-        },
-        "size_bytes": {
-          "title": "Size Bytes",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "title": "Tomogram",
-      "type": "object"
     }
   },
   "additionalProperties": true,
@@ -286,11 +369,17 @@
     "acquisition": {
       "$ref": "#/$defs/Acquisition"
     },
-    "tomogram": {
+    "md_source": {
+      "$ref": "#/$defs/MdSource"
+    },
+    "raw_tomogram": {
+      "$ref": "#/$defs/RawTomogram"
+    },
+    "post_processed_tomogram": {
       "items": {
-        "$ref": "#/$defs/Tomogram"
+        "$ref": "#/$defs/PostProcessedTomogram"
       },
-      "title": "Tomogram",
+      "title": "Post Processed Tomogram",
       "type": "array"
     },
     "annotation": {

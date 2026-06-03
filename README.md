@@ -13,7 +13,7 @@ A Pydantic-validated metadata schema, a directory-walking catalog scanner, a Fas
 | `cryoet_schema/` | Authoritative Pydantic schema, JSON Schema generators, and the `validate` CLI. |
 | `cryoet_catalog/` | Directory-walking scanner that builds the catalog DB from `sample.toml` + `acquisition.toml` + MDOC/MRC headers. Includes the FastAPI read API under `cryoet_catalog/api/`. |
 | `frontend/` | React + TanStack Start + Material UI app that reads from the FastAPI server. |
-| `templates/` | Starter `sample.toml`, `acquisition.toml`, and a `sample_name/` directory skeleton for new samples. |
+| `templates/` | Starter `sample.toml`, `acquisition.toml`, and directory skeletons, containing the TOML files in the expected locations, for new experimental (cryoET) and simulation (MD + synthetic cyroET) samples. |
 | `docs/data_organization.md` | The on-disk layout and TOML metadata authoring guide for researchers. |
 | `docs/architecture.md` | System architecture overview. |
 | `.claude/plans/` | Implementation plans, including the catalog scanner plan. |

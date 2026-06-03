@@ -112,14 +112,22 @@ class _Base(BaseModel):
         return self
 
 
+class LabName(str, Enum):
+    collepardo = "collepardo"
+    gouaux = "gouaux"
+    rosen = "rosen"
+    villa = "villa"
+
+
 class DataSource(str, Enum):
-    cryoet = "cryoet"
+    experimental = "experimental"
     simulation = "simulation"
 
 
 class Project(str, Enum):
     chromatin = "chromatin"
     synapse = "synapse"
+    nanogold = "nanogold"
 
 
 class Sample(_Base):
@@ -156,24 +164,28 @@ class Chromatin(_Base):
     linker_length_fraction: float | None = None
 
 
-class Synapse(_Base):
+class Label(_Base):
     label_target: str | None = None
-    label_strategy: str | None = None
-
-
-class Aunp(_Base):
-    size_nm: float | None = None
-    type: str | None = None
-    fluorophore: str | None = None
-    concentration_value: float | None = None
-    concentration_unit: str | None = None
+    aunp_type: str | None = None
+    aunp_size_nm: float | list[float] | None = None
     conjugation: str | None = None
     conjugation_target: str | None = None
+    fluorophore: str | None = None
     notes: str | None = None
+
+
+class Fiducial(_Base):
+    aunp_size_nm: float | None = None
+    vendor: str | None = None
+    catalog_number: str | None = None
+    product_name: str | None = None
+    concentration_value: float | None = None
+    concentration_unit: str | None = None
 
 
 class Freezing(_Base):
     grid_type: str | None = None
+    solution_type: str | None = None
     cryoprotectant: str | None = None
     method: str | None = None
     planchette_size: str | None = None
@@ -183,6 +195,15 @@ class Freezing(_Base):
 class Milling(_Base):
     scheme: str | None = None
     date: _dt.date | None = None
+    quality: str | None = None
+
+
+class MdRun(_Base):
+    # directory / sample.toml [[md_run]] (folder name = md_run_id = TOML `id`);
+    # one directory per run under {sample_dir}/md_runs/{id}. Simulation data only.
+    md_run_id: IdStr = Field(alias="id")
+    seed: int | None = None
+    computer: str | None = None
 
 
 class Acquisition(_Base):
@@ -195,6 +216,7 @@ class Acquisition(_Base):
     energy_filter: str | None = None
     phase_plate: bool | None = None
     microscope: str | None = None
+    quality: str | None = None
     # MDOC
     pixel_size: float | None = None          # angstrom
     dose_per_tilt: list[float] | None = None # e/Å² per tilt
@@ -215,15 +237,33 @@ class Acquisition(_Base):
     path: str | None = None
 
 
-class Tomogram(_Base):
-    # directory / acquisition.toml [[tomogram]] (folder name = tomogram_id = TOML `id`)
+class RawTomogram(_Base):
+    # directory / acquisition.toml [raw_tomogram] (folder name = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
     pipeline: str | None = None
     software: str | None = None
-    voxel_bin: int | None = None
+    voxel_size: float | None = None                   # angstrom
     derived_from: list[IdStr] = Field(default_factory=list)
-    # derived
-    is_raw: bool | None = None                        # derived_from == []
+    # MRC header
+    image_size_x: int | None = None
+    image_size_y: int | None = None
+    image_size_z: int | None = None
+    # directory (prescribed layout)
+    mrc_path: str | None = None
+    zarr_path: str | None = None
+    # OME-Zarr .zattrs
+    zarr_axes: str | None = None
+    zarr_scale: list[float] | None = None
+
+
+class PostProcessedTomogram(_Base):
+    # directory / acquisition.toml [[post_processed_tomogram]] (folder name = tomogram_id = TOML `id`)
+    tomogram_id: IdStr = Field(alias="id")
+    denoising_software: str | None = None
+    ctf_software: str | None = None
+    missing_wedge_software: str | None = None
+    voxel_size: float | None = None                   # angstrom
+    derived_from: list[IdStr] = Field(default_factory=list)
     # MRC header
     image_size_x: int | None = None
     image_size_y: int | None = None
@@ -286,6 +326,13 @@ class TiltSeries(_Base):
     mtime: float | None = None
 
 
+class MdSource(_Base):
+    # acquisition.toml ([md_source]) — simulation provenance for this acquisition.
+    # md_run_id must match an [[md_run]] id in the sample's sample.toml.
+    md_run_id: IdStr | None = None
+    frame: int | None = None                          # frame/snapshot index
+
+
 class AcquisitionFile(_Base):
     """Parsed contents of one acquisition.toml.
 
@@ -296,21 +343,30 @@ class AcquisitionFile(_Base):
     """
 
     acquisition: Acquisition
-    tomogram: list[Tomogram] = Field(default_factory=list)
+    md_source: MdSource | None = None
+    raw_tomogram: RawTomogram | None = None
+    post_processed_tomogram: list[PostProcessedTomogram] = Field(default_factory=list)
     annotation: list[Annotation] = Field(default_factory=list)
     tilt_series: list[TiltSeries] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_cross_refs(self) -> "AcquisitionFile":
-        tomo_ids = {t.tomogram_id for t in self.tomogram}
+        # Raw and post-processed tomograms share one id namespace: derived_from
+        # and annotation.target_tomogram may reference either.
+        tomograms: list[RawTomogram | PostProcessedTomogram] = list(
+            self.post_processed_tomogram
+        )
+        if self.raw_tomogram is not None:
+            tomograms.insert(0, self.raw_tomogram)
+        tomo_ids = {t.tomogram_id for t in tomograms}
         problems: list[str] = []
         problems.extend(_case_insensitive_duplicates(
-            (t.tomogram_id for t in self.tomogram), "tomogram id"
+            (t.tomogram_id for t in tomograms), "tomogram id"
         ))
         problems.extend(_case_insensitive_duplicates(
             (a.annotation_id for a in self.annotation), "annotation id"
         ))
-        for t in self.tomogram:
+        for t in tomograms:
             for ref in t.derived_from:
                 if ref not in tomo_ids:
                     problems.append(
@@ -337,22 +393,48 @@ class SampleRecord(_Base):
     sample: Sample
     simulation: Simulation | None = None
     chromatin: Chromatin | None = None
-    synapse: Synapse | None = None
-    aunp: list[Aunp] = Field(default_factory=list)
+    label: list[Label] = Field(default_factory=list)
+    fiducial: Fiducial | None = None
     freezing: Freezing | None = None
     milling: Milling | None = None
+    md_run: list[MdRun] = Field(default_factory=list)
     acquisitions: dict[str, AcquisitionFile] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _check_project_blocks(self) -> "SampleRecord":
-        if self.sample.project == Project.chromatin and self.synapse is not None:
-            raise ValueError("sample.project is 'chromatin' but a [synapse] block is present")
         if self.sample.project == Project.synapse and self.chromatin is not None:
             raise ValueError("sample.project is 'synapse' but a [chromatin] block is present")
-        if self.sample.data_source == DataSource.cryoet and self.simulation is not None:
-            raise ValueError(
-                "sample.data_source is 'cryoet' but a [simulation] block is present"
-            )
+        if self.sample.data_source == DataSource.experimental:
+            if self.simulation is not None:
+                raise ValueError(
+                    "sample.data_source is 'experimental' but a [simulation] block is present"
+                )
+            if self.md_run:
+                raise ValueError(
+                    "sample.data_source is 'experimental' but [[md_run]] block(s) are present"
+                )
+            acqs_with_md = [
+                aid for aid, af in self.acquisitions.items() if af.md_source is not None
+            ]
+            if acqs_with_md:
+                raise ValueError(
+                    "sample.data_source is 'experimental' but acquisition(s) "
+                    f"{acqs_with_md} have an [md_source] block"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _check_md_run_id_collisions(self) -> "SampleRecord":
+        # Duplicate md_run ids are a sample.toml integrity problem (no single
+        # acquisition to blame), so they fail the whole sample, like
+        # cross-acquisition name collisions. The acquisition -> md_run
+        # *reference* check is a cross-file concern handled per-acquisition in
+        # the loader so a dangling ref isolates to that one acquisition.
+        problems = _case_insensitive_duplicates(
+            (r.md_run_id for r in self.md_run), "md_run id"
+        )
+        if problems:
+            raise ValueError("; ".join(problems))
         return self
 
     @model_validator(mode="after")

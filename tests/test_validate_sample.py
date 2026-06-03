@@ -21,7 +21,7 @@ def _minimal_sample(root: Path, *, project: str = "chromatin") -> Path:
         root / "sample.toml",
         f"""
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "{project}"
         """,
     )
@@ -70,7 +70,7 @@ def test_minimal_valid_sample(tmp_path):
     assert result.acquisition_errors == {}
     assert result.warnings == []
     assert result.record is not None
-    assert result.record.sample.data_source.value == "cryoet"
+    assert result.record.sample.data_source.value == "experimental"
     assert result.record.sample.project.value == "chromatin"
     assert result.record.sample.sample_id == tmp_path.name
     assert result.record.acquisitions == {}
@@ -81,7 +81,7 @@ def test_missing_required_field(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         """,
     )
     result = load_sample_record(tmp_path)
@@ -108,7 +108,7 @@ def test_extra_field_no_typo_only_generic_warning(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         totally_unrelated_key = "foo"
         """,
@@ -127,7 +127,7 @@ def test_extra_field_typo_produces_suggestion(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         descriptiom = "typo here"
         """,
@@ -147,7 +147,7 @@ def test_typo_on_nested_model(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
         [chromatin]
@@ -181,7 +181,7 @@ def test_typo_warning_preserved_when_validation_fails(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         descriptiom = "typo alongside a hard error"
 
@@ -196,30 +196,12 @@ def test_typo_warning_preserved_when_validation_fails(tmp_path):
     assert any("descriptiom" in w and "description" in w for w in typo_warnings)
 
 
-def test_project_block_mismatch_synapse_on_chromatin(tmp_path):
-    _write(
-        tmp_path / "sample.toml",
-        """
-        [sample]
-        data_source = "cryoet"
-        project = "chromatin"
-
-        [synapse]
-        label_target = "AMPA"
-        label_strategy = "single_label"
-        """,
-    )
-    result = load_sample_record(tmp_path)
-    assert result.record is None
-    assert any("chromatin" in e and "synapse" in e for e in result.sample_errors)
-
-
 def test_simulation_block_rejected_for_cryoet(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
         [simulation]
@@ -228,39 +210,37 @@ def test_simulation_block_rejected_for_cryoet(tmp_path):
     )
     result = load_sample_record(tmp_path)
     assert result.record is None
-    assert any("cryoet" in e and "simulation" in e for e in result.sample_errors)
+    assert any("experimental" in e and "simulation" in e for e in result.sample_errors)
 
 
-def test_aunp_block_happy_path(tmp_path):
+def test_label_block_happy_path(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
-        [[aunp]]
-        size_nm = 5.0
-        type = "colloidal"
+        [[label]]
+        aunp_size_nm = 5.0
+        aunp_type = "colloidal"
         fluorophore = "Alexa647"
-        concentration_value = 2.5
-        concentration_unit = "nM"
         conjugation = "Fab"
         conjugation_target = "GluA2"
 
-        [[aunp]]
-        size_nm = 10.0
-        type = "cluster"
+        [[label]]
+        aunp_size_nm = 10.0
+        aunp_type = "cluster"
         """,
     )
     result = load_sample_record(tmp_path)
     assert result.sample_errors == []
     assert result.warnings == []
     assert result.record is not None
-    assert len(result.record.aunp) == 2
-    assert result.record.aunp[0].size_nm == 5.0
-    assert result.record.aunp[0].conjugation_target == "GluA2"
-    assert result.record.aunp[1].type == "cluster"
+    assert len(result.record.label) == 2
+    assert result.record.label[0].aunp_size_nm == 5.0
+    assert result.record.label[0].conjugation_target == "GluA2"
+    assert result.record.label[1].aunp_type == "cluster"
 
 
 def test_freezing_block_happy_path(tmp_path):
@@ -268,7 +248,7 @@ def test_freezing_block_happy_path(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
         [freezing]
@@ -293,7 +273,7 @@ def test_milling_block_happy_path(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
         [milling]
@@ -339,11 +319,11 @@ def test_acquisition_with_tomogram_and_annotation(tmp_path):
         [acquisition]
         resolution = 3.5
 
-        [[tomogram]]
+        [raw_tomogram]
         id = "tomo_001"
         pipeline = "AreTomo"
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "tomo_002"
         derived_from = ["tomo_001"]
 
@@ -360,7 +340,8 @@ def test_acquisition_with_tomogram_and_annotation(tmp_path):
     assert result.acquisition_errors == {}
     assert result.record is not None
     acq = result.record.acquisitions["acq1"]
-    assert [t.tomogram_id for t in acq.tomogram] == ["tomo_001", "tomo_002"]
+    assert acq.raw_tomogram.tomogram_id == "tomo_001"
+    assert [t.tomogram_id for t in acq.post_processed_tomogram] == ["tomo_002"]
     assert acq.annotation[0].target_tomogram == "tomo_001"
 
 
@@ -372,7 +353,7 @@ def test_annotation_target_tomogram_missing(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [raw_tomogram]
         id = "tomo_001"
 
         [[annotation]]
@@ -395,7 +376,7 @@ def test_tomogram_derived_from_unknown(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "tomo_001"
         derived_from = ["ghost"]
         """,
@@ -415,7 +396,7 @@ def test_tomogram_id_without_matching_folder_fails(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [raw_tomogram]
         id = "bp_3dctf_bin4"
         """,
     )
@@ -440,7 +421,7 @@ def test_tomogram_id_matched_under_synthetic_layout(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [raw_tomogram]
         id = "synth_tomo_1"
         """,
     )
@@ -448,9 +429,9 @@ def test_tomogram_id_matched_under_synthetic_layout(tmp_path):
     result = load_sample_record(tmp_path)
     assert result.acquisition_errors == {}
     assert result.record is not None
-    assert "synth_tomo_1" in [
-        t.tomogram_id for t in result.record.acquisitions["acq1"].tomogram
-    ]
+    assert (
+        result.record.acquisitions["acq1"].raw_tomogram.tomogram_id == "synth_tomo_1"
+    )
 
 
 def test_annotation_id_without_matching_folder_fails(tmp_path):
@@ -460,7 +441,7 @@ def test_annotation_id_without_matching_folder_fails(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [raw_tomogram]
         id = "tomo_001"
 
         [[annotation]]
@@ -477,6 +458,130 @@ def test_annotation_id_without_matching_folder_fails(tmp_path):
     assert "annotation[membrain_seg_v10]" in msg
     assert "no matching folder" in msg
     assert "acq1" not in result.record.acquisitions
+
+
+def test_md_source_valid_reference(tmp_path):
+    """A simulation acquisition referencing a declared md_run validates clean."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        data_source = "simulation"
+        project = "chromatin"
+
+        [[md_run]]
+        id = "run_a"
+        seed = 42
+        computer = "gpu01"
+        """,
+    )
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [md_source]
+        md_run_id = "run_a"
+        frame = 1500
+        """,
+    )
+    result = load_sample_record(tmp_path)
+    assert result.sample_errors == []
+    assert result.acquisition_errors == {}
+    assert result.record is not None
+    acq = result.record.acquisitions["acq1"]
+    assert acq.md_source.md_run_id == "run_a"
+    assert acq.md_source.frame == 1500
+
+
+def test_md_source_dangling_md_run_id_isolates(tmp_path):
+    """A dangling md_run_id fails only that acquisition, not the whole sample."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        data_source = "simulation"
+        project = "chromatin"
+
+        [[md_run]]
+        id = "run_a"
+        """,
+    )
+    _write(
+        tmp_path / "acq_good" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [md_source]
+        md_run_id = "run_a"
+        frame = 1
+        """,
+    )
+    _write(
+        tmp_path / "acq_bad" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [md_source]
+        md_run_id = "ghost"
+        frame = 2
+        """,
+    )
+    result = load_sample_record(tmp_path)
+    # Sample still loads; only the bad acquisition is excluded (isolation).
+    assert result.record is not None
+    assert result.sample_errors == []
+    assert "acq_good" in result.record.acquisitions
+    assert "acq_bad" not in result.record.acquisitions
+    assert "acq_bad" in result.acquisition_errors
+    assert "ghost" in result.acquisition_errors["acq_bad"]
+    assert "md_run" in result.acquisition_errors["acq_bad"]
+
+
+def test_md_run_on_experimental_rejected(tmp_path):
+    """[[md_run]] on an experimental sample fails the whole sample."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        data_source = "experimental"
+        project = "chromatin"
+
+        [[md_run]]
+        id = "run_a"
+        """,
+    )
+    result = load_sample_record(tmp_path)
+    assert result.record is None
+    assert any("md_run" in e and "experimental" in e for e in result.sample_errors)
+
+
+def test_md_source_on_experimental_rejected(tmp_path):
+    """An [md_source] block on an experimental sample fails the whole sample
+    (not isolated) — the dangling-ref isolation path is simulation-only."""
+    _write(
+        tmp_path / "sample.toml",
+        """
+        [sample]
+        data_source = "experimental"
+        project = "chromatin"
+        """,
+    )
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [md_source]
+        md_run_id = "x"
+        frame = 1
+        """,
+    )
+    result = load_sample_record(tmp_path)
+    assert result.record is None
+    assert any(
+        "md_source" in e and "experimental" in e for e in result.sample_errors
+    )
 
 
 def test_multiple_acquisitions(tmp_path):
@@ -523,7 +628,7 @@ def test_main_failure_returns_1(tmp_path, capsys):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         """,
     )
     rc = main([str(tmp_path)])
@@ -537,7 +642,7 @@ def test_main_prints_typo_warning(tmp_path, capsys):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         descriptiom = "typo"
         """,

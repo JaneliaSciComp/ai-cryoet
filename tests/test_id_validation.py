@@ -8,7 +8,7 @@ from textwrap import dedent
 import pytest
 from pydantic import ValidationError
 
-from cryoet_schema import Sample, Tomogram
+from cryoet_schema import PostProcessedTomogram, Sample
 from cryoet_schema.schema import _validate_id
 from cryoet_schema.loader import load_sample_record
 
@@ -115,28 +115,28 @@ def test_non_string_rejected():
 
 
 def test_sample_accepts_valid_sample_id():
-    s = Sample(sample_id="good_sample_01", data_source="cryoet", project="chromatin")
+    s = Sample(sample_id="good_sample_01", data_source="experimental", project="chromatin")
     assert s.sample_id == "good_sample_01"
 
 
 def test_sample_rejects_bad_sample_id():
     with pytest.raises(ValidationError):
-        Sample(sample_id="bad name", data_source="cryoet", project="chromatin")
+        Sample(sample_id="bad name", data_source="experimental", project="chromatin")
 
 
 def test_sample_allows_none_sample_id():
-    s = Sample(data_source="cryoet", project="chromatin")
+    s = Sample(data_source="experimental", project="chromatin")
     assert s.sample_id is None
 
 
 def test_tomogram_rejects_bad_id_alias():
     with pytest.raises(ValidationError):
-        Tomogram.model_validate({"id": "has space"})
+        PostProcessedTomogram.model_validate({"id": "has space"})
 
 
 def test_tomogram_rejects_bad_derived_from():
     with pytest.raises(ValidationError):
-        Tomogram.model_validate({"id": "tomo_001", "derived_from": ["also/bad"]})
+        PostProcessedTomogram.model_validate({"id": "tomo_001", "derived_from": ["also/bad"]})
 
 
 # ── integration through load_sample_record ──────────────────────────────────
@@ -154,7 +154,7 @@ def test_bad_sample_folder_name(tmp_path):
         bad / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -169,7 +169,7 @@ def test_bad_acquisition_folder_name(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -187,7 +187,7 @@ def test_acquisition_case_insensitive_collision(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -207,7 +207,7 @@ def test_tomogram_case_insensitive_collision(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -216,10 +216,10 @@ def test_tomogram_case_insensitive_collision(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "tomo_001"
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "Tomo_001"
         """,
     )
@@ -227,7 +227,7 @@ def test_tomogram_case_insensitive_collision(tmp_path):
     assert result.record is not None
     assert "acq1" in result.acquisition_errors
     msg = result.acquisition_errors["acq1"]
-    assert "collides case-insensitively" in msg and "tomogram" in msg
+    assert "collides case-insensitively" in msg and "tomogram id" in msg
     assert "acq1" not in result.record.acquisitions
 
 
@@ -237,7 +237,7 @@ def test_annotation_case_insensitive_collision(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -246,7 +246,7 @@ def test_annotation_case_insensitive_collision(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "tomo_001"
 
         [[annotation]]
@@ -269,7 +269,7 @@ def test_tomogram_and_annotation_sharing_id_is_allowed(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -278,7 +278,7 @@ def test_tomogram_and_annotation_sharing_id_is_allowed(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "shared_id"
 
         [[annotation]]
@@ -294,12 +294,12 @@ def test_tomogram_and_annotation_sharing_id_is_allowed(tmp_path):
 
 
 def test_bad_tomogram_id_in_toml(tmp_path):
-    """Bad tomogram id is a per-acquisition failure under the new isolation rules."""
+    """Bad post_processed_tomogram id is a per-acquisition failure under the new isolation rules."""
     _write(
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -308,7 +308,7 @@ def test_bad_tomogram_id_in_toml(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "has space"
         """,
     )
@@ -316,5 +316,5 @@ def test_bad_tomogram_id_in_toml(tmp_path):
     assert result.record is not None
     assert "acq1" in result.acquisition_errors
     msg = result.acquisition_errors["acq1"]
-    assert "tomogram" in msg.lower() and "id" in msg.lower()
+    assert "post_processed_tomogram" in msg.lower() and "id" in msg.lower()
     assert "acq1" not in result.record.acquisitions

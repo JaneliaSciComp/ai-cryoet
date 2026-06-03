@@ -31,6 +31,7 @@ from rapidfuzz import process
 
 from cryoet_schema import (
     AcquisitionFile,
+    DataSource,
     Sample,
     SampleRecord,
 )
@@ -52,10 +53,10 @@ class ExtrasEntry:
     """One top-level unknown key on a validated entity.
 
     ``entity_type`` is the lowercase table-name string (``"sample"``,
-    ``"chromatin"``, ``"aunp"``, ``"acquisition"``, ``"tomogram"``,
-    ``"annotation"``, …). ``entity_pk`` is the parent row's PK as a tuple
+    ``"chromatin"``, ``"label"``, ``"acquisition"``, ``"raw_tomogram"``,
+    ``"post_processed_tomogram"``, ``"annotation"``, …). ``entity_pk`` is the parent row's PK as a tuple
     of native Python values (e.g. ``("my_sample",)`` for ``chromatin``,
-    ``("my_sample", 2)`` for the third aunp entry, ``("my_sample",
+    ``("my_sample", 2)`` for the third label entry, ``("my_sample",
     "Position_86", "my_tomo")`` for a tomogram). ``key`` is the unknown
     top-level TOML key. ``value`` is the raw Python value Pydantic stored
     on ``model_extra`` (may be a nested dict — inner keys are NOT
@@ -129,6 +130,29 @@ def _format_validation_errors(prefix: str, exc: ValidationError) -> list[str]:
     return out
 
 
+def _md_source_ref_error(
+    acq: AcquisitionFile, valid_md_run_ids: set[str]
+) -> str | None:
+    """Error string if the acquisition's ``md_source.md_run_id`` is set but
+    matches no ``[[md_run]]`` id declared in ``sample.toml``.
+
+    This is the one reference that crosses files (acquisition.toml ->
+    sample.toml), so it can't live on ``AcquisitionFile`` and isn't enforced
+    at ``SampleRecord`` level (which would fail the whole sample). The loader
+    checks it during the per-acquisition pass and routes a dangling ref to
+    that acquisition's ``acquisition_errors``, preserving isolation.
+    """
+    src = acq.md_source
+    if src is None or src.md_run_id is None:
+        return None
+    if src.md_run_id not in valid_md_run_ids:
+        return (
+            f"md_source.md_run_id '{src.md_run_id}' does not match any "
+            f"[[md_run]] id in sample.toml"
+        )
+    return None
+
+
 def _format_extras_location(entry: ExtrasEntry) -> str:
     """Flatten an ExtrasEntry to a human-readable path.
 
@@ -141,15 +165,24 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
         return "sample"
     if et in ("chromatin", "synapse", "simulation", "freezing", "milling"):
         return et
-    if et == "aunp":
+    if et == "label":
         # entity_pk = (sample_id, index)
-        return f"aunp[{pk[1]}]"
+        return f"label[{pk[1]}]"
+    if et == "md_run":
+        # entity_pk = (sample_id, md_run_id)
+        return f"md_run[{pk[1]}]"
     if et == "acquisition":
         # entity_pk = (sample_id, acq_id)
         return f"acquisitions.{pk[1]}.acquisition"
-    if et == "tomogram":
+    if et == "md_source":
+        # entity_pk = (sample_id, acq_id)
+        return f"acquisitions.{pk[1]}.md_source"
+    if et == "raw_tomogram":
         # entity_pk = (sample_id, acq_id, tomogram_id)
-        return f"acquisitions.{pk[1]}.tomogram[{pk[2]}]"
+        return f"acquisitions.{pk[1]}.raw_tomogram"
+    if et == "post_processed_tomogram":
+        # entity_pk = (sample_id, acq_id, tomogram_id)
+        return f"acquisitions.{pk[1]}.post_processed_tomogram[{pk[2]}]"
     if et == "annotation":
         # entity_pk = (sample_id, acq_id, annotation_id)
         return f"acquisitions.{pk[1]}.annotation[{pk[2]}]"
@@ -196,7 +229,12 @@ def _check_id_folder_alignment(
     errors: list[str] = []
 
     tomo_candidates = _candidate_folder_names(acq_dir, _TOMOGRAM_PARENT_DIRS)
-    for tomo in acq_model.tomogram:
+    # Raw and post-processed tomograms share one id namespace within the
+    # acquisition; check both against the same on-disk processing folders.
+    tomograms = list(acq_model.post_processed_tomogram)
+    if acq_model.raw_tomogram is not None:
+        tomograms.insert(0, acq_model.raw_tomogram)
+    for tomo in tomograms:
         if _has_matching_folder(acq_dir, _TOMOGRAM_PARENT_DIRS, tomo.tomogram_id):
             continue
         joined_parents = " or ".join(repr(p) for p in _TOMOGRAM_PARENT_DIRS)
@@ -237,8 +275,8 @@ def _check_id_folder_alignment(
 def _walk_extras(record: SampleRecord) -> list[ExtrasEntry]:
     """Walk ``record`` and emit one ExtrasEntry per top-level unknown key.
 
-    Per-container PK rules per §4.4.1. Reaches into ``Tomogram.tomogram_id``
-    / ``Annotation.annotation_id`` for the child PK rather than using the
+    Per-container PK rules per §4.4.1. Reaches into the tomogram /
+    ``Annotation.annotation_id`` for the child PK rather than using the
     list index — this is a regression-tested invariant.
     """
     out: list[ExtrasEntry] = []
@@ -249,27 +287,48 @@ def _walk_extras(record: SampleRecord) -> list[ExtrasEntry]:
         out.append(ExtrasEntry("sample", (sample_id,), k, v))
 
     # optional 1:1 sub-entities
-    for attr in ("chromatin", "synapse", "simulation", "freezing", "milling"):
+    for attr in ("chromatin", "simulation", "fiducial", "freezing", "milling"):
         sub = getattr(record, attr)
         if sub is not None:
             for k, v in (sub.model_extra or {}).items():
                 out.append(ExtrasEntry(attr, (sample_id,), k, v))
 
-    # aunp - positional
-    for i, aunp in enumerate(record.aunp):
-        for k, v in (aunp.model_extra or {}).items():
-            out.append(ExtrasEntry("aunp", (sample_id, i), k, v))
+    # label - positional
+    for i, label in enumerate(record.label):
+        for k, v in (label.model_extra or {}).items():
+            out.append(ExtrasEntry("label", (sample_id, i), k, v))
+
+    # md_run - id-keyed (folder name), like tomograms
+    for run in record.md_run:
+        for k, v in (run.model_extra or {}).items():
+            out.append(ExtrasEntry("md_run", (sample_id, run.md_run_id), k, v))
 
     # acquisitions - dict
     for acq_id, acq_file in record.acquisitions.items():
         # AcquisitionFile.model_extra itself is intentionally NOT walked.
         for k, v in (acq_file.acquisition.model_extra or {}).items():
             out.append(ExtrasEntry("acquisition", (sample_id, acq_id), k, v))
-        for tomo in acq_file.tomogram:
+        if acq_file.md_source is not None:
+            for k, v in (acq_file.md_source.model_extra or {}).items():
+                out.append(
+                    ExtrasEntry("md_source", (sample_id, acq_id), k, v)
+                )
+        if acq_file.raw_tomogram is not None:
+            raw = acq_file.raw_tomogram
+            for k, v in (raw.model_extra or {}).items():
+                out.append(
+                    ExtrasEntry(
+                        "raw_tomogram", (sample_id, acq_id, raw.tomogram_id), k, v
+                    )
+                )
+        for tomo in acq_file.post_processed_tomogram:
             for k, v in (tomo.model_extra or {}).items():
                 out.append(
                     ExtrasEntry(
-                        "tomogram", (sample_id, acq_id, tomo.tomogram_id), k, v
+                        "post_processed_tomogram",
+                        (sample_id, acq_id, tomo.tomogram_id),
+                        k,
+                        v,
                     )
                 )
         for ann in acq_file.annotation:
@@ -337,7 +396,7 @@ def load_sample_record(sample_dir: Path) -> LoadResult:
     sample_data.setdefault("sample", {})["sample_id"] = sample_dir.name
 
     # Validate the sample-level portion. The Sample model only consumes
-    # the [sample] table; the rest of sample.toml ([chromatin], [aunp],
+    # the [sample] table; the rest of sample.toml ([chromatin], [label],
     # etc.) is handled later by SampleRecord.model_validate of the full
     # dict.
     sample_block = sample_data.get("sample", {})
@@ -354,6 +413,16 @@ def load_sample_record(sample_dir: Path) -> LoadResult:
 
     if sample_model is None:
         return result
+
+    # md_run ids declared in sample.toml (raw, by TOML `id` alias). Used to
+    # validate each acquisition's md_source reference below. A malformed or
+    # duplicate md_run id is caught later by SampleRecord validation and fails
+    # the whole sample; here we only need the declared id set.
+    valid_md_run_ids = {
+        run["id"]
+        for run in sample_data.get("md_run", [])
+        if isinstance(run, dict) and isinstance(run.get("id"), str)
+    }
 
     # Per-acquisition: parse, strip placeholders, validate independently.
     validated_acqs: dict[str, AcquisitionFile] = {}
@@ -392,11 +461,22 @@ def load_sample_record(sample_dir: Path) -> LoadResult:
                     f"{existing}; {joined}" if existing else joined
                 )
             else:
-                validated_acqs[acq_name] = acq_model
+                # The dangling-md_run-ref check only applies to simulation samples.
+                # On experimental samples an md_source block is a category error
+                # (no md_runs exist), left for SampleRecord to reject whole-sample
+                # with a clear message — don't pre-empt it here with a misleading
+                # "no matching md_run" error.
+                ref_error = None
+                if sample_model.data_source == DataSource.simulation:
+                    ref_error = _md_source_ref_error(acq_model, valid_md_run_ids)
+                if ref_error is not None:
+                    result.acquisition_errors[acq_name] = ref_error
+                else:
+                    validated_acqs[acq_name] = acq_model
 
     # Build the full record. Pass already-validated acquisitions through
     # by dumping back to dict (preserves alias round-tripping for the
-    # Tomogram / Annotation `id` alias) and re-validating end-to-end so
+    # tomogram / annotation `id` alias) and re-validating end-to-end so
     # that SampleRecord-level model validators (project/data_source
     # cross-checks, acquisition-name collisions) run against assembled
     # state.

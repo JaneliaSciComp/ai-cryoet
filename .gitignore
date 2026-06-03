@@ -9,6 +9,9 @@ __pycache__
 # datasets
 data
 
+# Mac
+.DS_Store
+
 # database files
 *.db
 

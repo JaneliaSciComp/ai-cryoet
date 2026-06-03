@@ -31,6 +31,10 @@
           "title": "Microscope",
           "type": "string"
         },
+        "quality": {
+          "title": "Quality",
+          "type": "string"
+        },
         "pixel_size": {
           "title": "Pixel Size",
           "type": "number"
@@ -101,11 +105,17 @@
         "acquisition": {
           "$ref": "#/$defs/Acquisition"
         },
-        "tomogram": {
+        "md_source": {
+          "$ref": "#/$defs/MdSource"
+        },
+        "raw_tomogram": {
+          "$ref": "#/$defs/RawTomogram"
+        },
+        "post_processed_tomogram": {
           "items": {
-            "$ref": "#/$defs/Tomogram"
+            "$ref": "#/$defs/PostProcessedTomogram"
           },
-          "title": "Tomogram",
+          "title": "Post Processed Tomogram",
           "type": "array"
         },
         "annotation": {
@@ -156,45 +166,6 @@
         "id"
       ],
       "title": "Annotation",
-      "type": "object"
-    },
-    "Aunp": {
-      "additionalProperties": true,
-      "properties": {
-        "size_nm": {
-          "title": "Size Nm",
-          "type": "number"
-        },
-        "type": {
-          "title": "Type",
-          "type": "string"
-        },
-        "fluorophore": {
-          "title": "Fluorophore",
-          "type": "string"
-        },
-        "concentration_value": {
-          "title": "Concentration Value",
-          "type": "number"
-        },
-        "concentration_unit": {
-          "title": "Concentration Unit",
-          "type": "string"
-        },
-        "conjugation": {
-          "title": "Conjugation",
-          "type": "string"
-        },
-        "conjugation_target": {
-          "title": "Conjugation Target",
-          "type": "string"
-        },
-        "notes": {
-          "title": "Notes",
-          "type": "string"
-        }
-      },
-      "title": "Aunp",
       "type": "object"
     },
     "Chromatin": {
@@ -268,17 +239,52 @@
     },
     "DataSource": {
       "enum": [
-        "cryoet",
+        "experimental",
         "simulation"
       ],
       "title": "DataSource",
       "type": "string"
+    },
+    "Fiducial": {
+      "additionalProperties": true,
+      "properties": {
+        "aunp_size_nm": {
+          "title": "Aunp Size Nm",
+          "type": "number"
+        },
+        "vendor": {
+          "title": "Vendor",
+          "type": "string"
+        },
+        "catalog_number": {
+          "title": "Catalog Number",
+          "type": "string"
+        },
+        "product_name": {
+          "title": "Product Name",
+          "type": "string"
+        },
+        "concentration_value": {
+          "title": "Concentration Value",
+          "type": "number"
+        },
+        "concentration_unit": {
+          "title": "Concentration Unit",
+          "type": "string"
+        }
+      },
+      "title": "Fiducial",
+      "type": "object"
     },
     "Freezing": {
       "additionalProperties": true,
       "properties": {
         "grid_type": {
           "title": "Grid Type",
+          "type": "string"
+        },
+        "solution_type": {
+          "title": "Solution Type",
           "type": "string"
         },
         "cryoprotectant": {
@@ -301,6 +307,88 @@
       "title": "Freezing",
       "type": "object"
     },
+    "Label": {
+      "additionalProperties": true,
+      "properties": {
+        "label_target": {
+          "title": "Label Target",
+          "type": "string"
+        },
+        "aunp_type": {
+          "title": "Aunp Type",
+          "type": "string"
+        },
+        "aunp_size_nm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Aunp Size Nm"
+        },
+        "conjugation": {
+          "title": "Conjugation",
+          "type": "string"
+        },
+        "conjugation_target": {
+          "title": "Conjugation Target",
+          "type": "string"
+        },
+        "fluorophore": {
+          "title": "Fluorophore",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "Label",
+      "type": "object"
+    },
+    "MdRun": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "computer": {
+          "title": "Computer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "MdRun",
+      "type": "object"
+    },
+    "MdSource": {
+      "additionalProperties": true,
+      "properties": {
+        "md_run_id": {
+          "title": "Md Run Id",
+          "type": "string"
+        },
+        "frame": {
+          "title": "Frame",
+          "type": "integer"
+        }
+      },
+      "title": "MdSource",
+      "type": "object"
+    },
     "Milling": {
       "additionalProperties": true,
       "properties": {
@@ -312,18 +400,159 @@
           "title": "Date",
           "format": "date",
           "type": "string"
+        },
+        "quality": {
+          "title": "Quality",
+          "type": "string"
         }
       },
       "title": "Milling",
       "type": "object"
     },
+    "PostProcessedTomogram": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "denoising_software": {
+          "title": "Denoising Software",
+          "type": "string"
+        },
+        "ctf_software": {
+          "title": "Ctf Software",
+          "type": "string"
+        },
+        "missing_wedge_software": {
+          "title": "Missing Wedge Software",
+          "type": "string"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
+        },
+        "derived_from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
+        },
+        "image_size_x": {
+          "title": "Image Size X",
+          "type": "integer"
+        },
+        "image_size_y": {
+          "title": "Image Size Y",
+          "type": "integer"
+        },
+        "image_size_z": {
+          "title": "Image Size Z",
+          "type": "integer"
+        },
+        "mrc_path": {
+          "title": "Mrc Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "zarr_axes": {
+          "title": "Zarr Axes",
+          "type": "string"
+        },
+        "zarr_scale": {
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "PostProcessedTomogram",
+      "type": "object"
+    },
     "Project": {
       "enum": [
         "chromatin",
-        "synapse"
+        "synapse",
+        "nanogold"
       ],
       "title": "Project",
       "type": "string"
+    },
+    "RawTomogram": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "pipeline": {
+          "title": "Pipeline",
+          "type": "string"
+        },
+        "software": {
+          "title": "Software",
+          "type": "string"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
+        },
+        "derived_from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
+        },
+        "image_size_x": {
+          "title": "Image Size X",
+          "type": "integer"
+        },
+        "image_size_y": {
+          "title": "Image Size Y",
+          "type": "integer"
+        },
+        "image_size_z": {
+          "title": "Image Size Z",
+          "type": "integer"
+        },
+        "mrc_path": {
+          "title": "Mrc Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "zarr_axes": {
+          "title": "Zarr Axes",
+          "type": "string"
+        },
+        "zarr_scale": {
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RawTomogram",
+      "type": "object"
     },
     "Sample": {
       "additionalProperties": true,
@@ -367,21 +596,6 @@
         }
       },
       "title": "Simulation",
-      "type": "object"
-    },
-    "Synapse": {
-      "additionalProperties": true,
-      "properties": {
-        "label_target": {
-          "title": "Label Target",
-          "type": "string"
-        },
-        "label_strategy": {
-          "title": "Label Strategy",
-          "type": "string"
-        }
-      },
-      "title": "Synapse",
       "type": "object"
     },
     "TiltSeries": {
@@ -467,78 +681,6 @@
       },
       "title": "TiltSeries",
       "type": "object"
-    },
-    "Tomogram": {
-      "additionalProperties": true,
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "pipeline": {
-          "title": "Pipeline",
-          "type": "string"
-        },
-        "software": {
-          "title": "Software",
-          "type": "string"
-        },
-        "voxel_bin": {
-          "title": "Voxel Bin",
-          "type": "integer"
-        },
-        "derived_from": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Derived From",
-          "type": "array"
-        },
-        "is_raw": {
-          "title": "Is Raw",
-          "type": "boolean"
-        },
-        "image_size_x": {
-          "title": "Image Size X",
-          "type": "integer"
-        },
-        "image_size_y": {
-          "title": "Image Size Y",
-          "type": "integer"
-        },
-        "image_size_z": {
-          "title": "Image Size Z",
-          "type": "integer"
-        },
-        "mrc_path": {
-          "title": "Mrc Path",
-          "type": "string"
-        },
-        "zarr_path": {
-          "title": "Zarr Path",
-          "type": "string"
-        },
-        "zarr_axes": {
-          "title": "Zarr Axes",
-          "type": "string"
-        },
-        "zarr_scale": {
-          "title": "Zarr Scale",
-          "items": {
-            "type": "number"
-          },
-          "type": "array"
-        },
-        "size_bytes": {
-          "title": "Size Bytes",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "title": "Tomogram",
-      "type": "object"
     }
   },
   "additionalProperties": true,
@@ -553,21 +695,28 @@
     "chromatin": {
       "$ref": "#/$defs/Chromatin"
     },
-    "synapse": {
-      "$ref": "#/$defs/Synapse"
-    },
-    "aunp": {
+    "label": {
       "items": {
-        "$ref": "#/$defs/Aunp"
+        "$ref": "#/$defs/Label"
       },
-      "title": "Aunp",
+      "title": "Label",
       "type": "array"
+    },
+    "fiducial": {
+      "$ref": "#/$defs/Fiducial"
     },
     "freezing": {
       "$ref": "#/$defs/Freezing"
     },
     "milling": {
       "$ref": "#/$defs/Milling"
+    },
+    "md_run": {
+      "items": {
+        "$ref": "#/$defs/MdRun"
+      },
+      "title": "Md Run",
+      "type": "array"
     },
     "acquisitions": {
       "additionalProperties": {

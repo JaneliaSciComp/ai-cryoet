@@ -25,7 +25,7 @@ def test_unknown_key_on_sample(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         unknown_sample_key = "x"
         """,
@@ -43,7 +43,7 @@ def test_unknown_key_on_chromatin(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
         [chromatin]
@@ -58,25 +58,25 @@ def test_unknown_key_on_chromatin(tmp_path):
     assert entry.value == 42
 
 
-def test_unknown_key_on_second_aunp_uses_positional_pk(tmp_path):
+def test_unknown_key_on_second_label_uses_positional_pk(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
-        [[aunp]]
-        size_nm = 5.0
+        [[label]]
+        aunp_size_nm = 5.0
 
-        [[aunp]]
-        size_nm = 10.0
-        unknown_aunp_key = "second"
+        [[label]]
+        aunp_size_nm = 10.0
+        unknown_label_key = "second"
         """,
     )
     result = load_sample_record(tmp_path)
     assert result.record is not None
-    entry = _find(result.extras, "aunp", "unknown_aunp_key")
+    entry = _find(result.extras, "label", "unknown_label_key")
     assert entry is not None
     assert entry.entity_pk == (tmp_path.name, 1)
     assert entry.value == "second"
@@ -88,7 +88,7 @@ def test_unknown_key_on_tomogram_uses_id_not_index(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
         """,
     )
@@ -97,10 +97,10 @@ def test_unknown_key_on_tomogram_uses_id_not_index(tmp_path):
         """
         [acquisition]
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "first_tomo"
 
-        [[tomogram]]
+        [[post_processed_tomogram]]
         id = "my_tomo"
         unknown_tomo_key = "value"
         """,
@@ -109,7 +109,7 @@ def test_unknown_key_on_tomogram_uses_id_not_index(tmp_path):
     (tmp_path / "Position_86" / "Reconstructions" / "Tomograms" / "my_tomo").mkdir(parents=True)
     result = load_sample_record(tmp_path)
     assert result.record is not None
-    entry = _find(result.extras, "tomogram", "unknown_tomo_key")
+    entry = _find(result.extras, "post_processed_tomogram", "unknown_tomo_key")
     assert entry is not None
     # Must be id-keyed, not list-index-keyed.
     assert entry.entity_pk == (tmp_path.name, "Position_86", "my_tomo")
@@ -124,7 +124,7 @@ def test_nested_unknown_dict_is_not_flattened(tmp_path):
         tmp_path / "sample.toml",
         """
         [sample]
-        data_source = "cryoet"
+        data_source = "experimental"
         project = "chromatin"
 
         [sample.unknown_block]
