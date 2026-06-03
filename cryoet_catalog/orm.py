@@ -74,16 +74,55 @@ class ChromatinORM(Base):
     linker_length_fraction: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
-class SynapseORM(Base):
-    __tablename__ = "synapse"
+class LabelORM(Base):
+    """Per-sample labels list (one row per ``[[label]]`` block).
+
+    Replaces the old ``aunp`` table — labels share the gold-nanoparticle
+    ``aunp_*`` shape but are list-valued so a sample can declare more than one
+    label target.
+    """
+
+    __tablename__ = "labels"
+
+    sample_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN),
+        ForeignKey("samples.sample_id"),
+        nullable=False,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    label_target: Mapped[str | None] = mapped_column(String, nullable=True)
+    aunp_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Polymorphic ``float | list[float]`` — JSON so both shapes round-trip.
+    aunp_size_nm: Mapped[list | float | None] = mapped_column(JSON, nullable=True)
+    conjugation: Mapped[str | None] = mapped_column(String, nullable=True)
+    conjugation_target: Mapped[str | None] = mapped_column(String, nullable=True)
+    fluorophore: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = (PrimaryKeyConstraint("sample_id", "ordinal"),)
+
+
+class FiducialORM(Base):
+    """1:1 fiducial block per sample.
+
+    Replaces the old ``synapse`` table slot — synapse-specific labelling moved
+    to the list-valued ``labels`` table; ``fiducial`` now carries the vendor /
+    catalog metadata for any gold-nanoparticle fiducial used on the sample.
+    """
+
+    __tablename__ = "fiducial"
 
     sample_id: Mapped[str] = mapped_column(
         String(_ID_MAX_LEN),
         ForeignKey("samples.sample_id"),
         primary_key=True,
     )
-    label_target: Mapped[str | None] = mapped_column(String, nullable=True)
-    label_strategy: Mapped[str | None] = mapped_column(String, nullable=True)
+    aunp_size_nm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vendor: Mapped[str | None] = mapped_column(String, nullable=True)
+    catalog_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    product_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    concentration_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    concentration_unit: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class SimulationORM(Base):
@@ -106,6 +145,7 @@ class FreezingORM(Base):
         primary_key=True,
     )
     grid_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    solution_type: Mapped[str | None] = mapped_column(String, nullable=True)
     cryoprotectant: Mapped[str | None] = mapped_column(String, nullable=True)
     method: Mapped[str | None] = mapped_column(String, nullable=True)
     planchette_size: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -122,31 +162,32 @@ class MillingORM(Base):
     )
     scheme: Mapped[str | None] = mapped_column(String, nullable=True)
     date: Mapped[_dt.date | None] = mapped_column(Date, nullable=True)
+    quality: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
-class AunpORM(Base):
-    __tablename__ = "aunp"
+class MdRunORM(Base):
+    """Per-sample MD-run list (simulation samples only).
+
+    One row per ``[[md_run]]`` block in sample.toml; folder name on disk
+    equals ``md_run_id``.
+    """
+
+    __tablename__ = "md_runs"
 
     sample_id: Mapped[str] = mapped_column(
         String(_ID_MAX_LEN),
         ForeignKey("samples.sample_id"),
         nullable=False,
     )
-    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
-    size_nm: Mapped[float | None] = mapped_column(Float, nullable=True)
-    type: Mapped[str | None] = mapped_column(String, nullable=True)
-    fluorophore: Mapped[str | None] = mapped_column(String, nullable=True)
-    concentration_value: Mapped[float | None] = mapped_column(Float, nullable=True)
-    concentration_unit: Mapped[str | None] = mapped_column(String, nullable=True)
-    conjugation: Mapped[str | None] = mapped_column(String, nullable=True)
-    conjugation_target: Mapped[str | None] = mapped_column(String, nullable=True)
-    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    md_run_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    computer: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    __table_args__ = (PrimaryKeyConstraint("sample_id", "ordinal"),)
+    __table_args__ = (PrimaryKeyConstraint("sample_id", "md_run_id"),)
 
 
 # ---------------------------------------------------------------------------
-# Acquisition + tomogram + annotation
+# Acquisition + (raw/post) tomograms + annotations + tilt series + md_source
 # ---------------------------------------------------------------------------
 
 
@@ -165,6 +206,7 @@ class AcquisitionORM(Base):
     energy_filter: Mapped[str | None] = mapped_column(String, nullable=True)
     phase_plate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     microscope: Mapped[str | None] = mapped_column(String, nullable=True)
+    quality: Mapped[str | None] = mapped_column(String, nullable=True)
     pixel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
     dose_per_tilt: Mapped[list | None] = mapped_column(JSON, nullable=True)
     total_dose: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -182,17 +224,50 @@ class AcquisitionORM(Base):
     __table_args__ = (PrimaryKeyConstraint("sample_id", "acquisition_id"),)
 
 
-class TomogramORM(Base):
-    __tablename__ = "tomograms"
+class MdSourceORM(Base):
+    """1:1 simulation provenance per acquisition.
+
+    Composite PK ``(sample_id, acquisition_id)`` mirrors the at-most-one
+    ``[md_source]`` block; ``md_run_id`` references ``md_runs.md_run_id``
+    within the same sample.
+    """
+
+    __tablename__ = "md_source"
+
+    sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    md_run_id: Mapped[str | None] = mapped_column(
+        String(_ID_MAX_LEN), nullable=True
+    )
+    frame: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("sample_id", "acquisition_id"),
+        ForeignKeyConstraint(
+            ["sample_id", "acquisition_id"],
+            ["acquisitions.sample_id", "acquisitions.acquisition_id"],
+        ),
+    )
+
+
+class RawTomogramORM(Base):
+    """At-most-one raw tomogram per acquisition.
+
+    The 1:1-ness is enforced upstream by ``AcquisitionFile.raw_tomogram``
+    being ``RawTomogram | None``; the DB PK includes ``tomogram_id`` to
+    mirror ``PostProcessedTomogramORM`` and let cross-table queries treat
+    both as composite-keyed children of an acquisition.
+    """
+
+    __tablename__ = "raw_tomograms"
 
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     pipeline: Mapped[str | None] = mapped_column(String, nullable=True)
     software: Mapped[str | None] = mapped_column(String, nullable=True)
-    voxel_bin: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    voxel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
     derived_from: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
-    is_raw: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     image_size_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_size_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_size_z: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -200,11 +275,34 @@ class TomogramORM(Base):
     zarr_path: Mapped[str | None] = mapped_column(String, nullable=True)
     zarr_axes: Mapped[str | None] = mapped_column(String, nullable=True)
     zarr_scale: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    # DB-only — populated by catalog scanner from MRC header / OME-Zarr scale
-    voxel_spacing_angstrom: Mapped[float | None] = mapped_column(Float, nullable=True)
-    voxel_spacing_angstrom_implied: Mapped[float | None] = mapped_column(
-        Float, nullable=True
+
+    __table_args__ = (
+        PrimaryKeyConstraint("sample_id", "acquisition_id", "tomogram_id"),
+        ForeignKeyConstraint(
+            ["sample_id", "acquisition_id"],
+            ["acquisitions.sample_id", "acquisitions.acquisition_id"],
+        ),
     )
+
+
+class PostProcessedTomogramORM(Base):
+    __tablename__ = "post_processed_tomograms"
+
+    sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    denoising_software: Mapped[str | None] = mapped_column(String, nullable=True)
+    ctf_software: Mapped[str | None] = mapped_column(String, nullable=True)
+    missing_wedge_software: Mapped[str | None] = mapped_column(String, nullable=True)
+    voxel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
+    derived_from: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    image_size_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_size_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_size_z: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mrc_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    zarr_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    zarr_axes: Mapped[str | None] = mapped_column(String, nullable=True)
+    zarr_scale: Mapped[list | None] = mapped_column(JSON, nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (

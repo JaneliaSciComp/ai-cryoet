@@ -25,15 +25,18 @@ from cryoet_catalog import orm  # noqa: E402
 from cryoet_schema.schema import (
     Acquisition,
     Annotation,
-    Aunp,
     Chromatin,
+    Fiducial,
     Freezing,
+    Label,
+    MdRun,
+    MdSource,
     Milling,
+    PostProcessedTomogram,
+    RawTomogram,
     Sample,
     Simulation,
-    Synapse,
     TiltSeries,
-    Tomogram,
 )
 
 # (pydantic_cls, orm_cls, db_only_columns, pydantic_only_pk_fields)
@@ -42,21 +45,24 @@ from cryoet_schema.schema import (
 MAPPING = [
     (Sample, orm.SampleORM, {"deleted_at"}, {"sample_id"}),
     (Chromatin, orm.ChromatinORM, {"sample_id"}, set()),
-    (Synapse, orm.SynapseORM, {"sample_id"}, set()),
+    (Label, orm.LabelORM, {"sample_id", "ordinal"}, set()),
+    (Fiducial, orm.FiducialORM, {"sample_id"}, set()),
     (Simulation, orm.SimulationORM, {"sample_id"}, set()),
     (Freezing, orm.FreezingORM, {"sample_id"}, set()),
     (Milling, orm.MillingORM, {"sample_id"}, set()),
-    (Aunp, orm.AunpORM, {"sample_id", "ordinal"}, set()),
+    (MdRun, orm.MdRunORM, {"sample_id"}, set()),
     (Acquisition, orm.AcquisitionORM, {"sample_id"}, {"acquisition_id"}),
+    (MdSource, orm.MdSourceORM, {"sample_id", "acquisition_id"}, set()),
     (
-        Tomogram,
-        orm.TomogramORM,
-        {
-            "sample_id",
-            "acquisition_id",
-            "voxel_spacing_angstrom",
-            "voxel_spacing_angstrom_implied",
-        },
+        RawTomogram,
+        orm.RawTomogramORM,
+        {"sample_id", "acquisition_id"},
+        set(),
+    ),
+    (
+        PostProcessedTomogram,
+        orm.PostProcessedTomogramORM,
+        {"sample_id", "acquisition_id"},
         set(),
     ),
     (Annotation, orm.AnnotationORM, {"sample_id", "acquisition_id"}, set()),
@@ -84,6 +90,11 @@ def _expected_sa_type(annotation):
         if len(args) == 1:
             annotation = _strip_annotated(args[0])
             origin = get_origin(annotation)
+        elif any(get_origin(_strip_annotated(a)) is list for a in args):
+            # Polymorphic Union containing ``list[...]`` (e.g.
+            # ``float | list[float]`` on ``Label.aunp_size_nm``) is stored
+            # as a JSON column so both shapes round-trip.
+            return JSON
     if annotation is str:
         return String
     if annotation is int:
