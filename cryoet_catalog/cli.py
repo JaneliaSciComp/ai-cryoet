@@ -5,7 +5,6 @@ Usage::
     python -m cryoet_catalog scan <root>
         [--db sqlite:///path.db] [--force] [--init]
         [--prune] [--prune-dry-run] [--prune-safety-floor 0.5]
-        [--on-voxel-mismatch warn|error]
 """
 from __future__ import annotations
 
@@ -61,12 +60,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "(default 0.5)"
         ),
     )
-    scan.add_argument(
-        "--on-voxel-mismatch",
-        choices=["warn", "error"],
-        default="warn",
-        help="how to handle voxel-spacing implied vs MRC mismatches",
-    )
     return p
 
 
@@ -107,7 +100,6 @@ def _cmd_scan(args) -> int:
             prune=args.prune,
             prune_dry_run=args.prune_dry_run,
             prune_safety_floor=args.prune_safety_floor,
-            on_voxel_mismatch=args.on_voxel_mismatch,
         )
     except Exception as e:  # noqa: BLE001
         print(f"scan failed: {e}", file=sys.stderr)

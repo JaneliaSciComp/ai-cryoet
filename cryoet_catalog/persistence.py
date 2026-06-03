@@ -2,7 +2,7 @@
 
 The persistence layer is dumb in two senses:
 1. It never re-derives field values — whatever the assembler put on the record
-   (or in tomogram_aux) is what gets written.
+   is what gets written.
 2. It never re-walks the SampleRecord for extras — the structured ExtrasEntry
    list from cryoet_schema.loader (passed through AssemblyResult.extras) is
    the single source of truth for the extras table.
@@ -23,7 +23,7 @@ import json
 import time
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import and_, delete, select, update
 from sqlalchemy.orm import Session
 
 from cryoet_schema import SampleRecord
@@ -80,7 +80,7 @@ def _json_safe(o: Any) -> Any:
 def _upsert_or_delete_sub(
     session: Session, orm_cls, sample_id: str, pyd_model
 ) -> None:
-    """1:1 sub-entity upsert-or-delete.
+    """1:1 sub-entity upsert-or-delete (sample-scoped).
 
     If ``pyd_model`` is None, DELETE the row (clears stale data when a TOML
     block is removed); otherwise upsert via ``session.merge()``.
@@ -128,24 +128,25 @@ def upsert_sample_record(
     record: SampleRecord,
     *,
     extras: list[ExtrasEntry],
-    tomogram_aux: dict[tuple[str, str, str], dict[str, Any]],
     warnings: list[ScanWarning],
     scan_run_id: str,
 ) -> None:
-    """Per-sample upsert. Steps (per §4.7):
+    """Per-sample upsert. Steps:
 
     1. ``samples`` row from ``record.sample`` (clear ``deleted_at`` on
        resurrection).
-    2. 1:1 sub-entities upsert-or-delete (chromatin, synapse, simulation,
+    2. 1:1 sub-entities upsert-or-delete (chromatin, fiducial, simulation,
        freezing, milling).
-    3. ``aunp`` ordinal upsert + clean rows with ordinal >= len(record.aunp).
-    4. ``acquisitions`` / ``tomograms`` / ``annotations`` upsert; tomograms
-       merge in DB-only ``voxel_spacing_angstrom*`` from ``tomogram_aux``.
-    5. ``extras`` refresh: DELETE WHERE sample_id = ? then INSERT fresh.
-    6. ``scan_warnings`` refresh: DELETE WHERE sample_id = ? then INSERT
+    3. ``labels`` ordinal upsert + clean rows with ordinal >= len(record.label).
+    4. ``md_runs`` upsert + stale-row cleanup (keyed by md_run_id).
+    5. Per-acquisition: ``acquisitions`` upsert, ``md_source`` 1:1
+       upsert-or-delete (scoped by acq), ``raw_tomograms`` /
+       ``post_processed_tomograms`` / ``annotations`` / ``tilt_series``
+       upsert.
+    6. ``extras`` refresh: DELETE WHERE sample_id = ? then INSERT fresh.
+    7. ``scan_warnings`` refresh: DELETE WHERE sample_id = ? then INSERT
        fresh with ``detected_at`` and ``scan_run_id`` stamped.
-    7. Stale-row cleanup for the multi-row child tables (acquisitions,
-       tomograms, annotations) using a Python keep-set.
+    8. Stale-row cleanup for the multi-row child tables using Python keep-sets.
     """
     sample_id = record.sample.sample_id
     assert sample_id is not None, (
@@ -165,27 +166,39 @@ def upsert_sample_record(
 
     # ---- Step 2: 1:1 sub-entities ------------------------------------------
     _upsert_or_delete_sub(session, orm.ChromatinORM, sample_id, record.chromatin)
-    _upsert_or_delete_sub(session, orm.SynapseORM, sample_id, record.synapse)
+    _upsert_or_delete_sub(session, orm.FiducialORM, sample_id, record.fiducial)
     _upsert_or_delete_sub(session, orm.SimulationORM, sample_id, record.simulation)
     _upsert_or_delete_sub(session, orm.FreezingORM, sample_id, record.freezing)
     _upsert_or_delete_sub(session, orm.MillingORM, sample_id, record.milling)
 
-    # ---- Step 3: aunp ordinals --------------------------------------------
-    for ordinal, aunp_model in enumerate(record.aunp):
-        payload = aunp_model.model_dump(exclude_none=False)
+    # ---- Step 3: labels (ordinal-keyed list) -------------------------------
+    for ordinal, label_model in enumerate(record.label):
+        payload = label_model.model_dump(exclude_none=False)
         payload["sample_id"] = sample_id
         payload["ordinal"] = ordinal
-        session.merge(orm.AunpORM(**_filter_to_columns(payload, orm.AunpORM)))
+        session.merge(orm.LabelORM(**_filter_to_columns(payload, orm.LabelORM)))
     # Clean up trailing ordinals.
     session.execute(
-        delete(orm.AunpORM)
-        .where(orm.AunpORM.sample_id == sample_id)
-        .where(orm.AunpORM.ordinal >= len(record.aunp))
+        delete(orm.LabelORM)
+        .where(orm.LabelORM.sample_id == sample_id)
+        .where(orm.LabelORM.ordinal >= len(record.label))
     )
 
-    # ---- Step 4: acquisitions / tomograms / annotations / tilt_series ----
+    # ---- Step 4: md_runs (id-keyed list) -----------------------------------
+    keep_md_run_pks: set[tuple[str, str]] = set()
+    for run in record.md_run:
+        # by_alias=False so the dump uses ``md_run_id`` (the field name),
+        # matching the ORM column. The schema field has alias ``id``.
+        payload = run.model_dump(exclude_none=False, by_alias=False)
+        payload["sample_id"] = sample_id
+        session.merge(orm.MdRunORM(**_filter_to_columns(payload, orm.MdRunORM)))
+        keep_md_run_pks.add((sample_id, run.md_run_id))
+
+    # ---- Step 5: per-acquisition fan-out -----------------------------------
     keep_acq_pks: set[tuple[str, str]] = set()
-    keep_tomo_pks: set[tuple[str, str, str]] = set()
+    keep_md_source_pks: set[tuple[str, str]] = set()
+    keep_raw_tomo_pks: set[tuple[str, str, str]] = set()
+    keep_post_tomo_pks: set[tuple[str, str, str]] = set()
     keep_ann_pks: set[tuple[str, str, str]] = set()
     keep_ts_pks: set[tuple[str, str, str]] = set()
 
@@ -204,25 +217,53 @@ def upsert_sample_record(
         )
         keep_acq_pks.add((sample_id, acq_id))
 
-        for tomo in acq_file.tomogram:
+        # md_source is 1:1 per acquisition. Delete on absence, upsert on
+        # presence — scoped to this single (sample_id, acquisition_id) so we
+        # don't clobber siblings.
+        if acq_file.md_source is None:
+            session.execute(
+                delete(orm.MdSourceORM).where(
+                    and_(
+                        orm.MdSourceORM.sample_id == sample_id,
+                        orm.MdSourceORM.acquisition_id == acq_id,
+                    )
+                )
+            )
+        else:
+            md_payload = acq_file.md_source.model_dump(exclude_none=False)
+            md_payload["sample_id"] = sample_id
+            md_payload["acquisition_id"] = acq_id
+            session.merge(
+                orm.MdSourceORM(
+                    **_filter_to_columns(md_payload, orm.MdSourceORM)
+                )
+            )
+            keep_md_source_pks.add((sample_id, acq_id))
+
+        if acq_file.raw_tomogram is not None:
+            raw = acq_file.raw_tomogram
+            raw_payload = raw.model_dump(exclude_none=False, by_alias=False)
+            raw_payload["sample_id"] = sample_id
+            raw_payload["acquisition_id"] = acq_id
+            session.merge(
+                orm.RawTomogramORM(
+                    **_filter_to_columns(raw_payload, orm.RawTomogramORM)
+                )
+            )
+            keep_raw_tomo_pks.add((sample_id, acq_id, raw.tomogram_id))
+
+        for tomo in acq_file.post_processed_tomogram:
             tomo_payload = tomo.model_dump(exclude_none=False, by_alias=False)
             tomo_payload["sample_id"] = sample_id
             tomo_payload["acquisition_id"] = acq_id
-            aux = tomogram_aux.get(
-                (sample_id, acq_id, tomo.tomogram_id), {}
-            )
-            tomo_payload["voxel_spacing_angstrom"] = aux.get(
-                "voxel_spacing_angstrom"
-            )
-            tomo_payload["voxel_spacing_angstrom_implied"] = aux.get(
-                "voxel_spacing_angstrom_implied"
-            )
             session.merge(
-                orm.TomogramORM(
-                    **_filter_to_columns(tomo_payload, orm.TomogramORM)
+                orm.PostProcessedTomogramORM(
+                    **_filter_to_columns(
+                        tomo_payload, orm.PostProcessedTomogramORM
+                    )
                 )
             )
-            keep_tomo_pks.add((sample_id, acq_id, tomo.tomogram_id))
+            keep_post_tomo_pks.add((sample_id, acq_id, tomo.tomogram_id))
 
         for ann in acq_file.annotation:
             ann_payload = ann.model_dump(exclude_none=False, by_alias=False)
@@ -251,7 +292,14 @@ def upsert_sample_record(
             )
             keep_ts_pks.add((sample_id, acq_id, ts.tilt_series_id))
 
-    # Step 7: stale-row cleanup for multi-row child tables.
+    # ---- Step 8: stale-row cleanup for multi-row child tables -------------
+    _delete_stale_children(
+        session,
+        orm.MdRunORM,
+        sample_id,
+        pk_cols=("sample_id", "md_run_id"),
+        keep=keep_md_run_pks,
+    )
     _delete_stale_children(
         session,
         orm.AcquisitionORM,
@@ -261,10 +309,24 @@ def upsert_sample_record(
     )
     _delete_stale_children(
         session,
-        orm.TomogramORM,
+        orm.MdSourceORM,
+        sample_id,
+        pk_cols=("sample_id", "acquisition_id"),
+        keep=keep_md_source_pks,
+    )
+    _delete_stale_children(
+        session,
+        orm.RawTomogramORM,
         sample_id,
         pk_cols=("sample_id", "acquisition_id", "tomogram_id"),
-        keep=keep_tomo_pks,
+        keep=keep_raw_tomo_pks,
+    )
+    _delete_stale_children(
+        session,
+        orm.PostProcessedTomogramORM,
+        sample_id,
+        pk_cols=("sample_id", "acquisition_id", "tomogram_id"),
+        keep=keep_post_tomo_pks,
     )
     _delete_stale_children(
         session,
@@ -281,7 +343,7 @@ def upsert_sample_record(
         keep=keep_ts_pks,
     )
 
-    # ---- Step 5: extras refresh -------------------------------------------
+    # ---- Step 6: extras refresh -------------------------------------------
     session.execute(
         delete(orm.ExtrasORM).where(orm.ExtrasORM.sample_id == sample_id)
     )
@@ -297,7 +359,7 @@ def upsert_sample_record(
             )
         )
 
-    # ---- Step 6: scan_warnings refresh ------------------------------------
+    # ---- Step 7: scan_warnings refresh ------------------------------------
     session.execute(
         delete(orm.ScanWarningsORM).where(
             orm.ScanWarningsORM.sample_id == sample_id
@@ -338,10 +400,8 @@ def soft_delete_missing_samples(
       without writing.
     - Otherwise: ``UPDATE samples SET deleted_at = ? WHERE sample_id IN ?``.
 
-    Child entities (acquisitions / tomograms / annotations / aunp / sub-
-    tables / extras / scan_warnings / scan_state) are intentionally NOT
-    touched: soft delete preserves history so a sample can be resurrected
-    by a later upsert.
+    Child entities are intentionally NOT touched: soft delete preserves
+    history so a sample can be resurrected by a later upsert.
     """
     live_rows = (
         session.execute(

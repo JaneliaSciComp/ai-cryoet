@@ -44,7 +44,6 @@ def scan_root(
     prune_dry_run: bool = False,
     prune_safety_floor: float = 0.5,
     on_error: Literal["collect", "raise"] = "collect",
-    on_voxel_mismatch: Literal["warn", "error"] = "warn",
 ) -> ScanReport:
     """Walk ``root``, assemble + persist each sample, return a ScanReport.
 
@@ -87,7 +86,6 @@ def scan_root(
                     force=force,
                     soft_deleted_ids=soft_deleted_ids,
                     scan_run_id=scan_run_id,
-                    on_voxel_mismatch=on_voxel_mismatch,
                     report=report,
                 )
             except Exception as e:  # noqa: BLE001
@@ -146,7 +144,6 @@ def _scan_one_sample(
     force: bool,
     soft_deleted_ids: set[str],
     scan_run_id: str,
-    on_voxel_mismatch: str,
     report: ScanReport,
 ) -> None:
     """Per-sample scan inside its own transaction. Mutates ``report`` in place."""
@@ -168,9 +165,7 @@ def _scan_one_sample(
 
     # Assemble + persist in one transaction
     with session.begin():
-        result = assembler.assemble_sample(
-            sample_loc, on_voxel_mismatch=on_voxel_mismatch
-        )
+        result = assembler.assemble_sample(sample_loc)
         report.warnings.extend(result.warnings)
         report.conflicts.extend(result.conflicts)
 
@@ -179,9 +174,6 @@ def _scan_one_sample(
                 f"{sample_loc.sample_id}: {e}" for e in result.errors
             )
             return
-        # Even on success, errors may be present (e.g., voxel mismatch with
-        # on_voxel_mismatch='error'). Surface them to the report but still
-        # persist what we have.
         for e in result.errors:
             report.errors.append(f"{sample_loc.sample_id}: {e}")
 
@@ -189,7 +181,6 @@ def _scan_one_sample(
             session,
             result.record,
             extras=result.extras,
-            tomogram_aux=result.tomogram_aux,
             warnings=result.warnings,
             scan_run_id=scan_run_id,
         )

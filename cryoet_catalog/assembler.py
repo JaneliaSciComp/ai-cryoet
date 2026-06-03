@@ -1,10 +1,9 @@
 """Assembler: merges parser outputs for one sample into a validated SampleRecord.
 
 Inputs: a SampleLocation. Outputs: AssemblyResult with the merged record, the
-list of structured warnings (per Q7), any cross-source conflicts, the structured
-extras list (passed through from cryoet_schema.loader for persistence), and a
-tomogram_aux side-channel for DB-only values (voxel_spacing_angstrom from MRC
-header, voxel_spacing_angstrom_implied from pixel_size x voxel_bin).
+list of structured warnings (per Q7), any cross-source conflicts, and the
+structured extras list (passed through from cryoet_schema.loader for
+persistence).
 
 The assembler is the sole creator of ScanWarning objects; persistence is a
 dumb writer that stamps detected_at and scan_run_id at insert time.
@@ -15,7 +14,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from cryoet_schema import Acquisition, AcquisitionFile, SampleRecord
+from cryoet_schema import (
+    Acquisition,
+    AcquisitionFile,
+    PostProcessedTomogram,
+    RawTomogram,
+    SampleRecord,
+)
 from cryoet_schema.loader import ExtrasEntry
 
 from cryoet_catalog.discovery import (
@@ -42,9 +47,10 @@ ScanWarningCategory = Literal[
     "unparseable_mrc_header",
     "unparseable_zarr_attrs",
     "ambiguous_frame_extension",
-    "voxel_spacing_implied_mismatch",
     "tilt_series_id_collision",
     "tilt_series_layout_unknown",
+    "undeclared_tomogram_folder",
+    "undeclared_annotation_folder",
 ]
 
 
@@ -70,9 +76,6 @@ class AssemblyResult:
     errors: list[str] = field(default_factory=list)
     conflicts: list[FieldConflict] = field(default_factory=list)
     extras: list[ExtrasEntry] = field(default_factory=list)
-    tomogram_aux: dict[tuple[str, str, str], dict[str, Any]] = field(
-        default_factory=dict
-    )
 
 
 _TYPO_LOC_RE = re.compile(r"on (\w+) closely matches")
@@ -113,19 +116,10 @@ def _categorize_loader_warning(s: str) -> ScanWarning:
     return ScanWarning(category="extra_field", location="<unknown>", message=s)
 
 
-def _relative_close(a: float, b: float, rel_tol: float = 1e-3) -> bool:
-    """Relative tolerance comparison: |a-b| / max(|a|, |b|, 1) < rel_tol."""
-    return abs(a - b) / max(abs(a), abs(b), 1.0) < rel_tol
-
-
-def assemble_sample(
-    sample_loc: SampleLocation,
-    *,
-    on_voxel_mismatch: Literal["warn", "error"] = "warn",
-) -> AssemblyResult:
+def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
     """Assemble one sample's discovery + parser outputs into a SampleRecord.
 
-    Implements §4.6 merge rules 1-7:
+    Implements the per-sample merge:
 
     1. Load TOML via the schema loader; bail out (record=None) if the sample
        block is unrecoverable.
@@ -134,19 +128,13 @@ def assemble_sample(
        acquisition.toml). Emit categorized warnings.
     2. Per-acquisition: run MDOC + frame-extension parsers; fill in fields
        on the Acquisition Pydantic model that are still None.
-    3. Per-tomogram: run MRC header + OME-Zarr parsers; fill image_size_*,
-       mrc_path, zarr_path, zarr_axes/scale on the Tomogram model. MRC
-       voxel_spacing_angstrom goes to ``tomogram_aux`` (DB-only).
-    4. Cryoet-only voxel-spacing consistency check using a relative tolerance
-       (1e-3). Stores the implied value (pixel_size * voxel_bin) in
-       ``tomogram_aux``; on mismatch records a FieldConflict and emits a
-       warning (or appends to ``errors`` when ``on_voxel_mismatch='error'``).
-    5. Derived fields: per-tomogram ``is_raw = (derived_from == [])``.
-       Chromatin ``linker_length_fraction`` derivation is a no-op for v1
-       (the source field doesn't exist on the Chromatin model).
-    6. Per-annotation: assign sorted file paths from disk discovery onto
+    3. Per-tomogram (raw or post-processed): run MRC header + OME-Zarr
+       parsers; fill image_size_*, mrc_path, zarr_path, zarr_axes/scale.
+       Only PostProcessedTomogram records ``size_bytes`` (raw has no
+       size_bytes field in the schema).
+    4. Per-annotation: assign sorted file paths from disk discovery onto
        ``Annotation.files``.
-    7. Re-validate the populated record via
+    5. Re-validate the populated record via
        ``SampleRecord.model_validate(record.model_dump(by_alias=True))`` to
        catch anything we just violated. On failure, errors are recorded and
        record is set back to None.
@@ -168,7 +156,6 @@ def assemble_sample(
         return result
 
     record = load.record
-    sample_id = sample_loc.sample_id
 
     # ── Step 1.5: synthesize missing/unparseable acquisitions ────────────────
     fs_acquisitions = list(iter_acquisitions(sample_loc))
@@ -193,14 +180,12 @@ def assemble_sample(
         )
         synth = AcquisitionFile(
             acquisition=Acquisition(acquisition_id=acq_loc.acquisition_id),
-            tomogram=[],
-            annotation=[],
         )
         new_acquisitions[acq_loc.acquisition_id] = synth
 
     record = record.model_copy(update={"acquisitions": new_acquisitions})
 
-    # ── Steps 2, 3, 4, 5, 6: walk each acquisition ───────────────────────────
+    # ── Steps 2, 3, 4: walk each acquisition ─────────────────────────────────
     MDOC_FIELDS = (
         "pixel_size",
         "voltage",
@@ -221,7 +206,7 @@ def assemble_sample(
 
         # Record the acquisition directory once, regardless of whether the
         # acquisition was synthesized or had an acquisition.toml — powers the
-        # UI's copy-path / open-in-file-browser buttons (plan §5.2).
+        # UI's copy-path / open-in-file-browser buttons.
         if acq.path is None:
             acq.path = str(acq_loc.path)
 
@@ -258,7 +243,7 @@ def assemble_sample(
             # catalogues every series-level MDOC (one record each) and
             # collapses per-tilt MDOC groups (gouauxlab convention) into
             # single records. ``microscope`` / ``camera`` come from
-            # acquisition.toml only (plan §11.14).
+            # acquisition.toml only.
             ts_result = parse_tilt_series_dir(
                 acq_loc.frames_dir, acquisition_id=acq_loc.acquisition_id
             )
@@ -304,14 +289,20 @@ def assemble_sample(
             # output — the scanner is the canonical writer for this field.
             acq_file.tilt_series = ts_result.records
 
-        # Step 3 + 4: tomograms ---------------------------------------------
-        existing_tomos = {t.tomogram_id: t for t in acq_file.tomogram}
+        # Step 3: tomograms (raw + post share one id namespace) -------------
+        existing_tomos: dict[str, RawTomogram | PostProcessedTomogram] = {}
+        if acq_file.raw_tomogram is not None:
+            existing_tomos[acq_file.raw_tomogram.tomogram_id] = acq_file.raw_tomogram
+        for t in acq_file.post_processed_tomogram:
+            existing_tomos[t.tomogram_id] = t
+
         for tomo_loc in iter_tomograms(acq_loc):
             tomo = existing_tomos.get(tomo_loc.tomogram_id)
             if tomo is None:
                 # Tomogram folder on disk not declared in acquisition.toml.
                 # v1 does not synthesize tomograms; warn so a forgotten
-                # [[tomogram]] block doesn't go unnoticed.
+                # [raw_tomogram] / [[post_processed_tomogram]] block doesn't
+                # go unnoticed.
                 result.warnings.append(
                     ScanWarning(
                         category="undeclared_tomogram_folder",
@@ -321,18 +312,21 @@ def assemble_sample(
                         ),
                         message=(
                             f"folder '{tomo_loc.tomogram_id}' exists on disk but is "
-                            "not declared in acquisition.toml — add a [[tomogram]] "
-                            f"block with id = \"{tomo_loc.tomogram_id}\""
+                            "not declared in acquisition.toml — add a [raw_tomogram] "
+                            "or [[post_processed_tomogram]] block with "
+                            f"id = \"{tomo_loc.tomogram_id}\""
                         ),
                     )
                 )
                 continue
 
-            mrc_voxel_spacing: float | None = None
-            mrc_path_str: str | None = None
             if tomo_loc.mrc_files:
                 mrc_path_str = str(tomo_loc.mrc_files[0])
-                if tomo.size_bytes is None:
+                # size_bytes only exists on PostProcessedTomogram.
+                if (
+                    isinstance(tomo, PostProcessedTomogram)
+                    and tomo.size_bytes is None
+                ):
                     try:
                         tomo.size_bytes = tomo_loc.mrc_files[0].stat().st_size
                     except OSError:
@@ -356,11 +350,9 @@ def assemble_sample(
                         tomo.image_size_y = mrc_result.fields.get("image_size_y")
                     if tomo.image_size_z is None:
                         tomo.image_size_z = mrc_result.fields.get("image_size_z")
-                    mrc_voxel_spacing = mrc_result.fields.get("voxel_spacing_angstrom")
-            if tomo.mrc_path is None and mrc_path_str:
-                tomo.mrc_path = mrc_path_str
+                if tomo.mrc_path is None:
+                    tomo.mrc_path = mrc_path_str
 
-            zarr_path_str: str | None = None
             if tomo_loc.zarr_dirs:
                 zarr_path_str = str(tomo_loc.zarr_dirs[0])
                 zarr_result = read_zarr_attrs(tomo_loc.zarr_dirs[0])
@@ -380,65 +372,10 @@ def assemble_sample(
                         tomo.zarr_axes = zarr_result.fields.get("zarr_axes")
                     if tomo.zarr_scale is None:
                         tomo.zarr_scale = zarr_result.fields.get("zarr_scale")
-            if tomo.zarr_path is None and zarr_path_str:
-                tomo.zarr_path = zarr_path_str
+                if tomo.zarr_path is None:
+                    tomo.zarr_path = zarr_path_str
 
-            # Step 4: voxel-spacing implied vs MRC -------------------------
-            implied: float | None = None
-            pixel_size = acq.pixel_size
-            voxel_bin = tomo.voxel_bin
-            if pixel_size is not None and voxel_bin is not None:
-                implied = float(pixel_size) * float(voxel_bin)
-
-            if mrc_voxel_spacing is not None and implied is not None:
-                if not _relative_close(implied, mrc_voxel_spacing):
-                    severity = "error" if on_voxel_mismatch == "error" else "warning"
-                    location = (
-                        f"acquisitions.{acq_loc.acquisition_id}"
-                        f".tomogram[{tomo_loc.tomogram_id}]"
-                        ".voxel_spacing_angstrom"
-                    )
-                    result.conflicts.append(
-                        FieldConflict(
-                            location=location,
-                            category="voxel_spacing_implied_mismatch",
-                            values={
-                                "mrc_header": mrc_voxel_spacing,
-                                "implied (pixel_size*voxel_bin)": implied,
-                            },
-                            severity=severity,
-                        )
-                    )
-                    msg = (
-                        f"MRC header voxel_spacing_angstrom ({mrc_voxel_spacing}) "
-                        f"disagrees with implied pixel_size x voxel_bin ({implied})"
-                    )
-                    if severity == "error":
-                        result.errors.append(f"{location}: {msg}")
-                    else:
-                        result.warnings.append(
-                            ScanWarning(
-                                category="voxel_spacing_implied_mismatch",
-                                location=location,
-                                message=msg,
-                            )
-                        )
-
-            result.tomogram_aux[
-                (sample_id, acq_loc.acquisition_id, tomo_loc.tomogram_id)
-            ] = {
-                "voxel_spacing_angstrom": mrc_voxel_spacing,
-                "voxel_spacing_angstrom_implied": implied,
-            }
-
-        # Step 5: derived fields per tomogram -------------------------------
-        for tomo in acq_file.tomogram:
-            if tomo.is_raw is None:
-                tomo.is_raw = tomo.derived_from == []
-        # Chromatin.linker_length_fraction: no-op for v1 — the supposed
-        # ``sequence_footprint`` source field doesn't exist on Chromatin.
-
-        # Step 6: annotation files ------------------------------------------
+        # Step 4: annotation files ------------------------------------------
         existing_anns = {a.annotation_id: a for a in acq_file.annotation}
         for ann_loc in iter_annotations(acq_loc):
             ann = existing_anns.get(ann_loc.annotation_id)
@@ -461,7 +398,7 @@ def assemble_sample(
             if not ann.files:
                 ann.files = sorted(str(p) for p in ann_loc.files)
 
-    # ── Step 7: re-validate ──────────────────────────────────────────────────
+    # ── Step 5: re-validate ──────────────────────────────────────────────────
     try:
         record = SampleRecord.model_validate(record.model_dump(by_alias=True))
     except Exception as e:  # noqa: BLE001
