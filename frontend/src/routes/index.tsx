@@ -1,154 +1,179 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
 import {
   Box,
-  Button,
   Chip,
+  Divider,
   Grid,
   Stack,
   Typography,
 } from '@mui/material'
 import {
-  latestScanQueryOptions,
+  filtersOptionsQueryOptions,
+  samplesQueryOptions,
   statsOverviewQueryOptions,
-  useLatestScanQuery,
+  useFiltersOptionsQuery,
+  useSamplesQuery,
   useStatsOverviewQuery,
 } from '~/utils/queryOptions'
-import { ProjectSummaryCard } from '~/components/common/ProjectSummaryCard'
-import { StatCard } from '~/components/common/StatCard'
-import type { ScanOut } from '~/types'
+import { useDebounce } from '~/hooks/useDebounce'
+import { StatsBanner } from '~/components/landing/StatsBanner'
+import {
+  LandingFilters,
+  type LandingFilterState,
+} from '~/components/landing/LandingFilters'
+import { CoverageSummary } from '~/components/landing/CoverageSummary'
+import { SamplesPortalTable } from '~/components/landing/SamplesPortalTable'
+import type { SamplesSearchParams } from '~/utils/samplesSearch'
 
 export const Route = createFileRoute('/')({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(statsOverviewQueryOptions),
-      queryClient.ensureQueryData(latestScanQueryOptions),
+      queryClient.ensureQueryData(filtersOptionsQueryOptions),
+      queryClient.ensureQueryData(samplesQueryOptions({})),
     ]),
   component: Home,
 })
 
-function statusColor(
-  s: string,
-): 'success' | 'warning' | 'error' | 'default' {
-  return s === 'completed'
-    ? 'success'
-    : s === 'running'
-      ? 'warning'
-      : s === 'failed'
-        ? 'error'
-        : 'default'
-}
-
-function formatTimestamp(seconds: number | null | undefined): string {
-  if (seconds == null) return ''
-  return new Date(seconds * 1000).toLocaleString()
-}
-
-function LastScanLine({ scan }: { scan: ScanOut | null }) {
-  if (!scan) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        No scans yet.
-      </Typography>
-    )
+function toQueryParams(f: LandingFilterState): SamplesSearchParams {
+  return {
+    project: f.project,
+    data_source: f.data_source,
+    microscope: f.microscope ? [f.microscope] : undefined,
+    pixel_size_min: f.pixel_size_min,
+    pixel_size_max: f.pixel_size_max,
+    n_tilts_min: f.n_tilts_min,
+    n_tilts_max: f.n_tilts_max,
+    has_tomograms: f.has_tomograms,
   }
-  const when = formatTimestamp(scan.ended_at ?? scan.started_at)
-  const upserted = scan.samples_upserted ?? 0
-  return (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
-      flexWrap="wrap"
-      useFlexGap
-    >
-      <Typography variant="body2" color="text.secondary">
-        Last scan: {when} —
-      </Typography>
-      <Chip
-        size="small"
-        color={statusColor(scan.status)}
-        label={scan.status}
-      />
-      <Typography variant="body2" color="text.secondary">
-        ({upserted} upserted)
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        ·
-      </Typography>
-      <Link to="/scans" style={{ textDecoration: 'none' }}>
-        <Typography variant="body2" color="primary">
-          View all scans
-        </Typography>
-      </Link>
-    </Stack>
-  )
+}
+
+function activeChips(
+  f: LandingFilterState,
+): Array<{ key: keyof LandingFilterState; label: string }> {
+  const chips: Array<{ key: keyof LandingFilterState; label: string }> = []
+  if (f.project) chips.push({ key: 'project', label: `Project: ${f.project}` })
+  if (f.data_source)
+    chips.push({ key: 'data_source', label: `Data source: ${f.data_source}` })
+  if (f.microscope)
+    chips.push({ key: 'microscope', label: `Microscope: ${f.microscope}` })
+  if (f.pixel_size_min != null)
+    chips.push({ key: 'pixel_size_min', label: `Pixel size ≥ ${f.pixel_size_min}` })
+  if (f.pixel_size_max != null)
+    chips.push({ key: 'pixel_size_max', label: `Pixel size ≤ ${f.pixel_size_max}` })
+  if (f.n_tilts_min != null)
+    chips.push({ key: 'n_tilts_min', label: `Tilts ≥ ${f.n_tilts_min}` })
+  if (f.n_tilts_max != null)
+    chips.push({ key: 'n_tilts_max', label: `Tilts ≤ ${f.n_tilts_max}` })
+  if (f.has_tomograms)
+    chips.push({ key: 'has_tomograms', label: 'Has tomograms' })
+  return chips
 }
 
 function Home() {
   const { data: stats } = useStatsOverviewQuery()
-  const { data: latestScan } = useLatestScanQuery()
-  const { totals, by_project } = stats
+  const { data: filterOptions } = useFiltersOptionsQuery()
+
+  const [filters, setFilters] = useState<LandingFilterState>({})
+  const debouncedFilters = useDebounce(filters, 300)
+  const queryParams = useMemo(
+    () => toQueryParams(debouncedFilters),
+    [debouncedFilters],
+  )
+  const { data: samples, isFetching } = useSamplesQuery(queryParams)
+  const rows = samples ?? []
+
+  const patch = (p: Partial<LandingFilterState>) =>
+    setFilters((prev) => ({ ...prev, ...p }))
+  const clearKey = (key: keyof LandingFilterState) =>
+    setFilters((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  const reset = () => setFilters({})
+
+  const chips = activeChips(filters)
 
   return (
     <Stack spacing={4}>
-      <Typography variant="h3" gutterBottom>
-        CryoET Catalog
-      </Typography>
+      <StatsBanner stats={stats} />
 
-      {by_project.length > 0 ? (
-        <Box>
-          <Typography variant="h5" gutterBottom>
-            Projects
-          </Typography>
-          <Grid container spacing={2}>
-            {by_project.map((row) => (
-              <Grid item xs={12} sm={6} md={4} key={row.project}>
-                <ProjectSummaryCard row={row} />
-              </Grid>
-            ))}
-          </Grid>
-        </Box>
-      ) : null}
-
-      <Box>
-        <Typography variant="h5" gutterBottom>
-          Totals
-        </Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={6} sm={4} md={2.4}>
-            <StatCard label="Samples" value={totals.samples} />
-          </Grid>
-          <Grid item xs={6} sm={4} md={2.4}>
-            <StatCard label="Acquisitions" value={totals.acquisitions} />
-          </Grid>
-          <Grid item xs={6} sm={4} md={2.4}>
-            <StatCard label="Tilt series" value={totals.tilt_series} />
-          </Grid>
-          <Grid item xs={6} sm={4} md={2.4}>
-            <StatCard label="Tomograms" value={totals.tomograms} />
-          </Grid>
-          <Grid item xs={6} sm={4} md={2.4}>
-            <StatCard label="Annotations" value={totals.annotations} />
-          </Grid>
+      <Grid container spacing={4}>
+        <Grid item xs={12} md={3}>
+          <LandingFilters
+            options={filterOptions}
+            value={filters}
+            onChange={patch}
+            onReset={reset}
+          />
         </Grid>
-      </Box>
 
-      <Box>
-        <Typography variant="h5" gutterBottom>
-          Browse
-        </Typography>
-        <Stack direction="row" spacing={2}>
-          <Button variant="outlined" component={Link} to="/samples">
-            Browse samples
-          </Button>
-          <Button variant="outlined" component={Link} to="/scans">
-            Scan history
-          </Button>
-        </Stack>
-      </Box>
+        <Grid item xs={12} md={9}>
+          <Stack spacing={3}>
+            <Box>
+              <Typography variant="h6">
+                Showing {rows.length.toLocaleString()} of{' '}
+                {stats.totals.samples.toLocaleString()} samples
+              </Typography>
+              {chips.length > 0 ? (
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ mt: 1 }}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    Filtered by:
+                  </Typography>
+                  {chips.map((c) => (
+                    <Chip
+                      key={c.key}
+                      size="small"
+                      label={c.label}
+                      onDelete={() => clearKey(c.key)}
+                    />
+                  ))}
+                  <Chip
+                    size="small"
+                    color="primary"
+                    label="Clear all"
+                    onClick={reset}
+                  />
+                </Stack>
+              ) : null}
+            </Box>
 
-      <Box>
-        <LastScanLine scan={latestScan} />
+            <Divider />
+
+            <CoverageSummary rows={rows} />
+
+            <Divider />
+
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                Samples ({rows.length.toLocaleString()})
+              </Typography>
+              <SamplesPortalTable rows={rows} loading={isFetching} />
+            </Box>
+          </Stack>
+        </Grid>
+      </Grid>
+
+      <Box
+        sx={{
+          bgcolor: 'primary.dark',
+          color: 'common.white',
+          borderRadius: 2,
+          px: { xs: 2, md: 4 },
+          py: 2,
+          textAlign: 'right',
+        }}
+      >
+        <Typography variant="body2">HHMI Janelia</Typography>
       </Box>
     </Stack>
   )
