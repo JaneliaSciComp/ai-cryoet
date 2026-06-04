@@ -270,6 +270,29 @@ class ScanOut(BaseModel):
     samples_failed: int | None = None
 
 
+class ScanSampleOut(BaseModel):
+    """A sample's outcome within a scan run (for the /manage view).
+
+    ``data_source``/``project``/``type`` are joined from ``samples`` when the
+    sample still exists; they are ``None`` for failed samples that were never
+    persisted. ``detail`` carries the error message for failed outcomes.
+    """
+
+    sample_id: str
+    data_source: str | None = None
+    project: str | None = None
+    type: str | None = None
+    warning_count: int = 0
+    detail: str | None = None
+
+
+class SampleWarningsGroup(BaseModel):
+    """All warnings for a single sample in the latest completed scan."""
+
+    sample_id: str
+    warnings: list[str]
+
+
 class ExtrasSummaryRow(BaseModel):
     entity_type: str
     key: str

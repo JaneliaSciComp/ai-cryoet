@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from cryoet_catalog import db, orm
 from cryoet_catalog.api.deps import get_session
 from cryoet_catalog.api.main import create_app
+from cryoet_schema.schema import DataSource, Project
 
 
 # Fixed reference times so ordering assertions are deterministic.
@@ -75,6 +76,50 @@ def client(tmp_path):
             samples_skipped=None,
             samples_failed=None,
         ))
+
+        # Two samples that exist in the catalog, referenced by the completed
+        # scan's membership + warnings.
+        s.add(orm.SampleORM(
+            sample_id="sample-1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+            type="type-a",
+        ))
+        s.add(orm.SampleORM(
+            sample_id="sample-2",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+            type="type-b",
+        ))
+
+        # Warnings for the completed scan: sample-1 has 3, sample-2 has 5.
+        for i in range(3):
+            s.add(orm.ScanWarningsORM(
+                sample_id="sample-1", category="cat", location="loc",
+                message=f"sample-1 warning {i + 1}",
+                detected_at=_T_COMPLETED_END, scan_run_id="run-completed",
+            ))
+        for i in range(5):
+            s.add(orm.ScanWarningsORM(
+                sample_id="sample-2", category="cat", location="loc",
+                message=f"sample-2 warning {i + 1}",
+                detected_at=_T_COMPLETED_END, scan_run_id="run-completed",
+            ))
+
+        # Per-sample membership for the completed scan.
+        s.add(orm.ScanSamplesORM(
+            scan_run_id="run-completed", sample_id="sample-2",
+            outcome="upserted",
+        ))
+        s.add(orm.ScanSamplesORM(
+            scan_run_id="run-completed", sample_id="sample-1",
+            outcome="skipped",
+        ))
+        s.add(orm.ScanSamplesORM(
+            scan_run_id="run-completed", sample_id="ghost-sample",
+            outcome="failed", detail="assemble failed: bad metadata",
+        ))
+
         s.commit()
     finally:
         s.close()
@@ -157,3 +202,71 @@ def test_get_latest_completed_still_routes(client):
     # ``/{scan_run_id}`` path-param route.
     assert body["scan_run_id"] == "run-completed"
     assert body["status"] == "completed"
+
+
+# ── GET /scans/latest/warnings ────────────────────────────────────────────
+
+
+def test_latest_warnings_grouped_by_sample(client):
+    r = client.get("/scans/latest/warnings")
+    assert r.status_code == 200
+    body = r.json()
+    by_sample = {g["sample_id"]: g["warnings"] for g in body}
+    assert set(by_sample) == {"sample-1", "sample-2"}
+    assert by_sample["sample-1"] == [
+        "sample-1 warning 1",
+        "sample-1 warning 2",
+        "sample-1 warning 3",
+    ]
+    assert len(by_sample["sample-2"]) == 5
+
+
+def test_latest_warnings_must_route_before_id(client):
+    # Regression: ``/latest/warnings`` must not be swallowed by ``/{scan_run_id}``.
+    r = client.get("/scans/latest/warnings")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+# ── GET /scans/latest/samples ─────────────────────────────────────────────
+
+
+def test_latest_samples_upserted_joins_metadata(client):
+    r = client.get("/scans/latest/samples", params={"outcome": "upserted"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    row = body[0]
+    assert row["sample_id"] == "sample-2"
+    assert row["data_source"] == "experimental"
+    assert row["project"] == "chromatin"
+    assert row["type"] == "type-b"
+    assert row["warning_count"] == 5
+    assert row["detail"] is None
+
+
+def test_latest_samples_skipped(client):
+    r = client.get("/scans/latest/samples", params={"outcome": "skipped"})
+    assert r.status_code == 200
+    body = r.json()
+    assert [row["sample_id"] for row in body] == ["sample-1"]
+    assert body[0]["warning_count"] == 3
+
+
+def test_latest_samples_failed_has_detail_and_null_metadata(client):
+    r = client.get("/scans/latest/samples", params={"outcome": "failed"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    row = body[0]
+    # Failed sample was never persisted — metadata null, error in detail.
+    assert row["sample_id"] == "ghost-sample"
+    assert row["data_source"] is None
+    assert row["project"] is None
+    assert row["warning_count"] == 0
+    assert row["detail"] == "assemble failed: bad metadata"
+
+
+def test_latest_samples_rejects_unknown_outcome(client):
+    r = client.get("/scans/latest/samples", params={"outcome": "bogus"})
+    assert r.status_code == 422
