@@ -23,6 +23,7 @@ data
 node_modules
 dist
 .tanstack
+.vite
 .env.local
 .env.*.local
 
