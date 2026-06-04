@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   Box,
   Breadcrumbs,
-  Button,
   Divider,
   Grid,
   Link,
@@ -10,11 +9,10 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import LinkIcon from '@mui/icons-material/Link'
 import type { SampleDetail } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
-import { CopyIconButton } from '~/components/common/CopyIconButton'
 import { ThumbnailPlaceholder } from '~/components/common/Thumbnail'
+import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
 import { SampleAcquisitionsTable } from '~/components/samples/SampleAcquisitionsTable'
 import {
   sampleDetailQueryOptions,
@@ -22,21 +20,6 @@ import {
   useSampleDetailQuery,
   useSampleWarningsQuery,
 } from '~/utils/queryOptions'
-
-// Fileglancer browses by share name: the data mount `/groups/cryoet/cryoet`
-// is exposed as the share `groups_cryoet_cryoet`, followed by the path relative
-// to that mount. e.g. `/groups/cryoet/cryoet/data/x` ->
-// `.../browse/groups_cryoet_cryoet/data/x`.
-const FILEGLANCER_BASE = 'https://fileglancer.int.janelia.org/browse'
-const FILEGLANCER_MOUNT = '/groups/cryoet/cryoet'
-const FILEGLANCER_SHARE = 'groups_cryoet_cryoet'
-
-function toFileglancerUrl(absPath: string): string | null {
-  if (absPath !== FILEGLANCER_MOUNT && !absPath.startsWith(`${FILEGLANCER_MOUNT}/`))
-    return null
-  const rel = absPath.slice(FILEGLANCER_MOUNT.length) // leading '/' or empty
-  return `${FILEGLANCER_BASE}/${FILEGLANCER_SHARE}${rel}`
-}
 
 export const Route = createFileRoute('/samples/$sampleId')({
   loader: ({ context: { queryClient }, params: { sampleId } }) =>
@@ -107,10 +90,6 @@ function SampleDetailRoute() {
   const { data: warnings } = useSampleWarningsQuery(sampleId)
 
   const samplePath = sample.path ?? deriveSamplePath(sample)
-  const fileglancerLink = samplePath ? toFileglancerUrl(samplePath) : null
-  const metadataLink = samplePath
-    ? toFileglancerUrl(`${samplePath}/sample.toml`)
-    : null
 
   return (
     <Stack spacing={3}>
@@ -162,41 +141,12 @@ function SampleDetailRoute() {
         </Grid>
 
         <Grid item xs={12} md={8}>
-          <Stack spacing={2}>
-            {samplePath ? (
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                <Typography
-                  variant="body2"
-                  sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
-                >
-                  {samplePath}
-                </Typography>
-                {fileglancerLink ? (
-                  <CopyIconButton
-                    text={fileglancerLink}
-                    tooltip="Copy Fileglancer link"
-                    icon={<LinkIcon fontSize="small" />}
-                  />
-                ) : null}
-                <CopyIconButton text={samplePath} tooltip="Copy path" />
-              </Stack>
-            ) : null}
-
+          <FileglancerPathSection
+            path={samplePath}
+            metadataFilename="sample.toml"
+          >
             <SampleContentsCard sample={sample} />
-
-            {metadataLink ? (
-              <Box>
-                <Button
-                  variant="contained"
-                  href={metadataLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View metadata in Fileglancer
-                </Button>
-              </Box>
-            ) : null}
-          </Stack>
+          </FileglancerPathSection>
         </Grid>
       </Grid>
 
