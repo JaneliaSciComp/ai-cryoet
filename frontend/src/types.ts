@@ -249,3 +249,21 @@ export type ExtrasSummaryRow = {
   key: string
   count: number
 }
+
+// A sample's outcome within a scan run (drives the /manage tables).
+// data_source/project/type are null for failed samples never persisted;
+// detail carries the error message for failed outcomes.
+export type ScanSampleOut = {
+  sample_id: string
+  data_source: string | null
+  project: string | null
+  type: string | null
+  warning_count: number
+  detail: string | null
+}
+
+// All warning messages for a single sample in the latest completed scan.
+export type SampleWarningsGroup = {
+  sample_id: string
+  warnings: string[]
+}

@@ -13,10 +13,25 @@ import type {
   FiltersOptionsOut,
   SampleDetail,
   SampleSummary,
+  SampleWarningsGroup,
   ScanOut,
+  ScanSampleOut,
   StatsOverviewOut,
   WarningOut,
 } from '~/types'
+
+// Endpoints scoped to "the latest completed scan" return 404 when no scan has
+// completed yet. Callers want an empty list in that case rather than an error.
+async function fetchOrEmpty<T>(path: string): Promise<T[]> {
+  try {
+    return await apiFetch<T[]>(path)
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('404')) return []
+    throw err
+  }
+}
+
+type ScanOutcome = 'upserted' | 'skipped' | 'failed'
 
 // ── /samples list ────────────────────────────────────────────────────────────
 
@@ -117,4 +132,28 @@ export const latestScanQueryOptions = queryOptions({
 
 export function useLatestScanQuery() {
   return useSuspenseQuery(latestScanQueryOptions)
+}
+
+// ── /scans/latest/warnings (grouped by sample) ───────────────────────────────
+
+export const latestScanWarningsQueryOptions = queryOptions({
+  queryKey: ['scans', 'latest', 'warnings'],
+  queryFn: () => fetchOrEmpty<SampleWarningsGroup>('/scans/latest/warnings'),
+})
+
+export function useLatestScanWarningsQuery() {
+  return useSuspenseQuery(latestScanWarningsQueryOptions)
+}
+
+// ── /scans/latest/samples?outcome= ───────────────────────────────────────────
+
+export const latestScanSamplesQueryOptions = (outcome: ScanOutcome) =>
+  queryOptions({
+    queryKey: ['scans', 'latest', 'samples', outcome],
+    queryFn: () =>
+      fetchOrEmpty<ScanSampleOut>(`/scans/latest/samples?outcome=${outcome}`),
+  })
+
+export function useLatestScanSamplesQuery(outcome: ScanOutcome) {
+  return useSuspenseQuery(latestScanSamplesQueryOptions(outcome))
 }
