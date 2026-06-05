@@ -130,6 +130,7 @@ def upsert_sample_record(
     extras: list[ExtrasEntry],
     warnings: list[ScanWarning],
     scan_run_id: str,
+    disk_size_bytes: int | None = None,
 ) -> None:
     """Per-sample upsert. Steps:
 
@@ -160,6 +161,7 @@ def upsert_sample_record(
     # Resurrect on every upsert — if the row was previously soft-deleted, the
     # filesystem reappearing must clear the tombstone.
     sample_payload["deleted_at"] = None
+    sample_payload["disk_size_bytes"] = disk_size_bytes
     session.merge(
         orm.SampleORM(**_filter_to_columns(sample_payload, orm.SampleORM))
     )

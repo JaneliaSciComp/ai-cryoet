@@ -52,6 +52,8 @@ class SampleORM(Base):
     path: Mapped[str | None] = mapped_column(String, nullable=True)
     # DB-only: soft-delete timestamp
     deleted_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # DB-only: true on-disk directory size cached by the scanner
+    disk_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ChromatinORM(Base):

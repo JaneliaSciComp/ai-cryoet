@@ -188,12 +188,14 @@ def _scan_one_sample(
         for e in result.errors:
             report.errors.append(f"{sample_loc.sample_id}: {e}")
 
+        disk_size = discovery.dir_size_bytes(sample_loc.path)
         persistence.upsert_sample_record(
             session,
             result.record,
             extras=result.extras,
             warnings=result.warnings,
             scan_run_id=scan_run_id,
+            disk_size_bytes=disk_size,
         )
         # Update mtime state for every parse target.
         for p in parse_targets:

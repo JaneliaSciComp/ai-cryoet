@@ -7,6 +7,7 @@ orchestrator (scanner.py) drives the parsers from these locations.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -55,6 +56,31 @@ class AnnotationLocation:
 def _is_zarr_dir(path: Path) -> bool:
     name = path.name
     return any(name.endswith(suffix) for suffix in ZARR_DIR_SUFFIXES)
+
+
+def dir_size_bytes(path: Path) -> int:
+    """Total logical size (bytes) of everything under ``path``, recursively.
+
+    Mirrors aicryoet-tools' approach: walk with os.scandir, sum st_size of
+    regular files, do NOT follow symlinks, and silently skip directories we
+    can't read (PermissionError / OSError on NFS). Counts all files on disk —
+    frames, MDOCs, raw + post tomograms, OME-Zarr chunks, annotations, gain
+    refs — not just cataloged ones.
+    """
+    total = 0
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                try:
+                    if entry.is_file(follow_symlinks=False):
+                        total += entry.stat(follow_symlinks=False).st_size
+                    elif entry.is_dir(follow_symlinks=False):
+                        total += dir_size_bytes(Path(entry.path))
+                except OSError:
+                    continue  # entry vanished / unreadable mid-walk
+    except (PermissionError, FileNotFoundError, NotADirectoryError):
+        pass
+    return total
 
 
 def iter_samples(root: Path) -> Iterator[SampleLocation]:

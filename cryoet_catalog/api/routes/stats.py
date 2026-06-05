@@ -138,19 +138,14 @@ def get_stats_overview(session: Session = Depends(get_session)):
             raw_tomos_by_project.get(p, 0) + post_tomos_by_project.get(p, 0)
         )
 
-    # size_bytes per project — only PostProcessedTomogram has size_bytes
-    # (raw has no such field in the schema).
+    # size_bytes per project — true on-disk size cached per sample by the
+    # scanner (discovery.dir_size_bytes). Live samples only.
     size_by_project = dict(session.execute(
         select(
             orm.SampleORM.project,
-            func.coalesce(func.sum(
-                func.coalesce(orm.PostProcessedTomogramORM.size_bytes, 0)
-            ), 0),
-        )
-        .select_from(orm.PostProcessedTomogramORM)
-        .join(
-            orm.SampleORM,
-            orm.SampleORM.sample_id == orm.PostProcessedTomogramORM.sample_id,
+            func.coalesce(
+                func.sum(func.coalesce(orm.SampleORM.disk_size_bytes, 0)), 0
+            ),
         )
         .where(orm.SampleORM.deleted_at.is_(None))
         .group_by(orm.SampleORM.project)
