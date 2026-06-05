@@ -18,7 +18,7 @@ Skipping the editor setup is fine — `pixi run validate {sample_dir}` (step 5) 
 
 ### 1. Lay out the sample directory
 
-Copy the starter directory `templates/sample_name/` into the `data/` directory. The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
+Copy the starter directory that matches your data type — `templates/sample_name_experimental/` for experimental cryoET data or `templates/sample_name_simulation/` for MD + synthetic cryoET data — into the `data/` directory. The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
 
 Replace `sample_name` with the desired sample id.
 
@@ -46,7 +46,7 @@ gouauxlab_20250418_AMmilled29-2/
 
 ### 4. Append to the processing log as outputs are produced
 
-Each `acquisition.toml` grows over time. For each new output — a new tomogram reconstruction, a denoised version, a segmentation, an STA result — append a new `[[tomogram]]` or `[[annotation]]` entry to the relevant acquisition's file.
+Each `acquisition.toml` grows over time. Record the raw reconstruction once in `[raw_tomogram]`; for each new output — a denoised version, a segmentation, an STA result — append a new `[[post_processed_tomogram]]` or `[[annotation]]` entry to the relevant acquisition's file.
 
 **Rules:**
 - Do **not** delete or modify a tomogram or annotation entry once added. Reprocessing produces a **new** entry with a new `id`, placed at the bottom of the file.
@@ -57,7 +57,19 @@ Each `acquisition.toml` grows over time. For each new output — a new tomogram 
 
 The validate script checks `sample.toml` and every `acquisition.toml` under the sample directory and reports any fields that violate the schema. Validation also runs during database ingestion — see `cryoet_schema/schema_info.md` for the full list of fields that will be stored, including those auto-derived from MDOCs, MRC headers, OME-Zarr metadata, and directory structure.
 
-#### Option 1: Without pixi (pure Python)
+#### Option 1: With pixi
+
+1. [Install pixi](https://pixi.prefix.dev/latest/installation/).
+2. The first time you use pixi for this repo, run `pixi install` to install the environment.
+3. Run the validation with this command:
+
+```
+pixi run validate {sample_dir}
+```
+
+#### Option 2: Without pixi
+
+Alternatively, you can run the validator with any Python ≥3.11 — the only runtime dependencies are `pydantic` and `rapidfuzz`, both pure-Python.
 
 For example, using Python's built-in `venv` module:
 
@@ -69,19 +81,9 @@ pip install -e .
 python -m cryoet_schema.validate {sample_dir}
 ```
 
-`pip install -e .` reads `[project.dependencies]` from `pyproject.toml`. 
+`pip install -e .` reads the same dependency list pixi uses (`[project.dependencies]` in `pyproject.toml`).
 
 [`uv`](https://docs.astral.sh/uv/) works as a drop-in for `pip`/`venv`.
-
-#### Option 2: With pixi
-
-1. [Install pixi](https://pixi.prefix.dev/latest/installation/).
-2. The first time you use pixi for this repo, run `pixi install` to install the environment.
-3. Run the validation with this command:
-
-```
-pixi run validate {sample_dir}
-```
 
 ---
 
@@ -109,26 +111,36 @@ pixi run validate {sample_dir}
           *.mrc / *.zarr
 ```
 
-### MD simulation data
+### MD simulation (sample) and associated synthetic cryoET (acquisitions) data
 
 ```
 {sample_name}/
   sample.toml                                # sample-level conditions + simulation params
-  {acquisition_name}/
-    acquisition.toml                         # per-acquisition params + processing log
-    Trajectories/                            # raw simulation output
-    Snapshots/                               # extracted conformations
-    SyntheticCryoET/                         # simulated tomograms generated from snapshots
-      {processing_id}/
-        *.mrc
-        *.zarr
+  md_runs/                                   # simulation only: one subfolder per MD run
+    {md_run_id}/                             # name = [[md_run]].id in sample.toml
+      Trajectories/                          # raw simulation output
+      Snapshots/                             # extracted conformations (frames)
+  {acquisition_name}/                        # synthetic cryoET from one md_run frame
+    acquisition.toml                         # per-acquisition params + [md_source]
+    TiltSeries/
+    Reconstructions/
+      Tomograms/
+        {processing_id}/                     # one subfolder per processing pipeline
+          *.mrc
+          *.zarr
+      Annotations/
+        {annotation_id}/
+          *.star
+          *.mrc / *.zarr
 ```
+
+For simulation samples, the raw MD data lives under `md_runs/{md_run_id}/` — one subfolder per `[[md_run]]` block in `sample.toml`, holding that run's trajectories and extracted frames. Each acquisition is the synthetic cryoET generated from a single frame of one run; its directory sits at the top level alongside `md_runs/` (the same level as experimental acquisitions), and its `[md_source]` block records which `md_run_id` and `frame` it came from. The `md_run_id` must match one of the sample's `[[md_run]]` ids; both `[[md_run]]` and `[md_source]` are rejected on experimental samples.
 
 The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chanzuckerberg.github.io/cryoet-data-portal/stable/cryoet_data_portal_docsite_data.html) at the Sample > Acquisition > (Frames, Gains, TiltSeries, Alignments, Reconstructions) level, with three deliberate departures:
 
 - **Two metadata files per sample.** Sample-level conditions live in `sample.toml` at the sample root. Per-acquisition parameters and the processing log live in `{acquisition}/acquisition.toml`. Fields derivable from MDOC files and file headers are authored in neither file; the ingest pipeline will read them directly.
 - **Tomograms are kept in per-pipeline subfolders** (e.g., `bp_3dctf_bin4/`, `bp_3dctf_bin4_ddw/`) rather than flattened into `Tomograms/`. This avoids filename collisions when new processing versions are added, and the folder name acts as the `processing_id`.
-- **No `VoxelSpacing{N}/` subfolder.** Voxel binning is recorded directly in `acquisition.toml` (as `voxel_bin` on each `[[tomogram]]` entry); the absolute voxel spacing in Ångström is read from the MRC header by the catalog scanner. Keeping voxel info out of the path avoids duplicating information that lives in the file itself.
+- **No `VoxelSpacing{N}/` subfolder.** Voxel spacing in Ångström is recorded directly in `acquisition.toml` (as `voxel_size` on the `[raw_tomogram]` and each `[[post_processed_tomogram]]` entry); the catalog scanner also reads the value straight from the MRC header for cross-checking. Keeping voxel info out of the path avoids duplicating information that lives in the file itself.
 
 Simulation data uses a parallel structure with domain-appropriate folder names. Both share the same schema, which is what makes cross-comparison possible.
 
@@ -192,7 +204,7 @@ One file per sample, placed at the root of the sample directory. Contains only w
 One file per acquisition, placed at the root of each acquisition directory. It contains:
 
 1. Researcher-authored imaging parameters not available from MDOC files (nominal resolution, nominal tilt spacing, target defocus range, energy filter model, phase plate, microscope model).
-2. A **processing log**: `[[tomogram]]` and `[[annotation]]` entries appended over time as processing produces new outputs.
+2. A **processing log**: a `[raw_tomogram]` table plus `[[post_processed_tomogram]]` and `[[annotation]]` entries appended over time as processing produces new outputs.
 
 The acquisition directory name *is* the acquisition's identity, so `acquisition.id` is omitted from the file.
 
@@ -202,7 +214,7 @@ The acquisition directory name *is* the acquisition's identity, so `acquisition.
 
 ### Required fields
 
-Only two fields are required for all entries: `sample.data_source` and `sample.project`. All other fields are optional, allowing the schema to grow as researcher needs settle. These two fields are also the only enums — all other fields are open text, with the potential to be tightened into enums later based on how researchers use them.
+Only three fields are required for all entries: `sample.lab_name`, `sample.data_source`, and `sample.project`. All other fields are optional, allowing the schema to grow as researcher needs settle. These three fields are also the only enums — all other fields are open text, with the potential to be tightened into enums later based on how researchers use them.
 
 ### Folder naming rules
 
@@ -237,16 +249,16 @@ Each Pydantic model is configured with `extra="allow"`, so unknown keys are pres
 ```toml
 # In .../Position_86/acquisition.toml
 
-# Raw reconstruction
-[[tomogram]]
+# Raw reconstruction (at most one [raw_tomogram] per acquisition)
+[raw_tomogram]
 id                     = "bp_3dctf_bin4"
-voxel_bin              = 4
+voxel_size             = 4.0
 derived_from           = []
 
 # Denoised version derived from the raw
-[[tomogram]]
+[[post_processed_tomogram]]
 id                     = "bp_3dctf_bin4_ddw"
-voxel_bin              = 4
+voxel_size             = 4.0
 derived_from           = ["bp_3dctf_bin4"]
 
 # Segmentation run on the denoised tomogram
