@@ -1,17 +1,11 @@
-import { useMemo, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
-import {
-  Box,
-  Breadcrumbs,
-  Link,
-  Stack,
-  Typography,
-} from '@mui/material'
-import { CustomLink } from '~/components/CustomLink'
-import { ManageSection } from '~/components/manage/ManageSection'
-import { LastScanCard } from '~/components/manage/LastScanCard'
-import { SamplesWithWarningsTable } from '~/components/manage/SamplesWithWarningsTable'
-import { ScanSamplesTable } from '~/components/manage/ScanSamplesTable'
+import { useMemo, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Box, Breadcrumbs, Link, Stack, Typography } from "@mui/material";
+import { CustomLink } from "~/components/CustomLink";
+import { ManageSection } from "~/components/manage/ManageSection";
+import { LastScanCard } from "~/components/manage/LastScanCard";
+import { SamplesWithWarningsTable } from "~/components/manage/SamplesWithWarningsTable";
+import { ScanSamplesTable } from "~/components/manage/ScanSamplesTable";
 import {
   latestScanQueryOptions,
   latestScanSamplesQueryOptions,
@@ -19,59 +13,64 @@ import {
   useLatestScanQuery,
   useLatestScanSamplesQuery,
   useLatestScanWarningsQuery,
-} from '~/utils/queryOptions'
+} from "~/utils/queryOptions";
 
-export const Route = createFileRoute('/manage/')({
+export const Route = createFileRoute("/manage/")({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(latestScanQueryOptions),
       queryClient.ensureQueryData(latestScanWarningsQueryOptions),
-      queryClient.ensureQueryData(latestScanSamplesQueryOptions('upserted')),
-      queryClient.ensureQueryData(latestScanSamplesQueryOptions('skipped')),
-      queryClient.ensureQueryData(latestScanSamplesQueryOptions('failed')),
+      queryClient.ensureQueryData(latestScanSamplesQueryOptions("upserted")),
+      queryClient.ensureQueryData(latestScanSamplesQueryOptions("skipped")),
+      queryClient.ensureQueryData(latestScanSamplesQueryOptions("failed")),
     ]),
   component: ManageRoute,
-})
+});
 
 // The four expandable sections, keyed so a single "Expand/Collapse all" control
 // can drive them together. All default to open.
-type SectionKey = 'warnings' | 'upserted' | 'skipped' | 'failed'
-const SECTION_KEYS: SectionKey[] = ['warnings', 'upserted', 'skipped', 'failed']
+type SectionKey = "warnings" | "upserted" | "skipped" | "failed";
+const SECTION_KEYS: SectionKey[] = [
+  "warnings",
+  "upserted",
+  "skipped",
+  "failed",
+];
 
 function ManageRoute() {
-  const { data: latestScan } = useLatestScanQuery()
-  const { data: warningGroups } = useLatestScanWarningsQuery()
-  const { data: upserted } = useLatestScanSamplesQuery('upserted')
-  const { data: skipped } = useLatestScanSamplesQuery('skipped')
-  const { data: failed } = useLatestScanSamplesQuery('failed')
+  const { data: latestScan } = useLatestScanQuery();
+  const { data: warningGroups } = useLatestScanWarningsQuery();
+  const { data: upserted } = useLatestScanSamplesQuery("upserted");
+  const { data: skipped } = useLatestScanSamplesQuery("skipped");
+  const { data: failed } = useLatestScanSamplesQuery("failed");
 
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
     warnings: true,
     upserted: true,
     skipped: true,
     failed: true,
-  })
+  });
 
   const setSection = (key: SectionKey) => (value: boolean) =>
-    setExpanded((prev) => ({ ...prev, [key]: value }))
+    setExpanded((prev) => ({ ...prev, [key]: value }));
 
-  const allExpanded = SECTION_KEYS.every((k) => expanded[k])
+  const allExpanded = SECTION_KEYS.every((k) => expanded[k]);
   const toggleAll = () => {
-    const next = !allExpanded
+    const next = !allExpanded;
     setExpanded({
       warnings: next,
       upserted: next,
       skipped: next,
       failed: next,
-    })
-  }
+    });
+  };
 
   // Map sample_id -> warning messages, so the "updated or inserted" rows can
   // expand to show their warnings without an extra request.
   const warningsBySample = useMemo(
     () => new Map(warningGroups.map((g) => [g.sample_id, g.warnings])),
     [warningGroups],
-  )
+  );
 
   return (
     <Stack spacing={3}>
@@ -86,16 +85,20 @@ function ManageRoute() {
         File system scans
       </Typography>
 
-       <Box>
-        <Stack
-          direction="row"
-          spacing={2}
-          alignItems="baseline"
-          sx={{ mb: 1 }}
-        >
+      <Box>
+        <Stack direction="row" spacing={2} alignItems="baseline" sx={{ mb: 1 }}>
           <Typography variant="h6" component="h2">
             Last file system scan
           </Typography>
+          {latestScan ? (
+            <CustomLink
+              to="/manage/$scanId"
+              params={{ scanId: latestScan.scan_run_id }}
+              variant="body2"
+            >
+              View scan details
+            </CustomLink>
+          ) : null}
           <CustomLink to="/manage/all-scans" variant="body2">
             View all scans
           </CustomLink>
@@ -103,10 +106,14 @@ function ManageRoute() {
         <LastScanCard scan={latestScan} />
       </Box>
 
-     
       <Box>
-        <Link component="button" type="button" variant="body2" onClick={toggleAll}>
-          {allExpanded ? 'Collapse all' : 'Expand all'}
+        <Link
+          component="button"
+          type="button"
+          variant="body2"
+          onClick={toggleAll}
+        >
+          {allExpanded ? "Collapse all" : "Expand all"}
         </Link>
       </Box>
 
@@ -114,17 +121,16 @@ function ManageRoute() {
         count={warningGroups.length}
         title="Samples with warnings"
         expanded={expanded.warnings}
-        onChange={setSection('warnings')}
+        onChange={setSection("warnings")}
       >
         <SamplesWithWarningsTable groups={warningGroups} />
       </ManageSection>
-
 
       <ManageSection
         count={upserted.length}
         title="Samples updated or inserted"
         expanded={expanded.upserted}
-        onChange={setSection('upserted')}
+        onChange={setSection("upserted")}
       >
         <ScanSamplesTable
           outcome="upserted"
@@ -137,7 +143,7 @@ function ManageRoute() {
         count={skipped.length}
         title="Samples skipped"
         expanded={expanded.skipped}
-        onChange={setSection('skipped')}
+        onChange={setSection("skipped")}
       >
         <ScanSamplesTable
           outcome="skipped"
@@ -150,7 +156,7 @@ function ManageRoute() {
         count={failed.length}
         title="Samples failed"
         expanded={expanded.failed}
-        onChange={setSection('failed')}
+        onChange={setSection("failed")}
       >
         <ScanSamplesTable
           outcome="failed"
@@ -159,5 +165,5 @@ function ManageRoute() {
         />
       </ManageSection>
     </Stack>
-  )
+  );
 }
