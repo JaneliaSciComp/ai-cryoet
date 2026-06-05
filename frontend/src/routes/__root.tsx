@@ -7,7 +7,7 @@ import {
   createRootRouteWithContext,
 } from '@tanstack/react-router'
 import { CacheProvider } from '@emotion/react'
-import { Container, CssBaseline, ThemeProvider } from '@mui/material'
+import { Box, Container, CssBaseline, ThemeProvider } from '@mui/material'
 import createCache from '@emotion/cache'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -56,11 +56,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <Providers>
-          <Header />
-          <Container component="main" sx={{ paddingBlock: 4 }}>
-            {children}
-          </Container>
-          <Footer />
+          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            <Header />
+            <Container component="main" sx={{ paddingBlock: 4, flex: 1 }}>
+              {children}
+            </Container>
+            <Footer />
+          </Box>
         </Providers>
 
         <TanStackRouterDevtools position="bottom-right" />
