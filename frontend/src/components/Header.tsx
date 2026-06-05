@@ -20,7 +20,7 @@ const BrandLink = styled(CustomLink)(
 
 export function Header() {
   return (
-    <Box sx={{ flexGrow: 1 }}>
+    <Box>
       <AppBar position="static">
         <Toolbar sx={{ gap: 3 }}>
           <BrandLink to="/">
