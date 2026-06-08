@@ -155,6 +155,7 @@ function SampleDetailRoute() {
                   alt={`Center XY slice of the representative tomogram for ${sample.sample_id}`}
                   width="100%"
                   height={220}
+                  clickable
                 />
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
                   Center XY slice rendered from the representative tomogram MRC file

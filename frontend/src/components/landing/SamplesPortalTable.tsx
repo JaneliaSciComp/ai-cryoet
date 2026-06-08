@@ -30,7 +30,7 @@ export function SamplesPortalTable(props: {
           return (
             <Tooltip title={alt}>
               <span>
-                <PreviewThumbnail src={thumbnailUrl(row.original.thumbnail_path)} alt={alt} />
+                <PreviewThumbnail src={thumbnailUrl(row.original.thumbnail_path)} alt={alt} clickable />
               </span>
             </Tooltip>
           )

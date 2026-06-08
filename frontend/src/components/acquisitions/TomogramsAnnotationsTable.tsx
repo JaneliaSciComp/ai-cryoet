@@ -162,6 +162,7 @@ export function TomogramsAnnotationsTable(props: {
                   alt={alt}
                   width={96}
                   height={64}
+                  clickable
                 />
               </span>
             </Tooltip>

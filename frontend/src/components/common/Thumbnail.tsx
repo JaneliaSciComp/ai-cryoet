@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Box, Typography } from '@mui/material'
+import { Box, Modal, Typography } from '@mui/material'
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import type { AcquisitionOut } from '~/types'
 
@@ -42,37 +42,89 @@ export function ThumbnailPlaceholder(props: {
   )
 }
 
+function ThumbnailLightbox(props: {
+  open: boolean
+  src: string
+  alt?: string
+  onClose: () => void
+}) {
+  const { open, src, alt = '', onClose } = props
+  return (
+    <Modal open={open} onClose={onClose}>
+      <Box
+        onClick={onClose}
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          outline: 'none',
+        }}
+      >
+        <Box
+          component="img"
+          src={src}
+          alt={alt}
+          sx={{
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            objectFit: 'contain',
+            borderRadius: 2,
+            display: 'block',
+          }}
+        />
+      </Box>
+    </Modal>
+  )
+}
+
 // Renders an image, falling back to the placeholder when no `src` is given or
 // the request fails (e.g. the preview endpoint returns 422 for EER-only tilt
 // series). Keeps the same footprint either way so table rows don't jump.
+// Pass `clickable` to let users open a full-screen lightbox on click.
 export function PreviewThumbnail(props: {
   src?: string | null
   alt?: string
   width?: Size
   height?: Size
+  clickable?: boolean
 }) {
-  const { src, alt = '', width = 56, height = 40 } = props
+  const { src, alt = '', width = 56, height = 40, clickable = false } = props
   const [failed, setFailed] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   if (!src || failed) {
     return <ThumbnailPlaceholder width={width} height={height} />
   }
 
   return (
-    <Box
-      component="img"
-      src={src}
-      alt={alt}
-      onError={() => setFailed(true)}
-      sx={{
-        width,
-        height,
-        objectFit: 'cover',
-        borderRadius: 1,
-        display: 'block',
-        bgcolor: 'action.hover',
-      }}
-    />
+    <>
+      <Box
+        component="img"
+        src={src}
+        alt={alt}
+        onError={() => setFailed(true)}
+        onClick={clickable ? () => setLightboxOpen(true) : undefined}
+        sx={{
+          width,
+          height,
+          objectFit: 'cover',
+          borderRadius: 1,
+          display: 'block',
+          bgcolor: 'action.hover',
+          ...(clickable && { cursor: 'pointer' }),
+        }}
+      />
+      {clickable && lightboxOpen && (
+        <ThumbnailLightbox
+          open={lightboxOpen}
+          src={src}
+          alt={alt}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </>
   )
 }
 
