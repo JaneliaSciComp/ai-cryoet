@@ -106,8 +106,7 @@ function AnnotationsSubTable(props: { annotations: AnnotationOut[] }) {
             <TableCell>{dash}</TableCell>
             <TableCell>{dash}</TableCell>
             <TableCell align="right">
-              {/* Link construction TBD — renders disabled for now. */}
-              <NeuroglancerButton url={null} />
+              <NeuroglancerButton source={null} />
             </TableCell>
           </TableRow>
         ))}
@@ -195,9 +194,20 @@ export function TomogramsAnnotationsTable(props: {
         columnDefType: 'display',
         enableSorting: false,
         size: 200,
-        Cell: () => (
-          // Link construction TBD — renders disabled for now.
-          <NeuroglancerButton url={null} />
+        Cell: ({ row }) => (
+          <NeuroglancerButton
+            source={
+              row.original.mrc_path
+                ? {
+                    kind: 'launch',
+                    entity: 'tomogram',
+                    sampleId,
+                    acquisitionId: acquisition.acquisition_id,
+                    entityId: row.original.tomogram_id,
+                  }
+                : null
+            }
+          />
         ),
       },
       {
