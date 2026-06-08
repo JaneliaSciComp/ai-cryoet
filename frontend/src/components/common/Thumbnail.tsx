@@ -163,3 +163,10 @@ export function thumbnailUrl(relpath?: string | null): string | null {
 export function acquisitionRepTomogramId(a: AcquisitionOut): string | null {
   return a.post_processed_tomograms[0]?.tomogram_id ?? a.raw_tomogram?.tomogram_id ?? null
 }
+
+// Route prefix is /tilt-series (api/main.py); frontend proxies under /api.
+// Returns 422 when the series has no cached tilt_angles (EER-only).
+export function tiltSeriesPolarUrl(s: string, a: string, ts: string): string {
+  const enc = (x: string) => x.split('/').map(encodeURIComponent).join('/')
+  return `/api/tilt-series/${enc(s)}/${enc(a)}/${enc(ts)}/polar.png`
+}

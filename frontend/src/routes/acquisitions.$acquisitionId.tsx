@@ -11,7 +11,7 @@ import {
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import type { AcquisitionOut, WarningOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
-import { ThumbnailPlaceholder } from '~/components/common/Thumbnail'
+import { PreviewThumbnail, ThumbnailPlaceholder, tiltSeriesPolarUrl } from '~/components/common/Thumbnail'
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
 import { TomogramsAnnotationsTable } from '~/components/acquisitions/TomogramsAnnotationsTable'
 import {
@@ -115,12 +115,30 @@ function AcquisitionDetailRoute() {
       {/* ── Tilt series + path ─────────────────────────────────────── */}
       <Grid container spacing={4}>
         <Grid item xs={12} md={4}>
-          <ThumbnailPlaceholder
-            width="100%"
-            height={220}
-            icon={<LayersOutlinedIcon />}
-            label="Tilt series"
-          />
+          {(() => {
+            const ts = acquisition.tilt_series[0]
+            const polarSrc = ts
+              ? tiltSeriesPolarUrl(sampleId, acquisitionId, ts.tilt_series_id)
+              : null
+            return polarSrc ? (
+              <PreviewThumbnail
+                src={polarSrc}
+                alt={`Tilt-angle plot for ${ts.tilt_series_id}`}
+                width="100%"
+                height={220}
+                objectFit="contain"
+                clickable
+                tooltipTitle="Click to enlarge tilt-angle plot"
+              />
+            ) : (
+              <ThumbnailPlaceholder
+                width="100%"
+                height={220}
+                icon={<LayersOutlinedIcon />}
+                label="Tilt series"
+              />
+            )
+          })()}
         </Grid>
 
         <Grid item xs={12} md={8}>
