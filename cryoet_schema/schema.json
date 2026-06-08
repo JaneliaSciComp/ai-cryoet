@@ -307,6 +307,16 @@
       "title": "Freezing",
       "type": "object"
     },
+    "LabName": {
+      "enum": [
+        "collepardo",
+        "gouaux",
+        "rosen",
+        "villa"
+      ],
+      "title": "LabName",
+      "type": "string"
+    },
     "Label": {
       "additionalProperties": true,
       "properties": {
@@ -692,6 +702,9 @@
   "properties": {
     "sample": {
       "$ref": "#/$defs/Sample"
+    },
+    "lab_name": {
+      "$ref": "#/$defs/LabName"
     },
     "simulation": {
       "$ref": "#/$defs/Simulation"
