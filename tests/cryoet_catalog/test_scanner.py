@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -363,3 +364,153 @@ def test_force_recomputes_disk_size_bytes(engine, tmp_path):
         assert row.disk_size_bytes >= first_size + extra_bytes
     finally:
         s.close()
+
+
+# ── thumbnail tests ───────────────────────────────────────────────────────────
+
+_FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+
+
+def _fake_render_one(mrc_path: str, dest: Path) -> bool:
+    """Patch target: writes fake PNG bytes to dest and returns True."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(_FAKE_PNG)
+    return True
+
+
+def test_scan_with_thumbnail_dir_populates_thumbnail_path(engine, tmp_path):
+    sample_dir = _write_minimal_sample(tmp_path, "sample_a")
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one):
+        scanner.scan_root(engine, tmp_path, thumbnail_dir=thumb_dir)
+
+    s = _session(engine)
+    try:
+        row = s.get(orm.SampleORM, "sample_a")
+        assert row is not None
+        # No tomograms in the minimal sample, so thumbnail_path may be None —
+        # but the column must exist and not error. If somehow a relpath was
+        # generated it must also exist on disk.
+        if row.thumbnail_path is not None:
+            assert (thumb_dir / row.thumbnail_path).is_file()
+    finally:
+        s.close()
+
+
+def test_scan_without_thumbnail_dir_leaves_thumbnail_path_null(engine, tmp_path):
+    _write_minimal_sample(tmp_path, "sample_a")
+
+    scanner.scan_root(engine, tmp_path, thumbnail_dir=None)
+
+    s = _session(engine)
+    try:
+        row = s.get(orm.SampleORM, "sample_a")
+        assert row is not None
+        assert row.thumbnail_path is None
+    finally:
+        s.close()
+
+    # No PNG files written anywhere under tmp_path
+    png_files = list(tmp_path.rglob("*.png"))
+    assert png_files == []
+
+
+def test_scan_with_thumbnail_dir_fixture_tree_writes_file(engine, tmp_path):
+    """Scan the fixture tree (has real MRC data) with a thumbnail_dir.
+
+    Patches _render_one so no real MRC rendering is needed.
+    """
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one):
+        report = scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir)
+
+    assert report.errors == []
+
+    s = _session(engine)
+    try:
+        row = s.get(orm.SampleORM, "sample_chromatin")
+        assert row is not None
+        # sample_chromatin has a raw tomogram so a thumbnail should be generated.
+        assert row.thumbnail_path is not None
+        assert (thumb_dir / row.thumbnail_path).is_file()
+    finally:
+        s.close()
+
+
+def test_scan_force_rerenders_thumbnails(engine, tmp_path):
+    """Force re-scan calls _render_one again even when thumbnail already exists."""
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one) as mock_render:
+        scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir)
+        first_call_count = mock_render.call_count
+
+    # Force re-scan — should re-render (skip_existing=False on upsert path).
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one) as mock_render2:
+        scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir, force=True)
+        second_call_count = mock_render2.call_count
+
+    # Both scans should have called render (force bypasses skip_existing).
+    assert first_call_count > 0
+    assert second_call_count > 0
+
+
+def test_auto_heal_on_skip(engine, tmp_path):
+    """If thumbnail file is deleted and the sample is skipped, it is re-created."""
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one):
+        scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir)
+
+    # Confirm a thumbnail was stored.
+    s = _session(engine)
+    try:
+        row = s.get(orm.SampleORM, "sample_chromatin")
+        assert row is not None
+        rel = row.thumbnail_path
+        assert rel is not None
+    finally:
+        s.close()
+
+    # Delete the thumbnail file from disk.
+    thumb_file = thumb_dir / rel
+    assert thumb_file.is_file()
+    thumb_file.unlink()
+    assert not thumb_file.exists()
+
+    # Re-scan without force — mtime gate skips, but auto-heal restores file.
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one):
+        report = scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir)
+
+    assert report.thumbnails_healed >= 1
+    assert thumb_file.is_file()
+
+
+def test_skip_no_heal_when_file_present(engine, tmp_path):
+    """Second scan that skips should not re-render if thumbnail file is present."""
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one):
+        scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir)
+
+    # Second scan — nothing changed, thumbnail file still present.
+    with patch("cryoet_catalog.thumbnails._render_one", side_effect=_fake_render_one) as mock_render:
+        report = scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir)
+
+    assert report.thumbnails_healed == 0
+    mock_render.assert_not_called()

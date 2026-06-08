@@ -611,6 +611,29 @@ def test_upsert_default_disk_size_bytes_is_null(session):
     assert row.disk_size_bytes is None
 
 
+def test_upsert_sample_record_with_thumbnail_path(session):
+    r = _make_record()
+    upsert_sample_record(
+        session, r, extras=[], warnings=[], scan_run_id="run-1",
+        thumbnail_path="s/a/t.png",
+    )
+    session.commit()
+    row = session.get(orm.SampleORM, "s1")
+    assert row is not None
+    assert row.thumbnail_path == "s/a/t.png"
+
+
+def test_upsert_sample_record_thumbnail_path_default_is_null(session):
+    r = _make_record()
+    upsert_sample_record(
+        session, r, extras=[], warnings=[], scan_run_id="run-1"
+    )
+    session.commit()
+    row = session.get(orm.SampleORM, "s1")
+    assert row is not None
+    assert row.thumbnail_path is None
+
+
 def test_per_sample_isolation_scan_warnings_only_for_target_sample(session):
     """Warnings refresh deletes only this sample's rows, not all."""
     r1 = _make_record(sample_id="s1")

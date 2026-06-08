@@ -269,3 +269,63 @@ def test_extras_summary(client):
     assert {(row["entity_type"], row["key"], row["count"]) for row in body} == {
         ("sample", "weird", 1), ("chromatin", "weird", 1),
     }
+
+
+# ── thumbnail_path in /samples list ──────────────────────────────────────────
+
+
+def _make_client_with_thumbnail(tmp_path, thumbnail_path_value):
+    """Helper: build a TestClient seeded with one SampleORM that has a given thumbnail_path."""
+    engine = db.make_engine(f"sqlite:///{tmp_path / 'thumb_test.db'}")
+    db.init_schema(engine)
+    Session = sessionmaker(bind=engine, future=True, expire_on_commit=False)
+
+    app = create_app()
+    app.state.engine = engine
+
+    def override_get_session():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    from cryoet_schema.schema import DataSource, Project
+
+    s = Session()
+    try:
+        rec = SampleRecord(
+            sample=Sample(
+                sample_id="sample_thumb",
+                data_source=DataSource.experimental,
+                project=Project.chromatin,
+            )
+        )
+        from cryoet_catalog.persistence import upsert_sample_record
+        upsert_sample_record(
+            s, rec, extras=[], warnings=[], scan_run_id="run-thumb",
+            thumbnail_path=thumbnail_path_value,
+        )
+        s.commit()
+    finally:
+        s.close()
+
+    return TestClient(app)
+
+
+def test_list_samples_thumbnail_path_round_trips(tmp_path):
+    test_client = _make_client_with_thumbnail(tmp_path, "s/a/t.png")
+    r = test_client.get("/samples")
+    assert r.status_code == 200
+    by_id = {s["sample_id"]: s for s in r.json()}
+    assert by_id["sample_thumb"]["thumbnail_path"] == "s/a/t.png"
+
+
+def test_list_samples_thumbnail_path_null_when_not_set(tmp_path):
+    test_client = _make_client_with_thumbnail(tmp_path, None)
+    r = test_client.get("/samples")
+    assert r.status_code == 200
+    by_id = {s["sample_id"]: s for s in r.json()}
+    assert by_id["sample_thumb"]["thumbnail_path"] is None
