@@ -38,7 +38,8 @@ def _ensure_bind_address() -> None:
     import neuroglancer
 
     bind_address = os.environ.get("NEUROGLANCER_BIND_ADDRESS", "0.0.0.0")
-    neuroglancer.set_server_bind_address(bind_address)
+    bind_port = int(os.environ.get("NEUROGLANCER_PORT", "8050"))
+    neuroglancer.set_server_bind_address(bind_address, bind_port=bind_port)
     _BIND_ADDRESS_SET = True
 
 
