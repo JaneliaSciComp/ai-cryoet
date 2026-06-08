@@ -50,7 +50,9 @@ CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi r
 ```
 CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run api
 ```
-Serves `http://localhost:8000` with auto-reload. Swagger UI at `/docs`.
+Serves `http://localhost:8000`. Swagger UI at `/docs`.
+
+> **No hot-reload.** The API runs with `--no-reload` (single worker). Neuroglancer's in-process HTTP server is incompatible with uvicorn's `--reload` mode, which tries to bind a second HTTP server on the same port.
 
 **Terminal 2 — Frontend:**
 ```
@@ -74,6 +76,19 @@ API_PROXY_TARGET=http://localhost:8034
 # Port the Vite dev server listens on (default: 3000)
 FRONTEND_PORT=3030
 ```
+
+### Neuroglancer configuration
+
+The "View in Neuroglancer" feature starts an in-process HTTP server inside the API process. It listens on its own port, separate from the API port, and is **not** behind nginx — the browser connects to it directly.
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `NEUROGLANCER_BIND_ADDRESS` | `0.0.0.0` | IP address the Neuroglancer server binds to. |
+| `NEUROGLANCER_PORT` | `8050` | Port the Neuroglancer server listens on. Must be published separately from the API port; the browser connects to this port directly (not through nginx). |
+| `NEUROGLANCER_MAX_VIEWERS` | `8` | Maximum number of concurrent viewers held in the LRU registry. |
+| `DASHBOARD_HOSTNAME` | _(unset)_ | Overrides the hostname in Neuroglancer viewer URLs. Use in deployments where the server-side host differs from what the browser sees. |
+
+The API must run as a **single worker with `--no-reload`** because the Neuroglancer server is process-global. Running multiple workers or hot-reloading would attempt to bind a second HTTP server on the same port.
 
 ---
 
