@@ -23,7 +23,7 @@ For the schema itself, see `cryoet_schema/schema_info.md` (human reference) and 
 
 ---
 
-## Setup
+## Development
 
 **Note:** This setup guide assumes you are working on machine with access to the Janelia file system.
 
@@ -38,15 +38,17 @@ The frontend's Node deps are installed automatically the first time you run `pix
 CATALOG_DATA_ROOT=/path/to/data pixi run scan --init
 ```
 
----
+To also pre-generate tomogram thumbnails, set `CATALOG_THUMBNAIL_DIR` to a writable directory (or pass `--thumbnail-dir`). A plain rescan auto-heals a wiped cache; `--force` fully rebuilds it.
 
-## Running the app
+```
+CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run scan --init
+```
 
-The portal has two processes: the FastAPI backend (reads the catalog DB) and the TanStack Start frontend (server-renders + hydrates a React app, proxying `/api` to FastAPI). Run them in two terminals.
+4. The portal has two processes: the FastAPI backend (reads the catalog DB) and the TanStack Start frontend (server-renders + hydrates a React app, proxying `/api` to FastAPI). Run them in two terminals.
 
 **Terminal 1 — API:**
 ```
-CATALOG_DATA_ROOT=/path/to/data pixi run api
+CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run api
 ```
 Serves `http://localhost:8000` with auto-reload. Swagger UI at `/docs`.
 
