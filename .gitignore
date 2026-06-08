@@ -18,6 +18,7 @@ data
 # Claude, except for plans
 .claude/*
 !.claude/plans/
+**/TODO.md
 .worktrees
 
 # frontend
