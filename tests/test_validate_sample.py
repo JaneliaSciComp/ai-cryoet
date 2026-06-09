@@ -476,7 +476,7 @@ def test_md_source_valid_reference(tmp_path):
         """,
     )
     _write(
-        tmp_path / "acq1" / "acquisition.toml",
+        tmp_path / "SyntheticCryoET" / "acq1" / "acquisition.toml",
         """
         [acquisition]
 
@@ -508,7 +508,7 @@ def test_md_source_dangling_md_run_id_isolates(tmp_path):
         """,
     )
     _write(
-        tmp_path / "acq_good" / "acquisition.toml",
+        tmp_path / "SyntheticCryoET" / "acq_good" / "acquisition.toml",
         """
         [acquisition]
 
@@ -518,7 +518,7 @@ def test_md_source_dangling_md_run_id_isolates(tmp_path):
         """,
     )
     _write(
-        tmp_path / "acq_bad" / "acquisition.toml",
+        tmp_path / "SyntheticCryoET" / "acq_bad" / "acquisition.toml",
         """
         [acquisition]
 

@@ -18,15 +18,15 @@ Skipping the editor setup is fine — `pixi run validate {sample_dir}` (step 5) 
 
 ### 1. Lay out the sample directory
 
-Copy the starter directory that matches your data type — `templates/sample_name_experimental/` for experimental cryoET data or `templates/sample_name_simulation/` for MD + synthetic cryoET data — into the `data/` directory. The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
+Copy the starter directory that matches your data arm — `templates/sample_id_experimental/` for experimental cryoET data or `templates/sample_id_simulation/` for MD + synthetic cryoET data — into the `data/` directory. The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
 
-Replace `sample_name` with the desired sample id.
+Rename the top-level `sample_id_*` directory to the desired sample id.
 
 ```
 gouauxlab_20250418_AMmilled29-2/
 ```
 
-Inside, make a copy of `acquistion_name`. Then update one of the directories to the desired acquistion id for your first acquisition. Repeat this process every time you want to add a new acquisition.
+Inside, make a copy of `acquisition_id`. Then update one of the directories to the desired acquisition id for your first acquisition. Repeat this process every time you want to add a new acquisition. (For simulation samples, the `acquisition_id` template lives inside `SyntheticCryoET/`; copy and rename it there.)
 
 ```
 gouauxlab_20250418_AMmilled29-2/
@@ -34,13 +34,13 @@ gouauxlab_20250418_AMmilled29-2/
   Position_87/
 ```
 
-### 2. Fill out `sample_name/sample.toml`
+### 2. Fill out `{sample_id}/sample.toml`
 
 - Complete as many fields marked `<FILL IN>` as you can. For now, the only required fields are `sample.data_source` and `sample.project`.
 - Delete the `[synapse]` block if your project is `chromatin`, or vice versa.
 - Optionally, uncomment and complete the `[[aunp]]`, `[freezing]`, and `[milling]` blocks.
 
-### 3. Fill out `sample_name/acquistion_name/acquisition.toml` in each acquisition directory
+### 3. Fill out `{sample_id}/{acquisition_id}/acquisition.toml` in each acquisition directory
 
 - Complete as many fields marked `<FILL IN>` as you can. For now, no fields are required.
 
@@ -50,7 +50,7 @@ Each `acquisition.toml` grows over time. Record the raw reconstruction once in `
 
 **Rules:**
 - Do **not** delete or modify a tomogram or annotation entry once added. Reprocessing produces a **new** entry with a new `id`, placed at the bottom of the file.
-- The `id` must match one folder name under either `Reconstructions/Tomograms/` or `Reconstructions/Annotations/`.
+- The `id` must match one folder name under `Reconstructions/Tomograms/`, `Reconstructions/Annotations/`, or `Alignments/`.
 - Use `derived_from` and `target_tomogram` to record lineage (see above).
 
 ### 5. Validate
@@ -92,14 +92,16 @@ python -m cryoet_schema.validate {sample_dir}
 ### CryoET (experimental) data
 
 ```
-{sample_name}/                               # sample identity = directory name
+{sample_id}/                                 # sample identity = directory name
   sample.toml                                # sample-level conditions
-  {acquisition_name}/                        # acquisition identity = directory name
+  {acquisition_id}/                          # acquisition identity = directory name
     acquisition.toml                         # per-acquisition params + processing log
     Frames/                                  # raw movie frames (.eer / .tiff) + .mdoc
     Gains/                                   # gain reference
     TiltSeries/                              # .mrc + .zarr + .rawtlt
-    Alignments/                              # per-alignment .json (machine-emitted)
+    Alignments/
+      {alignment_id}/                        # one subfolder per alignment run
+        *.json                               # machine-emitted alignment files
     Reconstructions/
       Tomograms/
         {processing_id}/                     # one subfolder per processing pipeline
@@ -114,27 +116,28 @@ python -m cryoet_schema.validate {sample_dir}
 ### MD simulation (sample) and associated synthetic cryoET (acquisitions) data
 
 ```
-{sample_name}/
+{sample_id}/
   sample.toml                                # sample-level conditions + simulation params
-  md_runs/                                   # simulation only: one subfolder per MD run
+  MdRuns/                                    # simulation only: one subfolder per MD run
     {md_run_id}/                             # name = [[md_run]].id in sample.toml
       Trajectories/                          # raw simulation output
       Snapshots/                             # extracted conformations (frames)
-  {acquisition_name}/                        # synthetic cryoET from one md_run frame
-    acquisition.toml                         # per-acquisition params + [md_source]
-    TiltSeries/
-    Reconstructions/
-      Tomograms/
-        {processing_id}/                     # one subfolder per processing pipeline
-          *.mrc
-          *.zarr
-      Annotations/
-        {annotation_id}/
-          *.star
-          *.mrc / *.zarr
+  SyntheticCryoET/                           # wraps all synthetic-cryoET acquisitions for this sample
+    {acquisition_id}/                        # synthetic cryoET from one md_run frame
+      acquisition.toml                       # per-acquisition params + [md_source]
+      TiltSeries/
+      Reconstructions/
+        Tomograms/
+          {processing_id}/                   # one subfolder per processing pipeline
+            *.mrc
+            *.zarr
+        Annotations/
+          {annotation_id}/
+            *.star
+            *.mrc / *.zarr
 ```
 
-For simulation samples, the raw MD data lives under `md_runs/{md_run_id}/` — one subfolder per `[[md_run]]` block in `sample.toml`, holding that run's trajectories and extracted frames. Each acquisition is the synthetic cryoET generated from a single frame of one run; its directory sits at the top level alongside `md_runs/` (the same level as experimental acquisitions), and its `[md_source]` block records which `md_run_id` and `frame` it came from. The `md_run_id` must match one of the sample's `[[md_run]]` ids; both `[[md_run]]` and `[md_source]` are rejected on experimental samples.
+For simulation samples, the raw MD data lives under `MdRuns/{md_run_id}/` — one subfolder per `[[md_run]]` block in `sample.toml`, holding that run's trajectories and extracted frames. Each acquisition is the synthetic cryoET generated from a single frame of one run; its directory sits inside `SyntheticCryoET/`, sibling to `MdRuns/`, and its `[md_source]` block records which `md_run_id` and `frame` it came from. The `md_run_id` must match one of the sample's `[[md_run]]` ids; both `[[md_run]]` and `[md_source]` are rejected on experimental samples.
 
 The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chanzuckerberg.github.io/cryoet-data-portal/stable/cryoet_data_portal_docsite_data.html) at the Sample > Acquisition > (Frames, Gains, TiltSeries, Alignments, Reconstructions) level, with three deliberate departures:
 
@@ -160,6 +163,9 @@ gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
       *.mrc
       *.zarr
       *.rawtlt
+    Alignments/
+      imod_patch_v3/                         # one subfolder per alignment run
+        *.json
     Reconstructions/
       Tomograms/
         bp_3dctf_bin4/                       # renamed from "raw/"
@@ -218,7 +224,7 @@ Only three fields are required for all entries: `sample.lab_name`, `sample.data_
 
 ### Folder naming rules
 
-Four folder names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tomogram processing subfolder (`tomogram_id`), and each annotation subfolder (`annotation_id`). The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
+Five folder names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tomogram processing subfolder (`tomogram_id`), each annotation subfolder (`annotation_id`), and each alignment subfolder (`alignment_id`). The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
 
 A valid id must:
 
