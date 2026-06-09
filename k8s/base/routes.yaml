@@ -8,7 +8,7 @@ metadata:
   annotations:
     haproxy.router.openshift.io/timeout: 300s
 spec:
-  host: aicryoet.int.janelia.org
+  host: ai-cryoet.int.janelia.org
   to:
     kind: Service
     name: nginx

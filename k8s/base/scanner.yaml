@@ -28,7 +28,7 @@ spec:
             - name: ghcr-credentials
           containers:
             - name: scanner
-              image: ghcr.io/janeliascicomp/aicryoet-scanner:latest
+              image: ghcr.io/janeliascicomp/ai-cryoet-scanner:latest
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:

@@ -16,13 +16,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: aicryoet-api
+          - image: ai-cryoet-api
             context: .
             file: ./Dockerfile.api
-          - image: aicryoet-frontend
+          - image: ai-cryoet-frontend
             context: ./frontend
             file: ./frontend/Dockerfile
-          - image: aicryoet-scanner
+          - image: ai-cryoet-scanner
             context: .
             file: ./Dockerfile.scanner
 

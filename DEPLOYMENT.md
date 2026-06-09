@@ -17,7 +17,7 @@ using [Kustomize](https://kustomize.io/).
 ## Architecture
 
 ```
-Route (aicryoet.int.janelia.org) — edge TLS, HTTP→HTTPS redirect
+Route (ai-cryoet.int.janelia.org) — edge TLS, HTTP→HTTPS redirect
     |
     v
   nginx (8080)
@@ -36,9 +36,9 @@ There are four runtime components plus one batch job:
 | Component | Image | Port(s) | Role |
 |---|---|---|---|
 | `nginx` | `nginxinc/nginx-unprivileged` | 8080 | Edge proxy. The only service behind the Route. |
-| `api` | `aicryoet-api` | 8000, 8050 | FastAPI read API + in-process Neuroglancer server. |
-| `frontend` | `aicryoet-frontend` | 3000 | Server-rendered React app. |
-| `scanner` | `aicryoet-scanner` | — | CronJob: walks the data tree, rebuilds the DB + thumbnails. |
+| `api` | `ai-cryoet-api` | 8000, 8050 | FastAPI read API + in-process Neuroglancer server. |
+| `frontend` | `ai-cryoet-frontend` | 3000 | Server-rendered React app. |
+| `scanner` | `ai-cryoet-scanner` | — | CronJob: walks the data tree, rebuilds the DB + thumbnails. |
 
 ## Directory Structure
 
@@ -79,7 +79,7 @@ configured by the cluster/HPC team, not by these manifests.
 placeholder. Before deploying, take this question to the HPC/OpenShift team:
 
 > *"How do we make `/groups/cryoet/cryoet/data/scratch/data` readable from pods
-> in the `aicryoet` namespace, and what should the PVC be called?"*
+> in the `ai-cryoet` namespace, and what should the PVC be called?"*
 
 They will typically do one of:
 
@@ -137,7 +137,7 @@ oc create secret docker-registry ghcr-credentials \
   --docker-server=ghcr.io \
   --docker-username=<github-username> \
   --docker-password=<PAT> \
-  -n aicryoet
+  -n ai-cryoet
 ```
 
 > **Tip:** To avoid the PAT expiring and breaking pulls, consider a GitHub App
@@ -171,24 +171,24 @@ catalog (and some pages may error until the first scan completes). Trigger the
 scanner immediately rather than waiting for the next hourly run:
 
 ```bash
-oc -n aicryoet create job --from=cronjob/scanner scanner-initial
-oc -n aicryoet logs -f job/scanner-initial
+oc -n ai-cryoet create job --from=cronjob/scanner scanner-initial
+oc -n ai-cryoet logs -f job/scanner-initial
 ```
 
 ### 8. Verify
 
 ```bash
 # All pods running
-oc -n aicryoet get pods
+oc -n ai-cryoet get pods
 
 # API logs
-oc -n aicryoet logs -l app=api
+oc -n ai-cryoet logs -l app=api
 
 # Route admitted
-oc -n aicryoet get route cryoet
+oc -n ai-cryoet get route cryoet
 ```
 
-Then open `https://aicryoet.int.janelia.org`.
+Then open `https://ai-cryoet.int.janelia.org`.
 
 ## Neuroglancer in production
 
@@ -210,11 +210,11 @@ Pin specific image tags in the overlay's `kustomization.yaml`:
 
 ```yaml
 images:
-  - name: ghcr.io/janeliascicomp/aicryoet-api
+  - name: ghcr.io/janeliascicomp/ai-cryoet-api
     newTag: v1.0.0
-  - name: ghcr.io/janeliascicomp/aicryoet-frontend
+  - name: ghcr.io/janeliascicomp/ai-cryoet-frontend
     newTag: v1.0.0
-  - name: ghcr.io/janeliascicomp/aicryoet-scanner
+  - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
     newTag: v1.0.0
 ```
 
@@ -233,7 +233,7 @@ mkdir -p k8s/overlays/staging
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: aicryoet-staging
+namespace: ai-cryoet-staging
 
 resources:
   - ../../base
@@ -252,19 +252,19 @@ generatorOptions:
 
 ```bash
 # Events and status for a pod
-oc -n aicryoet describe pod <pod-name>
+oc -n ai-cryoet describe pod <pod-name>
 
 # CronJob run history
-oc -n aicryoet get jobs
+oc -n ai-cryoet get jobs
 
 # Run the scanner on demand
-oc -n aicryoet create job --from=cronjob/scanner scanner-manual
+oc -n ai-cryoet create job --from=cronjob/scanner scanner-manual
 
 # Route status (admitted, host, TLS)
-oc -n aicryoet describe route cryoet
+oc -n ai-cryoet describe route cryoet
 
 # Inspect the catalog DB inside the API pod
-oc -n aicryoet exec deploy/api -- ls -la /db /thumbnails
+oc -n ai-cryoet exec deploy/api -- ls -la /db /thumbnails
 ```
 
 **API returns 500s after a schema change.** The SQLite DB in the `catalog-db`
