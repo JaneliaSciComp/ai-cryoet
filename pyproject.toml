@@ -21,9 +21,14 @@ cryoet-validate = "cryoet_schema.validate:main"
 cryoet-json-schema = "cryoet_schema.generate_json_schema:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["cryoet_schema*", "cryoet_catalog*"]
-exclude = ["tests*", "templates*", "scripts*", "frontend*"]
+
+[tool.pytest.ini_options]
+# Folded in from the former pytest.ini. `pythonpath = src` puts the src-layout
+# packages on sys.path so tests import them without an editable install.
+pythonpath = ["src"]
+testpaths = ["tests"]
 
 # ---------------------------------------------------------------------------
 # Pixi configuration. Runtime deps for the schema/validator are duplicated
@@ -38,6 +43,10 @@ platforms = ["linux-64"]
 
 [tool.pixi.activation.env]
 CATALOG_DATA_ROOT = "${CATALOG_DATA_ROOT}"
+# src layout: put src/ on the import path for every pixi task (`python -m ...`,
+# uvicorn, the scan task). Relative to the task cwd (repo root locally, /app in
+# the containers).
+PYTHONPATH = "src"
 
 [tool.pixi.dependencies]
 python = ">=3.11"
@@ -66,8 +75,8 @@ numpy = ">=1.26"
 matplotlib-base = ">=3.8"
 
 [tool.pixi.feature.catalog.tasks]
-migrate = "alembic -c cryoet_catalog/migrations/alembic.ini upgrade head"
-migrate-revision = "alembic -c cryoet_catalog/migrations/alembic.ini revision --autogenerate -m"
+migrate = "alembic -c src/cryoet_catalog/migrations/alembic.ini upgrade head"
+migrate-revision = "alembic -c src/cryoet_catalog/migrations/alembic.ini revision --autogenerate -m"
 
 [tool.pixi.feature.api.dependencies]
 fastapi = ">=0.110"

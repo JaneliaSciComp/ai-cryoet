@@ -28,7 +28,9 @@ import argparse
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+# src/cryoet_schema/sync_templates.py -> repo root is three parents up
+# (src/cryoet_schema -> src -> repo root), where templates/ lives.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # canonical (source) -> starter copy (generated). Keep these paths in sync
 # with the directory layout documented in README.md. Each canonical template

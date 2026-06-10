@@ -32,7 +32,7 @@ from cryoet_schema import (
 from cryoet_schema.sync_templates import TEMPLATE_PAIRS
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_SCHEMA_INFO = _REPO_ROOT / "cryoet_schema" / "schema_info.md"
+_SCHEMA_INFO = _REPO_ROOT / "src" / "cryoet_schema" / "schema_info.md"
 _README = _REPO_ROOT / "README.md"
 
 # Leaf entity models whose fields map 1:1 to documented table rows. The
