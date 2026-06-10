@@ -1,0 +1,71 @@
+# Prod-like topology: nginx is the only port exposed to the host. Models the
+# k8s setup so you can validate the same wiring locally.
+#
+# Run the scanner on-demand:
+#   docker compose --profile scan run --rm scanner
+#
+# In k8s the scanner becomes a CronJob; here it's a one-shot service gated by
+# a profile so `docker compose up` doesn't start it.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: ai-cryoet-api:latest
+    environment:
+      - CATALOG_DATA_ROOT=${CATALOG_DATA_ROOT:?set CATALOG_DATA_ROOT in .env}
+      - CATALOG_DB_URL=sqlite:////db/cryoet_catalog.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost}
+      - CATALOG_THUMBNAIL_DIR=/thumbnails
+      - NEUROGLANCER_PORT=8050
+    ports:
+      - "8050:8050"
+    volumes:
+      - ${CATALOG_DATA_ROOT}:${CATALOG_DATA_ROOT}:ro
+      - catalog-db:/db
+      - thumbnails:/thumbnails:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ai-cryoet-frontend:latest
+    environment:
+      # The SSR server fetches from the API directly (server-to-server, inside
+      # the compose network). The browser hits nginx, which proxies /api/*.
+      - CRYOET_API_BASE_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - frontend
+    restart: unless-stopped
+
+  scanner:
+    profiles: ["scan"]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.scanner
+    image: ai-cryoet-scanner:latest
+    environment:
+      - CATALOG_DATA_ROOT=${CATALOG_DATA_ROOT:?set CATALOG_DATA_ROOT in .env}
+      - CATALOG_DB_URL=sqlite:////db/cryoet_catalog.db
+      - CATALOG_THUMBNAIL_DIR=/thumbnails
+    volumes:
+      - ${CATALOG_DATA_ROOT}:${CATALOG_DATA_ROOT}:ro
+      - catalog-db:/db
+      - thumbnails:/thumbnails
+
+volumes:
+  catalog-db: {}
+  thumbnails: {}

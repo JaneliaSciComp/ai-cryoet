@@ -1,0 +1,172 @@
+import { useState, type ReactNode } from 'react'
+import { Box, Modal, Tooltip, Typography } from '@mui/material'
+import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
+import type { AcquisitionOut } from '~/types'
+
+type Size = number | string
+
+// Shared grey-box placeholder used wherever a representative image or viewer is
+// missing (samples table, acquisition rows, sample-detail hero, acquisition
+// tilt-series slot). Uses theme tokens (`action.hover` / `text.disabled`)
+// rather than literal greys so it tracks the palette. Pass `icon` / `label` to
+// hint at what will eventually fill the slot (e.g. a tilt-series viewer).
+export function ThumbnailPlaceholder(props: {
+  width?: Size
+  height?: Size
+  icon?: ReactNode
+  label?: string
+}) {
+  const { width = 56, height = 40, icon, label } = props
+  return (
+    <Box
+      sx={{
+        width,
+        height,
+        borderRadius: 1,
+        bgcolor: 'action.hover',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 0.5,
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'text.disabled',
+      }}
+    >
+      {icon ?? <ImageOutlinedIcon fontSize="small" />}
+      {label ? (
+        <Typography variant="caption" color="text.disabled">
+          {label}
+        </Typography>
+      ) : null}
+    </Box>
+  )
+}
+
+function ThumbnailLightbox(props: {
+  open: boolean
+  src: string
+  alt?: string
+  onClose: () => void
+}) {
+  const { open, src, alt = '', onClose } = props
+  return (
+    <Modal open={open} onClose={onClose}>
+      <Box
+        onClick={onClose}
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          outline: 'none',
+        }}
+      >
+        <Box
+          component="img"
+          src={src}
+          alt={alt}
+          sx={{
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            objectFit: 'contain',
+            borderRadius: 2,
+            display: 'block',
+          }}
+        />
+      </Box>
+    </Modal>
+  )
+}
+
+// Renders an image, falling back to the placeholder when no `src` is given or
+// the request fails (e.g. the preview endpoint returns 422 for EER-only tilt
+// series). Keeps the same footprint either way so table rows don't jump.
+// Pass `clickable` to let users open a full-screen lightbox on click.
+// Pass `tooltipTitle` to show a tooltip that auto-dismisses when the lightbox opens.
+export function PreviewThumbnail(props: {
+  src?: string | null
+  alt?: string
+  width?: Size
+  height?: Size
+  clickable?: boolean
+  tooltipTitle?: string
+  objectFit?: 'cover' | 'contain'
+}) {
+  const { src, alt = '', width = 56, height = 40, clickable = false, tooltipTitle, objectFit = 'cover' } = props
+  const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+
+  if (!src || failed) {
+    return <ThumbnailPlaceholder width={width} height={height} />
+  }
+
+  const img = (
+    <Box
+      component="img"
+      src={src}
+      alt={alt}
+      onError={() => setFailed(true)}
+      onLoad={() => setLoaded(true)}
+      onClick={clickable ? () => setLightboxOpen(true) : undefined}
+      sx={{
+        width,
+        height,
+        objectFit,
+        borderRadius: 1,
+        display: 'block',
+        ...(loaded
+          ? { boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }
+          : { bgcolor: 'action.hover' }),
+        ...(clickable && { cursor: 'pointer' }),
+      }}
+    />
+  )
+
+  return (
+    <>
+      {tooltipTitle ? (
+        <Tooltip title={tooltipTitle} open={lightboxOpen ? false : undefined}>
+          <span>{img}</span>
+        </Tooltip>
+      ) : (
+        img
+      )}
+      {clickable && lightboxOpen && (
+        <ThumbnailLightbox
+          open={lightboxOpen}
+          src={src}
+          alt={alt}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+// ── Thumbnail URL helpers ────────────────────────────────────────────────
+
+// Relpath scheme must match cryoet_catalog/thumbnails._relpath.
+export function tomogramThumbnailUrl(s: string, a: string, t: string): string {
+  const enc = (x: string) => x.split('/').map(encodeURIComponent).join('/')
+  return `/api/thumbnails/${enc(s)}/${enc(a)}/${enc(t)}.png`
+}
+
+export function thumbnailUrl(relpath?: string | null): string | null {
+  return relpath
+    ? `/api/thumbnails/${relpath.split('/').map(encodeURIComponent).join('/')}`
+    : null
+}
+
+// Acquisition representative: post[0] then raw, by tomogram_id sort.
+export function acquisitionRepTomogramId(a: AcquisitionOut): string | null {
+  return a.post_processed_tomograms[0]?.tomogram_id ?? a.raw_tomogram?.tomogram_id ?? null
+}
+
+// Route prefix is /tilt-series (api/main.py); frontend proxies under /api.
+// Returns 422 when the series has no cached tilt_angles (EER-only).
+export function tiltSeriesPolarUrl(s: string, a: string, ts: string): string {
+  const enc = (x: string) => x.split('/').map(encodeURIComponent).join('/')
+  return `/api/tilt-series/${enc(s)}/${enc(a)}/${enc(ts)}/polar.png`
+}

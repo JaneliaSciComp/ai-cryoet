@@ -1,303 +1,162 @@
-# CryoET + AI Data Organization
+# CryoET + AI Data Portal
 
-> **Status: draft / proposed.** This repository contains a working draft of the file-system layout and metadata scheme for the CryoET + AI project data portal. Fields, controlled vocabularies, and directory conventions are expected to evolve as researchers start authoring metadata against it.
+A Pydantic-validated metadata schema, a directory-walking catalog scanner, a FastAPI read API, and a TanStack Start + Material UI frontend for the CryoET + AI project. The portal answers one question across both the experimental and simulation arms of the project: **which conditions have we covered, and which still need cryoET imaging, simulation, or both?**
 
-The central design goal is answering one question across both the experimental and simulation arms of the project: **which conditions have we covered, and which still need cryoET imaging, simulation, or both?**
+> **Status: draft / proposed.** Schema fields and conventions are still evolving as researchers start authoring metadata against it.
 
-## What's in this repo
+---
 
-| File | Purpose |
+## Repository map
+
+| Path | Contents |
 |---|---|
-| `cryoet_schema/schema_info.md` | Human-readable reference for every field that will land in the portal database, grouped by entity (Sample → Acquisition → Tomogram → Annotation) with the authoritative source of each (TOML vs MDOC vs MRC vs directory vs derived). |
-| `cryoet_schema/schema.py` | Authoritative Pydantic schema — defines every metadata field, its type, and any constraints. |
-| `cryoet_schema/schema.json` | Language-neutral JSON Schema for the merged `SampleRecord` (sample + all its acquisitions), generated from `schema.py`. Used by `sample.toml`'s `#:schema` directive for in-editor validation, and by non-Python consumers (portal UI, etc.). |
-| `cryoet_schema/acquisition.schema.json` | JSON Schema for a single `acquisition.toml` on its own (the `AcquisitionFile` model), generated from `schema.py`. Used by `acquisition.toml`'s `#:schema` directive so editors can validate it without requiring the sample-level fields. |
-| `cryoet_schema/validate.py` | Validator: `pixi run validate {sample_dir}`. |
-| `cryoet_schema/generate_json_schema.py` | Regenerates both `schema.json` and `acquisition.schema.json` from the Pydantic models: `pixi run json-schema`. |
-| `templates/sample_id_experimental` | Starter directory structure for an **experimental** (cryoET) sample, containing `sample.toml` and `acquisition.toml`. Copy this directory to start a new experimental sample. |
-| `templates/sample_id_simulation` | Starter directory structure for a **simulation** (MD + synthetic cryoET) sample. Same `sample.toml`/`acquisition.toml`, but the layout adds `MdRuns/`, wraps the acquisitions in `SyntheticCryoET/`, and drops the movie-frame folders (`Frames/`, `Gains/`, `Alignments/`). Copy this directory to start a new simulation sample. |
-| `templates/sample.toml` | Starter template for `sample.toml`. If you didn't start a new sample from one of the starter directories, copy this template into your sample directory and fill in. |
-| `templates/acquisition.toml` | Starter template for `acquisition.toml`. If you didn't start a new sample from one of the starter directories, copy this template into each acquisition directory and fill in. |
-| `cryoet_schema/sync_templates.py` | Regenerates the starter-directory copies (`templates/sample_id_experimental/` and `templates/sample_id_simulation/`) from the canonical `templates/*.toml`: `pixi run sync-templates`. |
-| `pyproject.toml` / `pixi.lock` | Project metadata, PyPI dependencies (`[project]`), and pixi config (`[tool.pixi.*]`). Pixi resolves the duplicated runtime deps from conda-forge; `tests/test_deps_in_sync.py` enforces that the two lists stay aligned.  |
+| `src/cryoet_schema/` | Authoritative Pydantic schema, JSON Schema generators, and the `validate` CLI. |
+| `src/cryoet_catalog/` | Directory-walking scanner that builds the catalog DB from `sample.toml` + `acquisition.toml` + MDOC/MRC headers. Includes the FastAPI read API under `src/cryoet_catalog/api/`. |
+| `frontend/` | React + TanStack Start + Material UI app that reads from the FastAPI server. |
+| `deploy/` | Docker, Kubernetes/OpenShift manifests, nginx config, and the deployment guide (`deploy/DEPLOYMENT.md`). |
+| `templates/` | Starter `sample.toml`, `acquisition.toml`, and directory skeletons, containing the TOML files in the expected locations, for new experimental (cryoET) and simulation (MD + synthetic cyroET) samples. |
+| `docs/data_organization.md` | The on-disk layout and TOML metadata authoring guide for researchers. |
+| `docs/architecture.md` | System architecture overview. |
+| `.claude/plans/` | Implementation plans, including the catalog scanner plan. |
+| `pyproject.toml` / `pixi.lock` | PyPI dependencies (`[project]`), and pixi config (`[tool.pixi.*]`). |
+
+For the schema itself, see `src/cryoet_schema/schema_info.md` (human reference) and `src/cryoet_schema/schema.py` (Pydantic source of truth).
 
 ---
 
-## Maintaining the schema
+## Development
 
-`schema.py` is the single source of truth for field definitions. When changing a field:
+**Note:** This setup guide assumes you are working on machine with access to the Janelia file system.
 
-1. Edit `cryoet_schema/schema.py` and the canonical template(s) — `templates/sample.toml` / `templates/acquisition.toml`.
-2. Run `pixi run sync` to regenerate the derived artifacts: `schema.json`, `acquisition.schema.json`, and the `templates/sample_name/` starter copies.
-3. Update `cryoet_schema/schema_info.md` (it documents every stored field, including DB-only ones not in any TOML).
-4. Run `pixi run test -- tests/test_repo_consistency.py tests/test_generate_json_schema.py`. The drift guards in `tests/test_repo_consistency.py` and `tests/test_generate_json_schema.py` fail with a fix hint if the generated schemas, starter copies, doc, or the README claims below are out of date.
+1. [Install pixi](https://pixi.prefix.dev/latest/installation/).
+2. From the repo root, run `pixi install` to materialize the Python environments.
+
+The frontend's Node deps are installed automatically the first time you run `pixi run frontend` (and re-run only when `package.json` / `package-lock.json` change). You don't need a separate `npm install` step.
+
+3. Create the database. Pass the path to the data root via the CATALOG_DATA_ROOT env variable. This will scan the samples at that path and create a SQLite database called `cryoet_catalog.db` in your repo root.
+
+```
+CATALOG_DATA_ROOT=/path/to/data pixi run scan --init
+```
+
+To also pre-generate tomogram thumbnails, set `CATALOG_THUMBNAIL_DIR` to a writable directory (or pass `--thumbnail-dir`). A plain rescan auto-heals a wiped cache; `--force` fully rebuilds it.
+
+```
+CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run scan --init
+```
+
+4. The portal has two processes: the FastAPI backend (reads the catalog DB) and the TanStack Start frontend (server-renders + hydrates a React app, proxying `/api` to FastAPI). Run them in two terminals.
+
+**Terminal 1 — API:**
+```
+CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi run api
+```
+Serves `http://localhost:8000`. Swagger UI at `/docs`.
+
+> **No hot-reload.** The API runs with `--no-reload` (single worker). Neuroglancer's in-process HTTP server is incompatible with uvicorn's `--reload` mode, which tries to bind a second HTTP server on the same port.
+
+**Terminal 2 — Frontend:**
+```
+pixi run frontend
+```
+Open the data portal at `http://localhost:3000`.
+
+### Alternate port
+
+If port 8000 is taken, pass uvicorn flags through to use an alternate port. You can also change the IP binding:
+```
+pixi run api --host 0.0.0.0 --port 8034
+```
+
+If you change the backend host/port, you will also need to point the frontend to it. The frontend reads its dev-server settings from `frontend/.env.local` (gitignored). Create it like this:
+
+```
+# Backend the /api proxy points to (default: http://localhost:8000)
+API_PROXY_TARGET=http://localhost:8034
+
+# Port the Vite dev server listens on (default: 3000)
+FRONTEND_PORT=3030
+```
+
+### Neuroglancer configuration
+
+The "View in Neuroglancer" feature starts an in-process HTTP server inside the API process. It listens on its own port, separate from the API port, and is **not** behind nginx — the browser connects to it directly.
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `NEUROGLANCER_BIND_ADDRESS` | `0.0.0.0` | IP address the Neuroglancer server binds to. |
+| `NEUROGLANCER_PORT` | `8050` | Port the Neuroglancer server listens on. Must be published separately from the API port; the browser connects to this port directly (not through nginx). |
+| `NEUROGLANCER_MAX_VIEWERS` | `8` | Maximum number of concurrent viewers held in the LRU registry. |
+| `DASHBOARD_HOSTNAME` | _(unset)_ | Overrides the hostname in Neuroglancer viewer URLs. Use in deployments where the server-side host differs from what the browser sees. |
+
+The API must run as a **single worker with `--no-reload`** because the Neuroglancer server is process-global. Running multiple workers or hot-reloading would attempt to bind a second HTTP server on the same port.
 
 ---
+## Production deployment
 
-## Proposed directory structure
+For Kubernetes deployment, see [deploy/DEPLOYMENT.md](./deploy/DEPLOYMENT.md).
 
-### CryoET (experimental) data
+### Testing Docker deployment locally
 
-```
-{sample_id}/                                 # sample identity = directory name
-  sample.toml                                # sample-level conditions
-  {acquisition_id}/                          # acquisition identity = directory name
-    acquisition.toml                         # per-acquisition params + processing log
-    Frames/                                  # raw movie frames (.eer / .tiff) + .mdoc
-    Gains/                                   # gain reference
-    TiltSeries/                              # .mrc + .zarr + .rawtlt
-    Alignments/
-      {alignment_id}/                        # one subfolder per alignment run
-        *.json                               # machine-emitted alignment files
-    Reconstructions/
-      Tomograms/
-        {processing_id}/                     # one subfolder per processing pipeline
-          *.mrc
-          *.zarr
-      Annotations/
-        {annotation_id}/
-          *.star
-          *.mrc / *.zarr
-```
+This models the production deployment using local Docker services. Nginx is the only port exposed to the host and proxies `/api/*` to FastAPI and everything else to the frontend SSR server.
 
-### MD simulation (sample) and associated synthetic cyroET (acquisitions) data
+**Prerequisites:** Docker and Docker Compose installed.
+
+1. Create a `.env` file in the repo root:
 
 ```
-{sample_id}/
-  sample.toml                                # sample-level conditions + simulation params
-  MdRuns/                                    # simulation only: one subfolder per MD run
-    {md_run_id}/                             # name = [[md_run]].id in sample.toml
-      Trajectories/                          # raw simulation output
-      Snapshots/                             # extracted conformations (frames)
-  SyntheticCryoET/                           # wraps all synthetic-cryoET acquisitions for this sample
-    {acquisition_id}/                        # synthetic cryoET from one md_run frame
-      acquisition.toml                       # per-acquisition params + [md_source]
-      TiltSeries/
-      Reconstructions/
-        Tomograms/
-          {processing_id}/                   # one subfolder per processing pipeline
-            *.mrc
-            *.zarr
-        Annotations/
-          {annotation_id}/
-            *.star
-            *.mrc / *.zarr
+CATALOG_DATA_ROOT=/path/to/data
+NGINX_PORT=80            # optional, defaults to 80
 ```
 
-For simulation samples, the raw MD data lives under `MdRuns/{md_run_id}/` — one subfolder per `[[md_run]]` block in `sample.toml`, holding that run's trajectories and extracted frames. Each acquisition is the synthetic cryoET generated from a single frame of one run; its directory sits inside `SyntheticCryoET/`, sibling to `MdRuns/`, and its `[md_source]` block records which `md_run_id` and `frame` it came from. The `md_run_id` must match one of the sample's `[[md_run]]` ids; both `[[md_run]]` and `[md_source]` are rejected on experimental samples.
+2. Build all images:
 
-The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chanzuckerberg.github.io/cryoet-data-portal/stable/cryoet_data_portal_docsite_data.html) at the Sample > Acquisition > (Frames, Gains, TiltSeries, Alignments, Reconstructions) level, with three deliberate departures:
-
-- **Two metadata files per sample.** Sample-level conditions live in `sample.toml` at the sample root. Per-acquisition parameters and the processing log live in `{acquisition}/acquisition.toml`. Fields derivable from MDOC files and file headers are authored in neither file; the ingest pipeline will read them directly.
-- **Tomograms are kept in per-pipeline subfolders** (e.g., `bp_3dctf_bin4/`, `bp_3dctf_bin4_ddw/`) rather than flattened into `Tomograms/`. This avoids filename collisions when new processing versions are added, and the folder name acts as the `processing_id`.
-- **No `VoxelSpacing{N}/` subfolder.** Voxel spacing in Ångström is recorded directly in `acquisition.toml` (as `voxel_size` on the `[raw_tomogram]` and each `[[post_processed_tomogram]]` entry); the catalog scanner also reads the value straight from the MRC header for cross-checking. Keeping voxel info out of the path avoids duplicating information that lives in the file itself.
-
-Simulation data uses a parallel structure with domain-appropriate folder names. Both share the same schema, which is what makes cross-comparison possible.
-
----
-
-## Metadata files
-
-### `sample.toml` — sample-level conditions
-
-One file per sample, placed at the root of the sample directory. Contains only what was imaged or simulated — not how. The sample directory name *is* the sample's identity, so `sample.id` is omitted from the file.
-
-### `acquisition.toml` — per-acquisition parameters + processing log
-
-One file per acquisition, placed at the root of each acquisition directory. It contains:
-
-1. Researcher-authored imaging parameters not available from MDOC files (nominal resolution, nominal tilt spacing, target defocus range, energy filter model, phase plate, microscope model).
-2. A **processing log**: a `[raw_tomogram]` table plus `[[post_processed_tomogram]]` and `[[annotation]]` entries appended over time as processing produces new outputs.
-
-The acquisition directory name *is* the acquisition's identity, so `acquisition.id` is omitted from the file.
-
----
-
-## Schema rules
-
-### Required fields
-
-Only three fields are required for all entries: `sample.lab_name`, `sample.data_source` and `sample.project`. All other fields are optional, allowing the schema to grow as researcher needs settle. These three fields are also the only enums — all other fields are open text, with the potential to be tightened into enums later based on how researchers use them.
-
-### Folder naming rules
-
-Five folder names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tomogram processing subfolder (`tomogram_id`), each annotation subfolder (`annotation_id`), and each alignment subfolder (`alignment_id`). The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
-
-A valid id must:
-
-- be 1–128 characters long,
-- contain only letters, numbers, `.`, `_`, and `-`,
-- start and end with a letter or number,
-- not contain `..`
-
-### Extra fields
-
-You may add any key-value pair to any section of `sample.toml` or `acquisition.toml` that is not yet in the schema. For example:
-
-```toml
-[chromatin]
-substrate        = "synthetic"
-linker_length_bp = 187.0
-# Fields not yet in schema.py — captured here for later formalization:
-ionic_strength_mM = 154.0
-assembly_method   = "salt_dialysis"
+```
+docker compose build
 ```
 
-Each Pydantic model is configured with `extra="allow"`, so unknown keys are preserved on the parsed record. The validator walks the tree after validation and reports every extra key as a **warning**, not an error — the file still passes and the extra fields survive will into the ingest record. If a field proves useful, notify the SciComp team so it can be formally added to `schema.py` with the appropriate type and description.
+3. Run the scanner to populate the database (writes into the `catalog-db` Docker volume):
 
-### Lineage: `derived_from` and `target_tomogram`
+```
+docker compose --profile scan run --rm scanner
+```
 
-`derived_from` records lineage across tomogram entries, and `target_tomogram` links annotations to the tomogram they were generated from. Both reference ids within the same `acquisition.toml`:
+`--profile scan` activates the scanner service, which is excluded from the default `docker compose up` because in production it will run as a Kubernetes CronJob. `run --rm` starts it as a one-shot container and removes it when it exits.
 
-```toml
-# In .../Position_86/acquisition.toml
+4. Start the stack:
 
-# Raw reconstruction (at most one [raw_tomogram] per acquisition)
-[raw_tomogram]
-id                     = "bp_3dctf_bin4"
-voxel_size             = 4.0
-derived_from           = []
+```
+docker compose up
+```
 
-# Denoised version derived from the raw
-[[post_processed_tomogram]]
-id                     = "bp_3dctf_bin4_ddw"
-voxel_size             = 4.0
-derived_from           = ["bp_3dctf_bin4"]
+Open `http://localhost` (or `http://localhost:<NGINX_PORT>` if you changed the port). The API and frontend ports (8000 and 3000) are internal to the Docker network and not accessible from the host.
 
-# Segmentation run on the denoised tomogram
-[[annotation]]
-id              = "membrain_seg_v10"
-type            = "membrane_segmentation"
-target_tomogram = "bp_3dctf_bin4_ddw"
+### Resetting after schema changes
+
+The SQLite database persists in the `catalog-db` named volume across restarts. If the ORM schema has changed since the DB was created (new columns, renamed enums), the API will return 500 errors. Fix by wiping the volume and rescanning:
+
+```
+docker compose down -v
+docker compose --profile scan run --rm scanner
+docker compose up
 ```
 
 ---
 
-## Researcher workflow: creating metadata
+## Schema authoring & validation
 
-### 0. (Optional) Set up VSCode for live TOML validation
+For researchers writing `sample.toml` / `acquisition.toml`, the authoring guide is in **[`docs/data_organization.md`](docs/data_organization.md)**. Quick commands:
 
-Authoring TOML in **VSCode** with the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension gives you in-editor type checking, enum suggestions, and field hints as you fill in the templates. The `#:schema` directive at the top of each template points the extension at `cryoet_schema/schema.json` (for `sample.toml`) and `cryoet_schema/acquisition.schema.json` (for `acquisition.toml`).
-
-Skipping the editor setup is fine — `pixi run validate {sample_dir}` (step 5) catches the same errors at the end.
-
-### 1. Lay out the sample directory
-
-Copy the starter directory that matches your data arm — `scratch/templates/sample_id_experimental/` for experimental cryoET data or `scratch/templates/sample_id_simulation/` for MD + synthetic cryoET data — into the `data/` directory. The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
-
-Rename the top-level `sample_id_*` directory to the desired sample id.
-
-```
-gouauxlab_20250418_AMmilled29-2/
-```
-
-Inside, make a copy of `acquisition_id`. Then update one of the directories to the desired acquisition id for your first acquisition. Repeat this process every time you want to add a new acquisition. (For simulation samples, the `acquisition_id` template lives inside `SyntheticCryoET/`; copy and rename it there.)
-
-```
-gouauxlab_20250418_AMmilled29-2/
-  Position_86/
-  Position_87/
-```
-
-### 2. Fill out `{sample_id}/sample.toml`
-
-- Complete as many fields marked `<FILL IN>` as you can. For now, the only required fields are `sample.data_source` and `sample.project`.
-- Delete the `[synapse]` block if your project is `chromatin`, or vice versa.
-- Optionally, uncomment and complete the [[aunp]], [freezing], and [milling] blocks.
-
-### 3. Fill out `{sample_id}/{acquisition_id}/acquisition.toml` in each acquisition directory
-
-- Complete as many fields marked `<FILL IN>` as you can. For now, no fields are required.
-
-### 4. Append to the processing log as outputs are produced
-
-Each `acquisition.toml` grows over time. Record the raw reconstruction once in `[raw_tomogram]`; for each new output — a denoised version, a segmentation, an STA result — append a new `[[post_processed_tomogram]]` or `[[annotation]]` entry to the relevant acquisition's file.
-
-**Rules:**
-- Do **not** delete or modify a tomogram or annotation entry once added. Reprocessing produces a **new** entry with a new `id`, placed at the bottom of the file.
-- The `id` must match one folder name under `Reconstructions/Tomograms/`, `Reconstructions/Annotations/`, or `Alignments/`.
-- Use `derived_from` and `target_tomogram` to record lineage (see above).
-
-### 5. Validate
-
-The validation script validates `sample.toml` and every `acquisition.toml` under the sample directory and will notify the researcher of any fields that violate the schema. Validation will also run during database ingestion — see `schema_info.md` for the full list of fields that will be stored, including those auto-derived from MDOCs, MRC headers, OME-Zarr metadata, and directory structure.
-
-#### Option 1: With pixi
-
-1. [Install pixi](https://pixi.prefix.dev/latest/installation/). 
-2. The first time you use pixi for this repo, run `pixi install` to install the environment.
-3. Run the validation with this command:
-
-```
-pixi run validate {sample_dir}
-```
-
-#### Option 2: Without pixi
-
-Alternatively, you can run the validator with any Python ≥3.11 — the only runtime dependencies are `pydantic` and `rapidfuzz`, both pure-Python. 
-
-For example, using Python's built-in `venv` module:
-
-```bash
-# from the repo root
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e .
-python -m cryoet_schema.validate {sample_dir}
-```
-
-`pip install -e .` reads the same dependency list pixi uses (`[project.dependencies]` in `pyproject.toml`).
-
-[`uv`](https://docs.astral.sh/uv/) works as a drop-in for `pip`/`venv`.
+| Command | What it does |
+|---|---|
+| `pixi run validate {sample_dir}` | Validate `sample.toml` and all `acquisition.toml` files under a sample directory. |
+| `pixi run json-schema` | Regenerate `src/cryoet_schema/schema.json` and `acquisition.schema.json` from the Pydantic models. Run after any change to `schema.py`. |
+| `pixi run test` | Run the test suite. |
 
 ---
 
-## Example: mapping Gouaux lab data to this structure
+## Further reading
 
-```
-gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
-  sample.toml                                # sample-level conditions
-  Position_86/                               # acquisition identity = directory name
-    acquisition.toml                         # per-acquisition params + processing log
-    Frames/
-      *.eer
-      *.eer.mdoc                             # acquisition metadata lives here
-    Gains/
-      gain_reference.gain
-    TiltSeries/                              # TO CREATE: from .eer conversion
-      *.mrc
-      *.zarr
-      *.rawtlt
-    Alignments/
-      imod_patch_v3/                         # one subfolder per alignment run
-        *.json
-    Reconstructions/
-      Tomograms/
-        bp_3dctf_bin4/                       # renamed from "raw/"
-          *_BP_3DCTF_BIN4.mrc
-          *_BP_3DCTF_BIN4.zarr
-        bp_3dctf_bin4_ddw/                   # renamed from "ddw/"
-          *_BP_3DCTF_BIN4_ddw.mrc
-          *_BP_3DCTF_BIN4_ddw.zarr
-      Annotations/
-        activezone_1/                        # renamed to match star-file id
-          activezone_1.star
-          active_zonogram_0.mrc
-          active_zonogram_0.zarr
-          active_zonogram_0_annotated.png
-        membrain_seg_v10/
-          *_MemBrain_seg_v10_*_smooth.mrc
-          *_MemBrain_seg_v10_*_smooth.zarr
-  Position_87/
-    acquisition.toml
-    Frames/
-    ...
-```
-
-Changes from the current `annotation_HHMI_reorg` layout:
-
-1. Rename `raw/` → `bp_3dctf_bin4/` and `ddw/` → `bp_3dctf_bin4_ddw/`.
-2. Rename `activezone/` → `activezone_{N}/` to match the star-file id (schema rule: annotation `id` = folder name).
-3. Add `sample.toml` at the sample level.
-4. Add `acquisition.toml` in each acquisition directory.
-5. Create `TiltSeries/` (pending `.eer` conversion).
+- **[`docs/data_organization.md`](docs/data_organization.md)** — directory layout, metadata files, schema rules, researcher workflow.
+- **[`docs/architecture.md`](docs/architecture.md)** — system architecture.
+- **`src/cryoet_schema/schema_info.md`** — every field that lands in the portal DB, grouped by entity, with the source of each (TOML / MDOC / MRC / directory / derived).

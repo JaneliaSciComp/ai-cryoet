@@ -1,0 +1,787 @@
+{
+  "$defs": {
+    "Acquisition": {
+      "additionalProperties": true,
+      "properties": {
+        "acquisition_id": {
+          "title": "Acquisition Id",
+          "type": "string"
+        },
+        "resolution": {
+          "title": "Resolution",
+          "type": "number"
+        },
+        "tilt_spacing": {
+          "title": "Tilt Spacing",
+          "type": "number"
+        },
+        "defocus_range": {
+          "title": "Defocus Range",
+          "type": "string"
+        },
+        "energy_filter": {
+          "title": "Energy Filter",
+          "type": "string"
+        },
+        "phase_plate": {
+          "title": "Phase Plate",
+          "type": "boolean"
+        },
+        "microscope": {
+          "title": "Microscope",
+          "type": "string"
+        },
+        "quality": {
+          "title": "Quality",
+          "type": "string"
+        },
+        "pixel_size": {
+          "title": "Pixel Size",
+          "type": "number"
+        },
+        "dose_per_tilt": {
+          "title": "Dose Per Tilt",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "total_dose": {
+          "title": "Total Dose",
+          "type": "number"
+        },
+        "tilt_min": {
+          "title": "Tilt Min",
+          "type": "number"
+        },
+        "tilt_max": {
+          "title": "Tilt Max",
+          "type": "number"
+        },
+        "tilt_axis": {
+          "title": "Tilt Axis",
+          "type": "number"
+        },
+        "defocus_per_image": {
+          "title": "Defocus Per Image",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "date_collected": {
+          "title": "Date Collected",
+          "format": "date",
+          "type": "string"
+        },
+        "voltage": {
+          "title": "Voltage",
+          "type": "number"
+        },
+        "energy_filter_slit_width": {
+          "title": "Energy Filter Slit Width",
+          "type": "number"
+        },
+        "frame_count": {
+          "title": "Frame Count",
+          "type": "integer"
+        },
+        "camera": {
+          "title": "Camera",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "title": "Acquisition",
+      "type": "object"
+    },
+    "AcquisitionFile": {
+      "additionalProperties": true,
+      "description": "Parsed contents of one acquisition.toml.\n\n``tilt_series`` is populated by the scanner (from MDOC parsing) rather\nthan authored by researchers; the field is included on the schema so\ndownstream consumers (DB upsert, API responses, JSON Schema dumps) have\na stable shape.",
+      "properties": {
+        "acquisition": {
+          "$ref": "#/$defs/Acquisition"
+        },
+        "md_source": {
+          "$ref": "#/$defs/MdSource"
+        },
+        "raw_tomogram": {
+          "$ref": "#/$defs/RawTomogram"
+        },
+        "post_processed_tomogram": {
+          "items": {
+            "$ref": "#/$defs/PostProcessedTomogram"
+          },
+          "title": "Post Processed Tomogram",
+          "type": "array"
+        },
+        "annotation": {
+          "items": {
+            "$ref": "#/$defs/Annotation"
+          },
+          "title": "Annotation",
+          "type": "array"
+        },
+        "tilt_series": {
+          "items": {
+            "$ref": "#/$defs/TiltSeries"
+          },
+          "title": "Tilt Series",
+          "type": "array"
+        },
+        "alignment": {
+          "items": {
+            "$ref": "#/$defs/Alignment"
+          },
+          "title": "Alignment",
+          "type": "array"
+        }
+      },
+      "required": [
+        "acquisition"
+      ],
+      "title": "AcquisitionFile",
+      "type": "object"
+    },
+    "Alignment": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "software": {
+          "title": "Software",
+          "type": "string"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Alignment",
+      "type": "object"
+    },
+    "Annotation": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "target_tomogram": {
+          "title": "Target Tomogram",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Annotation",
+      "type": "object"
+    },
+    "Chromatin": {
+      "additionalProperties": true,
+      "properties": {
+        "substrate": {
+          "title": "Substrate",
+          "type": "string"
+        },
+        "linker_length_bp": {
+          "title": "Linker Length Bp",
+          "type": "number"
+        },
+        "linker_pattern": {
+          "title": "Linker Pattern",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "linker_distribution": {
+          "title": "Linker Distribution",
+          "type": "string"
+        },
+        "buffer": {
+          "title": "Buffer",
+          "type": "string"
+        },
+        "ptm": {
+          "title": "Ptm",
+          "type": "string"
+        },
+        "histone_variants": {
+          "title": "Histone Variants",
+          "type": "string"
+        },
+        "transcription_factors": {
+          "title": "Transcription Factors",
+          "type": "string"
+        },
+        "nucleosome_count": {
+          "title": "Nucleosome Count",
+          "type": "integer"
+        },
+        "dna_length_bp": {
+          "title": "Dna Length Bp",
+          "type": "integer"
+        },
+        "nucleosome_uM": {
+          "title": "Nucleosome Um",
+          "type": "number"
+        },
+        "sequence_identity": {
+          "title": "Sequence Identity",
+          "type": "string"
+        },
+        "nucleosome_footprint": {
+          "title": "Nucleosome Footprint",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "linker_length_fraction": {
+          "title": "Linker Length Fraction",
+          "type": "number"
+        }
+      },
+      "title": "Chromatin",
+      "type": "object"
+    },
+    "DataSource": {
+      "enum": [
+        "experimental",
+        "simulation"
+      ],
+      "title": "DataSource",
+      "type": "string"
+    },
+    "Fiducial": {
+      "additionalProperties": true,
+      "properties": {
+        "aunp_size_nm": {
+          "title": "Aunp Size Nm",
+          "type": "number"
+        },
+        "vendor": {
+          "title": "Vendor",
+          "type": "string"
+        },
+        "catalog_number": {
+          "title": "Catalog Number",
+          "type": "string"
+        },
+        "product_name": {
+          "title": "Product Name",
+          "type": "string"
+        },
+        "concentration_value": {
+          "title": "Concentration Value",
+          "type": "number"
+        },
+        "concentration_unit": {
+          "title": "Concentration Unit",
+          "type": "string"
+        }
+      },
+      "title": "Fiducial",
+      "type": "object"
+    },
+    "Freezing": {
+      "additionalProperties": true,
+      "properties": {
+        "grid_type": {
+          "title": "Grid Type",
+          "type": "string"
+        },
+        "solution_type": {
+          "title": "Solution Type",
+          "type": "string"
+        },
+        "cryoprotectant": {
+          "title": "Cryoprotectant",
+          "type": "string"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "planchette_size": {
+          "title": "Planchette Size",
+          "type": "string"
+        },
+        "spacer_thickness": {
+          "title": "Spacer Thickness",
+          "type": "string"
+        }
+      },
+      "title": "Freezing",
+      "type": "object"
+    },
+    "LabName": {
+      "enum": [
+        "collepardo",
+        "gouaux",
+        "rosen",
+        "villa"
+      ],
+      "title": "LabName",
+      "type": "string"
+    },
+    "Label": {
+      "additionalProperties": true,
+      "properties": {
+        "label_target": {
+          "title": "Label Target",
+          "type": "string"
+        },
+        "aunp_type": {
+          "title": "Aunp Type",
+          "type": "string"
+        },
+        "aunp_size_nm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Aunp Size Nm"
+        },
+        "conjugation": {
+          "title": "Conjugation",
+          "type": "string"
+        },
+        "conjugation_target": {
+          "title": "Conjugation Target",
+          "type": "string"
+        },
+        "fluorophore": {
+          "title": "Fluorophore",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "title": "Label",
+      "type": "object"
+    },
+    "MdRun": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "computer": {
+          "title": "Computer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "MdRun",
+      "type": "object"
+    },
+    "MdSource": {
+      "additionalProperties": true,
+      "properties": {
+        "md_run_id": {
+          "title": "Md Run Id",
+          "type": "string"
+        },
+        "frame": {
+          "title": "Frame",
+          "type": "integer"
+        }
+      },
+      "title": "MdSource",
+      "type": "object"
+    },
+    "Milling": {
+      "additionalProperties": true,
+      "properties": {
+        "scheme": {
+          "title": "Scheme",
+          "type": "string"
+        },
+        "date": {
+          "title": "Date",
+          "format": "date",
+          "type": "string"
+        },
+        "quality": {
+          "title": "Quality",
+          "type": "string"
+        }
+      },
+      "title": "Milling",
+      "type": "object"
+    },
+    "PostProcessedTomogram": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "denoising_software": {
+          "title": "Denoising Software",
+          "type": "string"
+        },
+        "ctf_software": {
+          "title": "Ctf Software",
+          "type": "string"
+        },
+        "missing_wedge_software": {
+          "title": "Missing Wedge Software",
+          "type": "string"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
+        },
+        "derived_from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
+        },
+        "image_size_x": {
+          "title": "Image Size X",
+          "type": "integer"
+        },
+        "image_size_y": {
+          "title": "Image Size Y",
+          "type": "integer"
+        },
+        "image_size_z": {
+          "title": "Image Size Z",
+          "type": "integer"
+        },
+        "mrc_path": {
+          "title": "Mrc Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "zarr_axes": {
+          "title": "Zarr Axes",
+          "type": "string"
+        },
+        "zarr_scale": {
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "PostProcessedTomogram",
+      "type": "object"
+    },
+    "Project": {
+      "enum": [
+        "chromatin",
+        "synapse",
+        "nanogold"
+      ],
+      "title": "Project",
+      "type": "string"
+    },
+    "RawTomogram": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "pipeline": {
+          "title": "Pipeline",
+          "type": "string"
+        },
+        "software": {
+          "title": "Software",
+          "type": "string"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
+        },
+        "derived_from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Derived From",
+          "type": "array"
+        },
+        "image_size_x": {
+          "title": "Image Size X",
+          "type": "integer"
+        },
+        "image_size_y": {
+          "title": "Image Size Y",
+          "type": "integer"
+        },
+        "image_size_z": {
+          "title": "Image Size Z",
+          "type": "integer"
+        },
+        "mrc_path": {
+          "title": "Mrc Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "zarr_axes": {
+          "title": "Zarr Axes",
+          "type": "string"
+        },
+        "zarr_scale": {
+          "title": "Zarr Scale",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RawTomogram",
+      "type": "object"
+    },
+    "Sample": {
+      "additionalProperties": true,
+      "properties": {
+        "sample_id": {
+          "title": "Sample Id",
+          "type": "string"
+        },
+        "data_source": {
+          "$ref": "#/$defs/DataSource"
+        },
+        "project": {
+          "$ref": "#/$defs/Project"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "cell_type": {
+          "title": "Cell Type",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "data_source",
+        "project"
+      ],
+      "title": "Sample",
+      "type": "object"
+    },
+    "Simulation": {
+      "additionalProperties": true,
+      "properties": {
+        "dataset_type": {
+          "title": "Dataset Type",
+          "type": "string"
+        }
+      },
+      "title": "Simulation",
+      "type": "object"
+    },
+    "TiltSeries": {
+      "additionalProperties": true,
+      "description": "One tilt series within an acquisition (composite-PK child of Acquisition).\n\nComposite primary key: ``(sample_id, acquisition_id, tilt_series_id)``.\n``tilt_series_id`` is the MDOC stem (with collision-disambiguating suffix\nwhen needed; see plan \u00a711.23). Powers the per-tilt-series UI cards\n(polar plot + median-tilt preview + Neuroglancer launch). All non-PK\nfields are optional so a tilt series can be ingested before MDOC parse\nsucceeds.",
+      "properties": {
+        "sample_id": {
+          "title": "Sample Id",
+          "type": "string"
+        },
+        "acquisition_id": {
+          "title": "Acquisition Id",
+          "type": "string"
+        },
+        "tilt_series_id": {
+          "title": "Tilt Series Id",
+          "type": "string"
+        },
+        "mdoc_path": {
+          "title": "Mdoc Path",
+          "type": "string"
+        },
+        "st_path": {
+          "title": "St Path",
+          "type": "string"
+        },
+        "zarr_path": {
+          "title": "Zarr Path",
+          "type": "string"
+        },
+        "n_tilts": {
+          "title": "N Tilts",
+          "type": "integer"
+        },
+        "tilt_range_min": {
+          "title": "Tilt Range Min",
+          "type": "number"
+        },
+        "tilt_range_max": {
+          "title": "Tilt Range Max",
+          "type": "number"
+        },
+        "tilt_axis_angle": {
+          "title": "Tilt Axis Angle",
+          "type": "number"
+        },
+        "voltage": {
+          "title": "Voltage",
+          "type": "number"
+        },
+        "pixel_spacing": {
+          "title": "Pixel Spacing",
+          "type": "number"
+        },
+        "image_format": {
+          "title": "Image Format",
+          "enum": [
+            "EER",
+            "TIFF",
+            "MRC"
+          ],
+          "type": "string"
+        },
+        "microscope": {
+          "title": "Microscope",
+          "type": "string"
+        },
+        "camera": {
+          "title": "Camera",
+          "type": "string"
+        },
+        "tilt_angles": {
+          "title": "Tilt Angles",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "mtime": {
+          "title": "Mtime",
+          "type": "number"
+        }
+      },
+      "title": "TiltSeries",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "Merged sample.toml + every acquisition.toml under the sample directory.\n\n`acquisitions` is keyed by acquisition directory name (path-injected by the\nvalidator, not authored in the TOML).",
+  "properties": {
+    "sample": {
+      "$ref": "#/$defs/Sample"
+    },
+    "lab_name": {
+      "$ref": "#/$defs/LabName"
+    },
+    "simulation": {
+      "$ref": "#/$defs/Simulation"
+    },
+    "chromatin": {
+      "$ref": "#/$defs/Chromatin"
+    },
+    "label": {
+      "items": {
+        "$ref": "#/$defs/Label"
+      },
+      "title": "Label",
+      "type": "array"
+    },
+    "fiducial": {
+      "$ref": "#/$defs/Fiducial"
+    },
+    "freezing": {
+      "$ref": "#/$defs/Freezing"
+    },
+    "milling": {
+      "$ref": "#/$defs/Milling"
+    },
+    "md_run": {
+      "items": {
+        "$ref": "#/$defs/MdRun"
+      },
+      "title": "Md Run",
+      "type": "array"
+    },
+    "acquisitions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/AcquisitionFile"
+      },
+      "title": "Acquisitions",
+      "type": "object"
+    }
+  },
+  "required": [
+    "sample"
+  ],
+  "title": "SampleRecord",
+  "type": "object"
+}

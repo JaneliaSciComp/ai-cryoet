@@ -332,6 +332,9 @@ def test_acquisition_with_tomogram_and_annotation(tmp_path):
         target_tomogram = "tomo_001"
         """,
     )
+    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "tomo_001").mkdir(parents=True)
+    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "tomo_002").mkdir(parents=True)
+    (tmp_path / "acq1" / "Reconstructions" / "Annotations" / "ann_001").mkdir(parents=True)
     result = load_sample_record(tmp_path)
     assert result.sample_errors == []
     assert result.acquisition_errors == {}
@@ -382,6 +385,78 @@ def test_tomogram_derived_from_unknown(tmp_path):
     assert result.record is not None
     assert "acq1" in result.acquisition_errors
     assert "ghost" in result.acquisition_errors["acq1"]
+    assert "acq1" not in result.record.acquisitions
+
+
+def test_tomogram_id_without_matching_folder_fails(tmp_path):
+    """Declared tomogram id must equal a folder under Reconstructions/Tomograms."""
+    _minimal_sample(tmp_path)
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [raw_tomogram]
+        id = "bp_3dctf_bin4"
+        """,
+    )
+    # Folder name doesn't match the declared id.
+    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "bp_3dctf_bn4").mkdir(parents=True)
+    result = load_sample_record(tmp_path)
+    assert result.record is not None
+    assert "acq1" in result.acquisition_errors
+    msg = result.acquisition_errors["acq1"]
+    assert "tomogram[bp_3dctf_bin4]" in msg
+    assert "no matching folder" in msg
+    # Fuzzy suggestion should point at the close-but-typo'd folder.
+    assert "bp_3dctf_bn4" in msg
+    assert "acq1" not in result.record.acquisitions
+
+
+def test_tomogram_id_matched_under_synthetic_layout(tmp_path):
+    """Simulated samples use SyntheticCryoET/<id>/ instead of Reconstructions/Tomograms."""
+    _minimal_sample(tmp_path)
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [raw_tomogram]
+        id = "synth_tomo_1"
+        """,
+    )
+    (tmp_path / "acq1" / "SyntheticCryoET" / "synth_tomo_1").mkdir(parents=True)
+    result = load_sample_record(tmp_path)
+    assert result.acquisition_errors == {}
+    assert result.record is not None
+    assert (
+        result.record.acquisitions["acq1"].raw_tomogram.tomogram_id == "synth_tomo_1"
+    )
+
+
+def test_annotation_id_without_matching_folder_fails(tmp_path):
+    _minimal_sample(tmp_path)
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [raw_tomogram]
+        id = "tomo_001"
+
+        [[annotation]]
+        id = "membrain_seg_v10"
+        target_tomogram = "tomo_001"
+        """,
+    )
+    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "tomo_001").mkdir(parents=True)
+    # No matching annotation folder.
+    (tmp_path / "acq1" / "Reconstructions" / "Annotations").mkdir(parents=True)
+    result = load_sample_record(tmp_path)
+    assert "acq1" in result.acquisition_errors
+    msg = result.acquisition_errors["acq1"]
+    assert "annotation[membrain_seg_v10]" in msg
+    assert "no matching folder" in msg
     assert "acq1" not in result.record.acquisitions
 
 
