@@ -19,6 +19,14 @@ COPY --from=deps /app/.pixi /app/.pixi
 COPY pixi.lock pyproject.toml ./
 COPY src ./src
 
+# OpenShift runs the pod as an arbitrary non-root UID in gid 0. The long-running
+# uvicorn task never exits so it doesn't currently hit pixi's post-task cache
+# write under /app/.pixi, but one-shot tasks (e.g. `pixi run -e api migrate` as
+# an init container) would fail with "Permission denied (os error 13)". Make
+# /app writable by gid 0 to keep the image robust and consistent with the
+# scanner image. See Dockerfile.scanner for the full explanation.
+RUN chgrp -R 0 /app && chmod -R g=u /app
+
 # CATALOG_DATA_ROOT must match the path scanner used when writing the DB —
 # the API resolves DB-recorded paths against this and rejects anything outside.
 ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data/scratch/data \

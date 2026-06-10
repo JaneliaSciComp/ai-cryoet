@@ -18,6 +18,14 @@ COPY --from=deps /app/.pixi /app/.pixi
 COPY pixi.lock pyproject.toml ./
 COPY src ./src
 
+# OpenShift runs the pod as an arbitrary non-root UID that belongs to gid 0.
+# When a one-shot pixi task exits, pixi writes a task cache under
+# /app/.pixi/task-cache-v0/, so /app must be writable by gid 0 or the run fails
+# with "Permission denied (os error 13)" *after* the scan succeeds. chgrp is a
+# no-op (the COPY'd tree is already gid 0) but makes the intent explicit;
+# `chmod g=u` grants the group the same access as the owner.
+RUN chgrp -R 0 /app && chmod -R g=u /app
+
 ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data/scratch/data \
     CATALOG_DB_URL=sqlite:////db/catalog.db \
     CATALOG_THUMBNAIL_DIR=/thumbnails
