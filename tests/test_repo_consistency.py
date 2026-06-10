@@ -32,7 +32,7 @@ from schema import (
 from schema.sync_templates import TEMPLATE_PAIRS
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_SCHEMA_INFO = _REPO_ROOT / "src" / "schema" / "schema_info.md"
+_SCHEMA_INFO = _REPO_ROOT / "docs" / "schema.md"
 _README = _REPO_ROOT / "README.md"
 
 # Leaf entity models whose fields map 1:1 to documented table rows. The
@@ -118,7 +118,7 @@ def test_starter_skeletons_match_documented_layout():
 
 
 def test_schema_info_documents_every_field():
-    """Every field on every entity model must appear in schema_info.md."""
+    """Every field on every entity model must appear in docs/schema.md."""
     doc = _SCHEMA_INFO.read_text()
     missing: list[str] = []
     for model in _ENTITY_MODELS:
@@ -126,7 +126,7 @@ def test_schema_info_documents_every_field():
             if f"`{field_name}`" not in doc:
                 missing.append(f"{model.__name__}.{field_name}")
     assert not missing, (
-        "fields present in schema.py but undocumented in schema_info.md: "
+        "fields present in schema.py but undocumented in docs/schema.md: "
         + ", ".join(missing)
     )
 

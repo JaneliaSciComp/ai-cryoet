@@ -1,6 +1,6 @@
 """Pydantic schema for CryoET + AI sample metadata.
 
-Covers every field in schema_info.md. Fields are grouped by authoritative source within each class:
+Covers every field in docs/schema.md. Fields are grouped by authoritative source within each class:
 
 - sample.toml / acquisition.toml — researcher-authored; required on ingest only for ``sample.data_source`` and ``sample.project``.
 - MDOC — parsed from ``.mdoc`` files under each acquisition's ``Frames/``.

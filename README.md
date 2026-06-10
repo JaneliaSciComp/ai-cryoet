@@ -20,7 +20,7 @@ A Pydantic-validated metadata schema, a directory-walking catalog scanner, a Fas
 | `.claude/plans/` | Implementation plans, including the catalog scanner plan. |
 | `pyproject.toml` / `pixi.lock` | PyPI dependencies (`[project]`), and pixi config (`[tool.pixi.*]`). |
 
-For the schema itself, see `src/schema/schema_info.md` (human reference) and `src/schema/schema.py` (Pydantic source of truth).
+For the schema itself, see `docs/schema.md` (human reference) and `src/schema/schema.py` (Pydantic source of truth).
 
 ---
 
@@ -159,4 +159,4 @@ For researchers writing `sample.toml` / `acquisition.toml`, the authoring guide 
 
 - **[`docs/data_organization.md`](docs/data_organization.md)** — directory layout, metadata files, schema rules, researcher workflow.
 - **[`docs/architecture.md`](docs/architecture.md)** — system architecture.
-- **`src/schema/schema_info.md`** — every field that lands in the portal DB, grouped by entity, with the source of each (TOML / MDOC / MRC / directory / derived).
+- **[`docs/schema.md`](docs/schema.md)** — every field that lands in the portal DB, grouped by entity, with the source of each (TOML / MDOC / MRC / directory / derived).
