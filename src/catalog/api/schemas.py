@@ -95,6 +95,10 @@ class MdRunOut(BaseModel):
     md_run_id: str
     seed: int | None = None
     computer: str | None = None
+    sample_time: float | None = None
+    timestep: float | None = None
+    reference_contact: str | None = None
+    force_field_version: str | None = None
 
 
 class _TomogramOutBase(BaseModel):

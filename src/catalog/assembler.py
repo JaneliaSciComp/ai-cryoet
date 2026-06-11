@@ -51,6 +51,8 @@ ScanWarningCategory = Literal[
     "tilt_series_layout_unknown",
     "undeclared_tomogram_folder",
     "undeclared_annotation_folder",
+    "deprecated_md_run_block",
+    "dangling_md_source_ref",
 ]
 
 
@@ -98,6 +100,17 @@ def _categorize_loader_warning(s: str) -> ScanWarning:
 
     Anything else falls through to ``extra_field`` with ``<unknown>`` location.
     """
+    if s.startswith("[[md_run]] in sample.toml is deprecated"):
+        return ScanWarning(
+            category="deprecated_md_run_block", location="<root>", message=s
+        )
+    if s.startswith("dangling md_source ref:"):
+        # Format includes "md_source.md_run_id '<id>' ..." — surface the id.
+        m = re.search(r"md_run_id '([^']+)'", s)
+        location = f"md_source.{m.group(1)}" if m else "<root>"
+        return ScanWarning(
+            category="dangling_md_source_ref", location=location, message=s
+        )
     if "possible typo" in s:
         m = _TYPO_LOC_RE.search(s)
         location = m.group(1) if m else "<root>"

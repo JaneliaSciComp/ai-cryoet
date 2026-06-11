@@ -32,6 +32,7 @@ from rapidfuzz import process
 from schema import (
     AcquisitionFile,
     DataSource,
+    MdRun,
     Sample,
     SampleRecord,
 )
@@ -131,25 +132,27 @@ def _format_validation_errors(prefix: str, exc: ValidationError) -> list[str]:
     return out
 
 
-def _md_source_ref_error(
+def _md_source_ref_warning(
     acq: AcquisitionFile, valid_md_run_ids: set[str]
 ) -> str | None:
-    """Error string if the acquisition's ``md_source.md_run_id`` is set but
-    matches no ``[[md_run]]`` id declared in ``sample.toml``.
+    """Warning string if the acquisition's ``md_source.md_run_id`` is set but
+    matches no ``MdRuns/{id}/`` folder under the sample.
 
     This is the one reference that crosses files (acquisition.toml ->
-    sample.toml), so it can't live on ``AcquisitionFile`` and isn't enforced
-    at ``SampleRecord`` level (which would fail the whole sample). The loader
-    checks it during the per-acquisition pass and routes a dangling ref to
-    that acquisition's ``acquisition_errors``, preserving isolation.
+    MdRuns/{id}/md_run.toml), so it can't live on ``AcquisitionFile`` and isn't
+    enforced at ``SampleRecord`` level (which would fail the whole sample). The
+    loader checks it during the per-acquisition pass and downgrades a dangling
+    ref to a warning (with a stable ``"dangling md_source ref:"`` prefix the
+    assembler categorizes) so a data move mid-migration doesn't break the
+    acquisition. The acquisition still validates and is kept.
     """
     src = acq.md_source
     if src is None or src.md_run_id is None:
         return None
     if src.md_run_id not in valid_md_run_ids:
         return (
-            f"md_source.md_run_id '{src.md_run_id}' does not match any "
-            f"[[md_run]] id in sample.toml"
+            f"dangling md_source ref: md_source.md_run_id '{src.md_run_id}' "
+            f"does not match any MdRuns/{{id}}/md_run.toml"
         )
     return None
 
@@ -469,15 +472,44 @@ def load_sample_record(
     if sample_model is None:
         return result
 
-    # md_run ids declared in sample.toml (raw, by TOML `id` alias). Used to
-    # validate each acquisition's md_source reference below. A malformed or
-    # duplicate md_run id is caught later by SampleRecord validation and fails
-    # the whole sample; here we only need the declared id set.
-    valid_md_run_ids = {
-        run["id"]
-        for run in sample_data.get("md_run", [])
-        if isinstance(run, dict) and isinstance(run.get("id"), str)
-    }
+    # ── MD runs from MdRuns/{id}/md_run.toml ────────────────────────────────
+    # A stale [[md_run]] array in sample.toml is deprecated and ignored; warn
+    # so stale TOML doesn't double-count.
+    if sample_data.get("md_run"):
+        result.warnings.append(
+            "[[md_run]] in sample.toml is deprecated and ignored; author "
+            "MdRuns/{id}/md_run.toml instead"
+        )
+    sample_data.pop("md_run", None)
+
+    parsed_md_runs: list[MdRun] = []
+    valid_md_run_ids: set[str] = set()
+    for md_run_toml in sorted(sample_dir.glob("MdRuns/*/md_run.toml")):
+        run_dir = md_run_toml.parent
+        run_id = run_dir.name
+        # The folder exists, so a ref to it is never dangling — count it even
+        # if the md_run.toml itself fails to parse/validate.
+        valid_md_run_ids.add(run_id)
+        try:
+            with md_run_toml.open("rb") as f:
+                run_data = tomllib.load(f)
+        except tomllib.TOMLDecodeError:
+            # A bad md_run.toml records nothing fatal — skip it (its folder
+            # still counts toward valid ids above).
+            continue
+        _strip_placeholders(run_data, f"md_run[{run_id}]", result.warnings)
+        run_data["id"] = run_id  # folder = identity
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always", UserWarning)
+            try:
+                run_model = MdRun.model_validate(run_data)
+            except ValidationError:
+                run_model = None
+        for w in caught:
+            if issubclass(w.category, UserWarning):
+                result.warnings.append(str(w.message))
+        if run_model is not None:
+            parsed_md_runs.append(run_model)
 
     # Per-acquisition: parse, strip placeholders, validate independently.
     # Simulation samples wrap their acquisitions in SyntheticCryoET/, so the
@@ -527,13 +559,17 @@ def load_sample_record(
                 # (no md_runs exist), left for SampleRecord to reject whole-sample
                 # with a clear message — don't pre-empt it here with a misleading
                 # "no matching md_run" error.
-                ref_error = None
+                #
+                # A dangling ref (md_run_id with no MdRuns/ folder) is downgraded
+                # to a warning so a data move mid-migration doesn't break the
+                # acquisition; the acquisition still validates and is kept.
                 if sample_model.data_source == DataSource.simulation:
-                    ref_error = _md_source_ref_error(acq_model, valid_md_run_ids)
-                if ref_error is not None:
-                    result.acquisition_errors[acq_name] = ref_error
-                else:
-                    validated_acqs[acq_name] = acq_model
+                    ref_warning = _md_source_ref_warning(
+                        acq_model, valid_md_run_ids
+                    )
+                    if ref_warning is not None:
+                        result.warnings.append(ref_warning)
+                validated_acqs[acq_name] = acq_model
 
     # Build the full record. Pass already-validated acquisitions through
     # by dumping back to dict (preserves alias round-tripping for the
@@ -549,6 +585,9 @@ def load_sample_record(
         },
     }
     merged["sample"] = sample_data["sample"]
+    # MD runs now come from MdRuns/{id}/md_run.toml, not sample.toml. Dump the
+    # parsed list by_alias so the `id` alias round-trips into SampleRecord.
+    merged["md_run"] = [run.model_dump(by_alias=True) for run in parsed_md_runs]
 
     # Track warnings already captured (sample-block + per-acquisition)
     # so that the final SampleRecord pass — which re-walks the same

@@ -82,6 +82,10 @@ export type MdRunOut = {
   md_run_id: string
   seed: number | null
   computer: string | null
+  sample_time: number | null
+  timestep: number | null
+  reference_contact: string | null
+  force_field_version: string | null
 }
 
 // Fields shared between raw and post-processed tomogram outputs.

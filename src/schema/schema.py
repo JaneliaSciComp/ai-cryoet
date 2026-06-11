@@ -224,11 +224,16 @@ class Milling(_Base):
 
 
 class MdRun(_Base):
-    # directory / sample.toml [[md_run]] (folder name = md_run_id = TOML `id`);
-    # one directory per run under {sample_dir}/MdRuns/{id}. Simulation data only.
+    # directory (folder name = md_run_id); one md_run.toml per run under
+    # {sample_dir}/MdRuns/{id}/md_run.toml. The `id` is injected from the
+    # folder name by the loader, not authored in TOML. Simulation data only.
     md_run_id: IdStr = Field(alias="id")
     seed: int | None = None
+    sample_time: float | None = None       # total simulated time
+    timestep: float | None = None          # integration timestep
     computer: str | None = None
+    reference_contact: str | None = None   # "reference or contact"
+    force_field_version: str | None = None
 
 
 class Acquisition(_Base):

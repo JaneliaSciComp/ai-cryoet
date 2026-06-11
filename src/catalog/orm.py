@@ -190,7 +190,11 @@ class MdRunORM(Base):
     )
     md_run_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sample_time: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timestep: Mapped[float | None] = mapped_column(Float, nullable=True)
     computer: Mapped[str | None] = mapped_column(String, nullable=True)
+    reference_contact: Mapped[str | None] = mapped_column(String, nullable=True)
+    force_field_version: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (PrimaryKeyConstraint("sample_id", "md_run_id"),)
 

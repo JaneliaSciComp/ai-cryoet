@@ -37,6 +37,13 @@ class SampleLocation:
 
 
 @dataclass(frozen=True)
+class MdRunLocation:
+    path: Path
+    md_run_id: str
+    md_run_toml: Path
+
+
+@dataclass(frozen=True)
 class AcquisitionLocation:
     path: Path
     sample_id: str
@@ -211,6 +218,27 @@ def iter_misplaced_samples(root: Path) -> Iterator[Path]:
                 yield child
 
 
+def iter_md_runs(sample: SampleLocation) -> Iterator[MdRunLocation]:
+    """Yield one MdRunLocation per ``{sample}/MdRuns/*/`` holding an md_run.toml.
+
+    The folder name is the ``md_run_id`` (the TOML ``id`` is injected from it
+    by the loader). Folders without an ``md_run.toml`` are skipped.
+    """
+    md_runs_dir = sample.path / "MdRuns"
+    if not md_runs_dir.is_dir():
+        return
+    for child in sorted(md_runs_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        md_run_toml = child / "md_run.toml"
+        if md_run_toml.is_file():
+            yield MdRunLocation(
+                path=child,
+                md_run_id=child.name,
+                md_run_toml=md_run_toml,
+            )
+
+
 def iter_acquisitions(sample: SampleLocation) -> Iterator[AcquisitionLocation]:
     """Yield AcquisitionLocation for each acquisition under the sample.
 
@@ -318,6 +346,10 @@ def parse_targets_for_sample(sample: SampleLocation) -> list[Path]:
     """
     targets: set[Path] = set()
     targets.add(sample.sample_toml)
+
+    # MD-run metadata: each MdRuns/*/md_run.toml so mtime gating reacts to edits.
+    for md_run in iter_md_runs(sample):
+        targets.add(md_run.md_run_toml)
 
     for acq in iter_acquisitions(sample):
         if acq.acquisition_toml is not None:
