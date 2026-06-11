@@ -137,6 +137,13 @@ class DatasetType(str, Enum):
     slab = "slab"
 
 
+# Tilt-series quality score: a constrained 1-5 integer (5 Excellent … 1 Low).
+# The 5->1 rubric is documentation-only (template comment + docs/schema.md);
+# the schema enforces only the integer range. A constrained int (not an
+# IntEnum) so the ORM maps it to Integer (see tests/catalog/test_orm_drift.py).
+TiltQuality = Annotated[int, Field(ge=1, le=5)]
+
+
 class Sample(_Base):
     # directory (sample folder name, injected on load)
     sample_id: IdStr | None = None
@@ -234,7 +241,8 @@ class Acquisition(_Base):
     energy_filter: str | None = None
     phase_plate: bool | None = None
     microscope: str | None = None
-    quality: str | None = None
+    facility: str | None = None              # imaging facility, e.g. "Janelia"
+    tilt_series_quality_score: TiltQuality | None = None  # 1-5 rubric (5 best)
     # MDOC
     pixel_size: float | None = None          # angstrom
     dose_per_tilt: list[float] | None = None # e/Å² per tilt

@@ -142,7 +142,8 @@ export type AcquisitionOut = {
   acquisition_id: string
   resolution: number | null
   microscope: string | null
-  quality: string | null
+  facility: string | null
+  tilt_series_quality_score: number | null
   pixel_size: number | null
   voltage: number | null
   camera: string | null

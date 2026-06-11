@@ -215,7 +215,10 @@ class AcquisitionORM(Base):
     energy_filter: Mapped[str | None] = mapped_column(String, nullable=True)
     phase_plate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     microscope: Mapped[str | None] = mapped_column(String, nullable=True)
-    quality: Mapped[str | None] = mapped_column(String, nullable=True)
+    facility: Mapped[str | None] = mapped_column(String, nullable=True)
+    tilt_series_quality_score: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     pixel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
     dose_per_tilt: Mapped[list | None] = mapped_column(JSON, nullable=True)
     total_dose: Mapped[float | None] = mapped_column(Float, nullable=True)

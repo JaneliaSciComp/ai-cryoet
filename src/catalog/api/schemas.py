@@ -160,7 +160,8 @@ class AcquisitionOut(BaseModel):
     acquisition_id: str
     resolution: float | None = None
     microscope: str | None = None
-    quality: str | None = None
+    facility: str | None = None
+    tilt_series_quality_score: int | None = None
     pixel_size: float | None = None
     voltage: float | None = None
     camera: str | None = None
