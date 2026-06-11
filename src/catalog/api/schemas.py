@@ -301,6 +301,18 @@ class SampleWarningsGroup(BaseModel):
     warnings: list[str]
 
 
+class RunWarningOut(BaseModel):
+    """A run-level warning not tied to any sample (e.g. an unknown subdir
+    under ``MdSimulation/``)."""
+
+    id: int
+    category: str
+    location: str
+    message: str
+    detected_at: float
+    scan_run_id: str
+
+
 class ExtrasSummaryRow(BaseModel):
     entity_type: str
     key: str

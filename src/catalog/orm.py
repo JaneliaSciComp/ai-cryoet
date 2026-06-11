@@ -449,6 +449,30 @@ class ScanWarningsORM(Base):
     )
 
 
+class ScanRunWarningsORM(Base):
+    """Run-level warnings not tied to any sample.
+
+    Emitted for filesystem issues the per-sample pipeline can't represent —
+    e.g. an unknown subdirectory under ``MdSimulation/`` that holds no
+    cataloguable sample. No FK to ``samples`` (there is no sample); refreshed
+    per run by ``scan_run_id``.
+    """
+
+    __tablename__ = "scan_run_warnings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    location: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    detected_at: Mapped[float] = mapped_column(Float, nullable=False)
+    scan_run_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("scans.scan_run_id"),
+        nullable=False,
+        index=True,
+    )
+
+
 class ScanSamplesORM(Base):
     """Per-sample outcome for a scan run: which samples were upserted, skipped,
     or failed. The ``scans`` row keeps only aggregate counts; this table records

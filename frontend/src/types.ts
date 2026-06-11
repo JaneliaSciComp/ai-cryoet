@@ -275,3 +275,14 @@ export type SampleWarningsGroup = {
   sample_id: string
   warnings: string[]
 }
+
+// A run-level warning not tied to any sample (e.g. an unknown subdirectory
+// under MdSimulation/ that was skipped during discovery).
+export type RunWarningOut = {
+  id: number
+  category: string
+  location: string
+  message: string
+  detected_at: number
+  scan_run_id: string
+}

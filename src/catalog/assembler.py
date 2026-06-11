@@ -52,7 +52,10 @@ ScanWarningCategory = Literal[
     "undeclared_tomogram_folder",
     "undeclared_annotation_folder",
     "deprecated_md_run_block",
+    "multiple_tilt_series",
     "dangling_md_source_ref",
+    # Run-level (no owning sample) — emitted by the scanner, not the assembler.
+    "unknown_md_simulation_subdir",
 ]
 
 
@@ -311,6 +314,19 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             # Replace any TOML-authored tilt_series list with the parser's
             # output — the scanner is the canonical writer for this field.
             acq_file.tilt_series = ts_result.records
+            if len(ts_result.records) > 1:
+                result.warnings.append(
+                    ScanWarning(
+                        category="multiple_tilt_series",
+                        location=f"acquisitions.{acq_loc.acquisition_id}",
+                        message=(
+                            f"acquisition '{acq_loc.acquisition_id}' has "
+                            f"{len(ts_result.records)} tilt series; the "
+                            "tilt_series_quality_score on [acquisition] applies "
+                            "to the acquisition as a whole"
+                        ),
+                    )
+                )
 
         # Step 3: tomograms (raw + post share one id namespace) -------------
         existing_tomos: dict[str, RawTomogram | PostProcessedTomogram] = {}
