@@ -155,6 +155,7 @@ class Sample(_Base):
     data_source: DataSource | None = None
     # sample.toml ([sample])
     project: Project
+    lab_name: LabName | None = None
     type: str | None = None
     cell_type: str | None = None
     description: str | None = None
@@ -435,7 +436,6 @@ class SampleRecord(_Base):
     """
 
     sample: Sample
-    lab_name: LabName | None = None
     simulation: Simulation | None = None
     chromatin: Chromatin | None = None
     label: list[Label] = Field(default_factory=list)

@@ -312,6 +312,7 @@ def list_samples(
         SampleSummary(
             sample_id=r[0].sample_id,
             project=_enum_val(r[0].project),
+            lab_name=_enum_val(r[0].lab_name),
             data_source=_enum_val(r[0].data_source),
             type=r[0].type,
             cell_type=r[0].cell_type,
@@ -463,6 +464,7 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
     return SampleDetail(
         sample_id=sample.sample_id,
         project=_enum_val(sample.project),
+        lab_name=_enum_val(sample.lab_name),
         data_source=_enum_val(sample.data_source),
         type=sample.type,
         cell_type=sample.cell_type,

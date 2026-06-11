@@ -645,6 +645,9 @@
         "project": {
           "$ref": "#/$defs/Project"
         },
+        "lab_name": {
+          "$ref": "#/$defs/LabName"
+        },
         "type": {
           "title": "Type",
           "type": "string"
@@ -768,9 +771,6 @@
   "properties": {
     "sample": {
       "$ref": "#/$defs/Sample"
-    },
-    "lab_name": {
-      "$ref": "#/$defs/LabName"
     },
     "simulation": {
       "$ref": "#/$defs/Simulation"

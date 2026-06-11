@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from schema.schema import _ID_MAX_LEN, DataSource, DatasetType, Project
+from schema.schema import _ID_MAX_LEN, DataSource, DatasetType, LabName, Project
 
 
 class Base(DeclarativeBase):
@@ -43,6 +43,7 @@ class SampleORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), primary_key=True)
     data_source: Mapped[DataSource] = mapped_column(SAEnum(DataSource), nullable=False)
     project: Mapped[Project] = mapped_column(SAEnum(Project), nullable=False)
+    lab_name: Mapped[LabName | None] = mapped_column(SAEnum(LabName), nullable=True)
     type: Mapped[str | None] = mapped_column(String, nullable=True)
     cell_type: Mapped[str | None] = mapped_column(String, nullable=True)
     description: Mapped[str | None] = mapped_column(String, nullable=True)

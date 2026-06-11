@@ -17,6 +17,7 @@ from pydantic import BaseModel
 class SampleSummary(BaseModel):
     sample_id: str
     project: str
+    lab_name: str | None = None
     data_source: str
     type: str | None = None
     cell_type: str | None = None
@@ -180,6 +181,7 @@ class AcquisitionOut(BaseModel):
 class SampleDetail(BaseModel):
     sample_id: str
     project: str
+    lab_name: str | None = None
     data_source: str
     type: str | None = None
     cell_type: str | None = None

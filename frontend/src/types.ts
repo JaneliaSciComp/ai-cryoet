@@ -5,6 +5,7 @@
 export type SampleSummary = {
   sample_id: string
   project: string
+  lab_name: string | null
   data_source: string
   type: string | null
   cell_type: string | null
@@ -162,6 +163,7 @@ export type AcquisitionOut = {
 export type SampleDetail = {
   sample_id: string
   project: string
+  lab_name: string | null
   data_source: string
   type: string | null
   cell_type: string | null
