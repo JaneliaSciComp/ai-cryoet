@@ -140,6 +140,16 @@ docker compose down -v
 docker compose --profile scan run --rm scanner
 docker compose up
 ```
+---
+
+## Maintaining the schema
+
+`src/schema/schema.py` is the single source of truth for field definitions. When changing a field:
+
+1. Edit `schema.py` and the canonical template(s) — `templates/sample.toml` / `templates/acquisition.toml`.
+2. Run `pixi run sync` to regenerate the derived artifacts: `schema.json`, `acquisition.schema.json`, and the `templates/sample_id_{data_type}/` starter copies.
+3. Update `docs/schema.md`, the human-readable schema documentation for every stored field, including DB-only ones not in any TOML.
+4. Run `pixi run test -- tests/test_repo_consistency.py tests/test_generate_json_schema.py`. The drift guards in `tests/test_repo_consistency.py` and `tests/test_generate_json_schema.py` fail with a fix hint if the generated schemas, starter copies, or docs are out of date.
 
 ---
 
