@@ -126,8 +126,8 @@ One row per imaging position. Primary key: `(sample_id, acquisition_id)`.
 | `acquisition_id` | text (PK) | `directory` | derived | Acquisition folder name, e.g. `Position_86`. |
 | `sample_id` | text (FK) | `directory` | derived | Parent sample directory name. |
 | `resolution` | float | `acquisition.toml` (`[acquisition]`) | researcher authored | Angstrom. Nominal target. |
-| `tilt_spacing` | float | `acquisition.toml` (`[acquisition]`) | researcher authored | Degrees. Nominal step. |
-| `defocus_range` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Micrometres, free-text range. |
+| `tilt_spacing` | float | `acquisition.toml` (`[acquisition]`) | researcher authored | Degrees. **Target** tilt step set at acquisition — researcher intent, distinct from the MDOC-derived actual `tilt_angles`. |
+| `defocus_range` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Micrometres, free-text. **Target** defocus range set before collection — researcher intent, distinct from the MDOC-derived per-image actuals (`defocus_per_image`). |
 | `energy_filter` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Model name. |
 | `phase_plate` | boolean | `acquisition.toml` (`[acquisition]`) | researcher authored | |
 | `microscope` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Model name. |
