@@ -506,10 +506,6 @@
           "title": "Missing Wedge Software",
           "type": "string"
         },
-        "voxel_size": {
-          "title": "Voxel Size",
-          "type": "number"
-        },
         "derived_from": {
           "items": {
             "type": "string"
@@ -528,6 +524,10 @@
         "image_size_z": {
           "title": "Image Size Z",
           "type": "integer"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
         },
         "mrc_path": {
           "title": "Mrc Path",
@@ -583,10 +583,6 @@
           "title": "Software",
           "type": "string"
         },
-        "voxel_size": {
-          "title": "Voxel Size",
-          "type": "number"
-        },
         "derived_from": {
           "items": {
             "type": "string"
@@ -605,6 +601,10 @@
         "image_size_z": {
           "title": "Image Size Z",
           "type": "integer"
+        },
+        "voxel_size": {
+          "title": "Voxel Size",
+          "type": "number"
         },
         "mrc_path": {
           "title": "Mrc Path",

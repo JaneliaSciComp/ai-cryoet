@@ -118,6 +118,8 @@ def test_happy_path_chromatin_fixture():
     assert raw is not None
     assert raw.tomogram_id == "bp_3dctf_bin4"
     assert raw.image_size_x == 4
+    # voxel_size is derived from the MRC header (not authored in the TOML)
+    assert raw.voxel_size == pytest.approx(11.7197, rel=1e-4)
     assert raw.mrc_path is not None
     assert raw.zarr_path is not None
     assert raw.zarr_axes == "zyx"

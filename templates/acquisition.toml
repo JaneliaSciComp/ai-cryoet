@@ -38,8 +38,8 @@
 
 [acquisition]
 # resolution    = "<FILL IN>"   # float, nominal resolution in Å, e.g. 3.5
-# tilt_spacing  = "<FILL IN>"   # float, nominal tilt step in degrees, e.g. 3.0
-# defocus_range = "<FILL IN>"   # text, target defocus range in µm, e.g. "-1.5 to -3.0"
+# tilt_spacing  = "<FILL IN>"   # float, target tilt step in degrees, e.g. 3.0 (intent; actual angles come from the MDOC)
+# defocus_range = "<FILL IN>"   # text, target defocus range in µm, e.g. "-1.5 to -3.0" (intent; per-image actuals come from the MDOC)
 # energy_filter = "<FILL IN>"   # text, model name, e.g. "Selectris", "GIF Quantum", "none"
 # phase_plate   = "<FILL IN>"   # boolean, true | false
 # microscope    = "<FILL IN>"   # text, model name, e.g. "Titan Krios", "Glacios"
@@ -72,7 +72,6 @@
 # id            = "<FILL IN>"   # text, MUST equal the tomogram's folder name
 # pipeline      = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
 # software      = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
-# voxel_size    = "<FILL IN>"   # float, Angstrom
 # derived_from  = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[post_processed_tomogram]]
@@ -80,7 +79,6 @@
 # denoising_software        = "<FILL IN>"   # text
 # ctf_software              = "<FILL IN>"   # text
 # missing_wedge_software    = "<FILL IN>"   # text
-# voxel_size                = "<FILL IN>"   # integer, e.g. 4
 # derived_from              = "<FILL IN>"   # list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[annotation]]
