@@ -51,6 +51,7 @@ ScanWarningCategory = Literal[
     "tilt_series_layout_unknown",
     "undeclared_tomogram_folder",
     "undeclared_annotation_folder",
+    "annotation_without_target_tomogram",
     "deprecated_md_run_block",
     "multiple_tilt_series",
     "dangling_md_source_ref",
@@ -440,6 +441,27 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 continue
             if not ann.files:
                 ann.files = sorted(str(p) for p in ann_loc.files)
+
+        # Declared annotations with no target_tomogram aren't tied to any
+        # tomogram in this acquisition. That's permitted by the schema (the
+        # field is optional), but it usually means the [[annotation]] block is
+        # missing its target_tomogram — warn so it doesn't go unnoticed.
+        for ann in acq_file.annotation:
+            if ann.target_tomogram is None:
+                result.warnings.append(
+                    ScanWarning(
+                        category="annotation_without_target_tomogram",
+                        location=(
+                            f"acquisitions.{acq_loc.acquisition_id}"
+                            f".annotation[{ann.annotation_id}]"
+                        ),
+                        message=(
+                            f"annotation '{ann.annotation_id}' has no "
+                            "target_tomogram — add a target_tomogram referencing "
+                            "a tomogram declared in this acquisition"
+                        ),
+                    )
+                )
 
     # ── Step 5: re-validate ──────────────────────────────────────────────────
     try:
