@@ -393,6 +393,82 @@ def test_undeclared_annotation_folder_warns(tmp_path):
     assert "stray_ann" in undeclared[0].message
 
 
+def test_annotation_without_target_tomogram_warns(tmp_path):
+    """A declared annotation with no target_tomogram warns (the field is
+    optional in the schema, so this is a warning rather than an error)."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [[annotation]]
+        id = "membrane"
+        type = "segmentation"
+        """,
+    )
+    # A declared annotation id must match a folder on disk (loader rule).
+    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "membrane").mkdir(
+        parents=True
+    )
+
+    loc = _sample_loc(sample_dir)
+    result = assemble_sample(loc)
+
+    orphans = [
+        w
+        for w in result.warnings
+        if w.category == "annotation_without_target_tomogram"
+    ]
+    assert len(orphans) == 1
+    assert "membrane" in orphans[0].location
+    assert "membrane" in orphans[0].message
+    # The annotation is still kept — this is a warning, not an error.
+    assert result.record is not None
+
+
+def test_annotation_with_target_tomogram_does_not_warn(tmp_path):
+    """An annotation that names an existing target_tomogram produces no
+    annotation_without_target_tomogram warning."""
+    sample_dir = tmp_path / "sample_test"
+    _write_minimal_sample_toml(sample_dir)
+    _write(
+        sample_dir / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+        microscope = "Krios"
+
+        [raw_tomogram]
+        id = "tomo1"
+
+        [[annotation]]
+        id = "membrane"
+        type = "segmentation"
+        target_tomogram = "tomo1"
+        """,
+    )
+    # Declared tomogram/annotation ids must match folders on disk (loader rule).
+    (sample_dir / "acq1" / "Reconstructions" / "Tomograms" / "tomo1").mkdir(
+        parents=True
+    )
+    (sample_dir / "acq1" / "Reconstructions" / "Annotations" / "membrane").mkdir(
+        parents=True
+    )
+
+    loc = _sample_loc(sample_dir)
+    result = assemble_sample(loc)
+
+    orphans = [
+        w
+        for w in result.warnings
+        if w.category == "annotation_without_target_tomogram"
+    ]
+    assert orphans == []
+    assert result.record is not None
+
+
 def test_data_source_derived_from_directory(tmp_path):
     """data_source is no longer authored; the directory arm is the source of
     truth and is injected silently (no mismatch warning), overriding any
