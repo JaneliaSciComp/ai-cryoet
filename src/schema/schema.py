@@ -274,12 +274,12 @@ class RawTomogram(_Base):
     tomogram_id: IdStr = Field(alias="id")
     pipeline: str | None = None
     software: str | None = None
-    voxel_size: float | None = None                   # angstrom
     derived_from: list[IdStr] = Field(default_factory=list)
     # MRC header
     image_size_x: int | None = None
     image_size_y: int | None = None
     image_size_z: int | None = None
+    voxel_size: float | None = None                   # angstrom; from MRC header voxel_size.x
     # directory (prescribed layout)
     mrc_path: str | None = None
     zarr_path: str | None = None
@@ -294,12 +294,12 @@ class PostProcessedTomogram(_Base):
     denoising_software: str | None = None
     ctf_software: str | None = None
     missing_wedge_software: str | None = None
-    voxel_size: float | None = None                   # angstrom
     derived_from: list[IdStr] = Field(default_factory=list)
     # MRC header
     image_size_x: int | None = None
     image_size_y: int | None = None
     image_size_z: int | None = None
+    voxel_size: float | None = None                   # angstrom; from MRC header voxel_size.x
     # directory (prescribed layout)
     mrc_path: str | None = None
     zarr_path: str | None = None

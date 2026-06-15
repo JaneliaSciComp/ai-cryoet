@@ -207,8 +207,7 @@ tomogram in the same `acquisition.toml`.
 | `sample_id` | text (FK) | `directory` | derived | Parent sample folder name. |
 | `pipeline` | text | `acquisition.toml` (`[raw_tomogram]`) | researcher authored | Human description. |
 | `software` | text | `acquisition.toml` (`[raw_tomogram]`) | researcher authored | |
-| `voxel_size` | float | `acquisition.toml` (`[raw_tomogram]`) | researcher authored | Ångström. Researcher-stated voxel spacing. |
-| `voxel_spacing_angstrom` | float | `MRC header` | derived | DB-only column populated by the catalog scanner from the MRC header's `voxel_size.x`; not authored in any TOML. Cross-check against the authored `voxel_size`. |
+| `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Populated by the catalog scanner from the reconstruction MRC header's `voxel_size.x`; not authored in any TOML. |
 | `derived_from` | list[text] | `acquisition.toml` (`[raw_tomogram]`) | researcher authored | Lineage; empty for raw reconstructions. |
 | `image_size_x` | integer | `MRC header` | derived | |
 | `image_size_y` | integer | `MRC header` | derived | |
@@ -230,8 +229,7 @@ tomogram in the same `acquisition.toml`.
 | `denoising_software` | text | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | |
 | `ctf_software` | text | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | |
 | `missing_wedge_software` | text | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | |
-| `voxel_size` | float | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | Ångström. Researcher-stated voxel spacing. |
-| `voxel_spacing_angstrom` | float | `MRC header` | derived | DB-only column populated by the catalog scanner from the MRC header's `voxel_size.x`; not authored in any TOML. Cross-check against the authored `voxel_size`. |
+| `voxel_size` | float | `MRC header` | derived | Ångström/pixel. Populated by the catalog scanner from the reconstruction MRC header's `voxel_size.x`; not authored in any TOML. |
 | `derived_from` | list[text] | `acquisition.toml` (`[[post_processed_tomogram]]`) | researcher authored | Lineage; references a raw or post-processed `tomogram_id` in this acquisition. |
 | `image_size_x` | integer | `MRC header` | derived | |
 | `image_size_y` | integer | `MRC header` | derived | |

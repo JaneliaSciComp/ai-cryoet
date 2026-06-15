@@ -389,6 +389,10 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                         tomo.image_size_y = mrc_result.fields.get("image_size_y")
                     if tomo.image_size_z is None:
                         tomo.image_size_z = mrc_result.fields.get("image_size_z")
+                    if tomo.voxel_size is None:
+                        tomo.voxel_size = mrc_result.fields.get(
+                            "voxel_spacing_angstrom"
+                        )
                 if tomo.mrc_path is None:
                     tomo.mrc_path = mrc_path_str
 

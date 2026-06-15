@@ -72,7 +72,6 @@
 # id            = "<FILL IN>"   # text, MUST equal the tomogram's folder name
 # pipeline      = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
 # software      = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
-# voxel_size    = "<FILL IN>"   # float, Angstrom
 # derived_from  = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[post_processed_tomogram]]
@@ -80,7 +79,6 @@
 # denoising_software        = "<FILL IN>"   # text
 # ctf_software              = "<FILL IN>"   # text
 # missing_wedge_software    = "<FILL IN>"   # text
-# voxel_size                = "<FILL IN>"   # integer, e.g. 4
 # derived_from              = "<FILL IN>"   # list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[annotation]]

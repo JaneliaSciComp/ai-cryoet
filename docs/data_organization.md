@@ -176,7 +176,7 @@ The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chan
 
 - **Two metadata files per sample.** Sample-level conditions live in `sample.toml` at the sample root. Per-acquisition parameters and the processing log live in `{acquisition}/acquisition.toml`. Fields derivable from MDOC files and file headers are authored in neither file; the ingest pipeline will read them directly.
 - **Tomograms are kept in per-pipeline subfolders** (e.g., `bp_3dctf_bin4/`, `bp_3dctf_bin4_ddw/`) rather than flattened into `Tomograms/`. This avoids filename collisions when new processing versions are added, and the folder name acts as the `processing_id`.
-- **No `VoxelSpacing{N}/` subfolder.** Voxel spacing in Ångström is recorded directly in `acquisition.toml` (as `voxel_size` on the `[raw_tomogram]` and each `[[post_processed_tomogram]]` entry); the catalog scanner also reads the value straight from the MRC header for cross-checking. Keeping voxel info out of the path avoids duplicating information that lives in the file itself.
+- **No `VoxelSpacing{N}/` subfolder.** Voxel spacing in Ångström is not encoded in the path or authored in `acquisition.toml`; the catalog scanner derives it (`voxel_size`) directly from each reconstruction's MRC header (`voxel_size.x`). Keeping voxel info out of the path and the TOML avoids duplicating information that already lives in the file itself.
 
 Simulation data uses a parallel structure with domain-appropriate folder names. Both share the same schema, which is what makes cross-comparison possible.
 
@@ -299,13 +299,11 @@ Each Pydantic model is configured with `extra="allow"`, so unknown keys are pres
 # Raw reconstruction (at most one [raw_tomogram] per acquisition)
 [raw_tomogram]
 id                     = "bp_3dctf_bin4"
-voxel_size             = 4.0
 derived_from           = []
 
 # Denoised version derived from the raw
 [[post_processed_tomogram]]
 id                     = "bp_3dctf_bin4_ddw"
-voxel_size             = 4.0
 derived_from           = ["bp_3dctf_bin4"]
 
 # Segmentation run on the denoised tomogram
