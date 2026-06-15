@@ -173,8 +173,8 @@ can be ingested before MDOC parse succeeds.
 | `voltage` | float | `MDOC` | derived | kV. |
 | `pixel_spacing` | float | `MDOC` | derived | Ångström. Per-series pixel spacing. |
 | `image_format` | text | `MDOC` / frame extension | derived | One of `EER`, `TIFF`, `MRC`. |
-| `microscope` | text | `MDOC` | derived | Model name. |
-| `camera` | text | `MDOC` | derived | Detector name. |
+| `microscope` | text | parent acquisition | derived | Column exists but is **not** populated by the scanner — left NULL on the tilt-series row. Microscope lives on the parent acquisition (researcher-authored in `acquisition.toml`); not re-parsed from the MDOC (§11.14). |
+| `camera` | text | parent acquisition | derived | Column exists but is **not** populated by the scanner — left NULL on the tilt-series row. Camera lives on the parent acquisition (frame-extension–derived); not re-parsed from the MDOC (§11.14). |
 | `tilt_angles` | list[float] | `MDOC` | derived | Full per-image angle list, cached on the row so polar-plot renders don't re-parse the MDOC. |
 | `mtime` | float | `directory` | derived | MDOC modification time, used to gate re-parsing. |
 
