@@ -118,7 +118,7 @@ def scan_root(
                 message=(
                     f"'{subdir.name}' is not a recognized MdSimulation "
                     "dataset-type directory (expected one of Bulk, "
-                    "ChromatinFiber, SingleMolecule, Slab); any samples under "
+                    "SingleMolecule, Slab); any samples under "
                     "it were skipped."
                 ),
             )

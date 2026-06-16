@@ -65,7 +65,7 @@ def test_iter_samples_skips_unknown_mdsimulation_subdir(tmp_path):
 def test_iter_unknown_md_subdirs_yields_only_unrecognized(tmp_path):
     # Two known dataset-type dirs plus one bogus subdir; only the bogus one
     # should be surfaced (the known dirs hold real samples).
-    for name in ("Bulk", "ChromatinFiber", "NotADatasetType"):
+    for name in ("Bulk", "NotADatasetType"):
         (tmp_path / "MdSimulation" / name).mkdir(parents=True)
     unknown = list(iter_unknown_md_subdirs(tmp_path))
     assert [p.name for p in unknown] == ["NotADatasetType"]
