@@ -10,10 +10,11 @@
 # HOW TO USE THIS TEMPLATE
 # ────────────────────────
 # 1. Uncomment the [acquisition] section and replace every "<FILL IN>" placeholder.
-# 2. Append a [[post_processed_tomogram]] block for each tomogram processing pipeline output.
-# 3. Append an [[annotation]] block for each annotation run (segmentation,
-#    particle locations, active zone, etc.).
-# 4. Append an [[alignment]] block for each tilt-series alignment run.
+# 2. Add an [[alignment]] block for each tilt-series alignment.
+# 3. Append a [raw_tomogram] / [[post_processed_tomogram]] block for each
+#    tomogram processing pipeline output. Point each one's `alignment_id` at
+#    the [[alignment]] whose result it was reconstructed from.
+# 4. Append an [[annotation]] block for each annotation.
 # 5. Entries are immutable once added — reprocessing produces a NEW entry
 #    with a new `id`. Never modify or delete existing entries.
 #
@@ -32,7 +33,7 @@
 
 
 # ════════════════════════════════════════════════════════════════
-# SECTION 1 — Acquisition parameters
+# Acquisition parameters
 # Researcher-authored imaging parameters that are not in MDOC files.
 # ════════════════════════════════════════════════════════════════
 
@@ -51,6 +52,17 @@
 #                                           #   2 = Poor, major parts need to be or have been discarded prior to analysis
 #                                           #   1 = Low, not useful for analysis
 
+# ── Alignments (uncomment and fill in) ────────────────────────────────────────
+# One acquisition can have MULTIPLE alignments — copy-paste this block to add as
+# many [[alignment]] entries as needed (one per alignment run of the tilt series).
+# Each tomogram below references the alignment it was reconstructed from via its
+# `alignment_id`.
+
+# [[alignment]]
+# id       = "<FILL IN>"   # text, MUST equal the alignment's folder name under Alignments/, e.g. "imod_patch_v3"
+# software = "<FILL IN>"   # text, e.g. "IMOD 4.12", "AreTomo3"
+# method   = "<FILL IN>"   # text, e.g. fiducial | patch_tracking | feature_tracking
+
 # ── MD source  (simulation data only) ────────────────────────────────────────
 # Which MD run + frame this acquisition's synthetic data came from.
 
@@ -59,23 +71,22 @@
 # frame     = "<FILL IN>"   # integer, frame/snapshot index in the MD run
 
 # ════════════════════════════════════════════════════════════════
-# SECTION 2 — Processing log
+# Processing log
 # Append entries below as tomograms and annotations are produced.
 # Copy-paste the [[post_processed_tomogram]] and [[annotation]] blocks so there is one for each produced
 # These start empty — add them as processing happens.
-#
-# Tilt series are NOT authored here — the catalog scanner discovers and records
-# them by parsing the acquisition's MDOC files.
 # ════════════════════════════════════════════════════════════════
 
 # [raw_tomogram]
 # id            = "<FILL IN>"   # text, MUST equal the tomogram's folder name
+# alignment_id  = "<FILL IN>"   # text, id of the [[alignment]] above whose result this tomogram was reconstructed from. MUST equal an alignment id recorded above. Omit if not applicable.
 # pipeline      = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
 # software      = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
 # derived_from  = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[post_processed_tomogram]]
 # id                        = "<FILL IN>"   # text, MUST equal the tomogram's folder name
+# alignment_id              = "<FILL IN>"   # text, id of the [[alignment]] above whose result this tomogram was reconstructed from. MUST equal an alignment id recorded above. Omit if not applicable.
 # denoising_software        = "<FILL IN>"   # text
 # ctf_software              = "<FILL IN>"   # text
 # missing_wedge_software    = "<FILL IN>"   # text
@@ -85,8 +96,3 @@
 # id              = "<FILL IN>"   # text, MUST equal the annotation's folder name, e.g. "membrain_seg_v10"
 # type            = "<FILL IN>"   # text, e.g. membrane_segmentation | nucleosome_placement | active_zone
 # target_tomogram = "<FILL IN>"   # text, id of the tomogram in this acquisition that this was generated from
-
-# [[alignment]]
-# id       = "<FILL IN>"   # text, MUST equal the alignment's folder name under Alignments/, e.g. "imod_patch_v3"
-# software = "<FILL IN>"   # text, e.g. "IMOD 4.12", "AreTomo3"
-# method   = "<FILL IN>"   # text, e.g. fiducial | patch_tracking | feature_tracking
