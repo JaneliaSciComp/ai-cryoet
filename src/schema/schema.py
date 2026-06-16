@@ -272,6 +272,10 @@ class Acquisition(_Base):
 class RawTomogram(_Base):
     # directory / acquisition.toml [raw_tomogram] (folder name = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
+    # id of the [[alignment]] (in this acquisition) used to align the tilt
+    # series for this reconstruction; validated against the acquisition's
+    # alignment ids in AcquisitionFile._check_cross_refs.
+    alignment_id: IdStr | None = None
     pipeline: str | None = None
     software: str | None = None
     derived_from: list[IdStr] = Field(default_factory=list)
@@ -291,6 +295,10 @@ class RawTomogram(_Base):
 class PostProcessedTomogram(_Base):
     # directory / acquisition.toml [[post_processed_tomogram]] (folder name = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
+    # id of the [[alignment]] (in this acquisition) used to align the tilt
+    # series for this reconstruction; validated against the acquisition's
+    # alignment ids in AcquisitionFile._check_cross_refs.
+    alignment_id: IdStr | None = None
     denoising_software: str | None = None
     ctf_software: str | None = None
     missing_wedge_software: str | None = None
@@ -401,6 +409,7 @@ class AcquisitionFile(_Base):
         if self.raw_tomogram is not None:
             tomograms.insert(0, self.raw_tomogram)
         tomo_ids = {t.tomogram_id for t in tomograms}
+        alignment_ids = {a.alignment_id for a in self.alignment}
         problems: list[str] = []
         problems.extend(_case_insensitive_duplicates(
             (t.tomogram_id for t in tomograms), "tomogram id"
@@ -417,6 +426,11 @@ class AcquisitionFile(_Base):
                     problems.append(
                         f"tomogram '{t.tomogram_id}' derived_from references unknown tomogram '{ref}'"
                     )
+            if t.alignment_id is not None and t.alignment_id not in alignment_ids:
+                problems.append(
+                    f"tomogram '{t.tomogram_id}' alignment_id '{t.alignment_id}' "
+                    f"does not match any [[alignment]] in this acquisition"
+                )
         for a in self.annotation:
             if a.target_tomogram is not None and a.target_tomogram not in tomo_ids:
                 problems.append(

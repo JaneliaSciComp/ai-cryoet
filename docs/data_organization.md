@@ -126,7 +126,7 @@ Experimental/
           *.json                             # machine-emitted alignment files
       Reconstructions/
         Tomograms/
-          {processing_id}/                   # one subfolder per processing pipeline
+          {tomogram_id}/                   # one subfolder per processing pipeline
             *.mrc
             *.zarr
         Annotations/
@@ -152,7 +152,7 @@ MdSimulation/{Bulk|ChromatinFiber|SingleMolecule|Slab}/
         TiltSeries/
         Reconstructions/
           Tomograms/
-            {processing_id}/                 # one subfolder per processing pipeline
+            {tomogram_id}/                 # one subfolder per processing pipeline
               *.mrc
               *.zarr
           Annotations/

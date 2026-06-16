@@ -184,6 +184,10 @@
           "title": "Id",
           "type": "string"
         },
+        "alignment_id": {
+          "title": "Alignment Id",
+          "type": "string"
+        },
         "denoising_software": {
           "title": "Denoising Software",
           "type": "string"
@@ -254,6 +258,10 @@
       "properties": {
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "alignment_id": {
+          "title": "Alignment Id",
           "type": "string"
         },
         "pipeline": {

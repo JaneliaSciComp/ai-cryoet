@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from schema import PostProcessedTomogram, Sample
-from schema.schema import _validate_id
+from schema.schema import AcquisitionFile, _validate_id
 from schema.loader import load_sample_record
 
 
@@ -137,6 +137,42 @@ def test_tomogram_rejects_bad_id_alias():
 def test_tomogram_rejects_bad_derived_from():
     with pytest.raises(ValidationError):
         PostProcessedTomogram.model_validate({"id": "tomo_001", "derived_from": ["also/bad"]})
+
+
+def test_tomogram_alignment_id_must_match_declared_alignment():
+    """A tomogram's alignment_id must reference an [[alignment]] in the same acquisition."""
+    with pytest.raises(ValidationError, match="does not match any"):
+        AcquisitionFile.model_validate(
+            {
+                "acquisition": {},
+                "raw_tomogram": {"id": "tomo_001", "alignment_id": "ghost"},
+                "alignment": [{"id": "imod_patch_v3"}],
+            }
+        )
+
+
+def test_tomogram_alignment_id_resolves_to_declared_alignment():
+    """A tomogram referencing a declared alignment validates; the id round-trips."""
+    acq = AcquisitionFile.model_validate(
+        {
+            "acquisition": {},
+            "raw_tomogram": {"id": "tomo_001", "alignment_id": "imod_patch_v3"},
+            "post_processed_tomogram": [
+                {"id": "tomo_002", "alignment_id": "imod_patch_v3"}
+            ],
+            "alignment": [{"id": "imod_patch_v3"}],
+        }
+    )
+    assert acq.raw_tomogram.alignment_id == "imod_patch_v3"
+    assert acq.post_processed_tomogram[0].alignment_id == "imod_patch_v3"
+
+
+def test_tomogram_alignment_id_optional():
+    """alignment_id is optional — a tomogram without one still validates."""
+    acq = AcquisitionFile.model_validate(
+        {"acquisition": {}, "raw_tomogram": {"id": "tomo_001"}}
+    )
+    assert acq.raw_tomogram.alignment_id is None
 
 
 # ── integration through load_sample_record ──────────────────────────────────
