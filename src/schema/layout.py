@@ -7,7 +7,7 @@ The canonical data root has two top-level arms::
       MdSimulation/{SubDir}/{sample_id}/ ...         -> data_source = simulation
 
 where ``SubDir`` is one of the four dataset-type directories
-(``Bulk`` / ``ChromatinFiber`` / ``SingleMolecule`` / ``Slab``).
+(``Bulk`` / ``SingleMolecule`` / ``Slab``).
 
 ``infer_arm`` is the single place that knows the directory -> enum mapping.
 The catalog scanner uses it during discovery; the ``validate`` CLI uses it so
@@ -29,7 +29,6 @@ TOP_LEVEL_MD_SIMULATION = "MdSimulation"
 
 DATASET_TYPE_BY_DIR: dict[str, DatasetType] = {
     "Bulk": DatasetType.bulk,
-    "ChromatinFiber": DatasetType.chromatin_fiber,
     "SingleMolecule": DatasetType.single_molecule,
     "Slab": DatasetType.slab,
 }

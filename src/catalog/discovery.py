@@ -128,7 +128,7 @@ def iter_samples(root: Path) -> Iterator[SampleLocation]:
     """Yield SampleLocation for every sample under the two-arm layout.
 
     - ``root/Experimental/*/sample.toml``        -> (experimental, None)
-    - ``root/MdSimulation/{Bulk,ChromatinFiber,SingleMolecule,Slab}/*/sample.toml``
+    - ``root/MdSimulation/{Bulk,SingleMolecule,Slab}/*/sample.toml``
       -> (simulation, <dataset_type>)
 
     A missing ``Experimental/`` or ``MdSimulation/`` arm simply yields nothing
@@ -171,7 +171,7 @@ def iter_samples(root: Path) -> Iterator[SampleLocation]:
 
 def iter_unknown_md_subdirs(root: Path) -> Iterator[Path]:
     """Yield each directory under ``root/MdSimulation/`` that is NOT one of the
-    four known dataset-type dirs (``Bulk`` / ``ChromatinFiber`` /
+    four known dataset-type dirs (``Bulk`` /
     ``SingleMolecule`` / ``Slab``).
 
     These are the subdirs ``iter_samples`` skips: a simulation sample dropped

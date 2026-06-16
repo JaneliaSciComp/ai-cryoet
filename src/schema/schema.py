@@ -132,7 +132,6 @@ class Project(str, Enum):
 
 class DatasetType(str, Enum):
     bulk = "bulk"
-    chromatin_fiber = "chromatin_fiber"
     single_molecule = "single_molecule"
     slab = "slab"
 

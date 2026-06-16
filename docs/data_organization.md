@@ -18,7 +18,7 @@ Skipping the editor setup is fine — `pixi run validate {sample_dir}` (step 5) 
 
 ### 1. Lay out the sample directory
 
-Copy the starter directory that matches your data arm — `templates/sample_id_experimental/` for experimental cryoET data or `templates/sample_id_simulation/` for MD + synthetic cryoET data — into the right top-level arm: experimental samples go under `Experimental/`, and simulation samples go under `MdSimulation/{Bulk|ChromatinFiber|SingleMolecule|Slab}/` (the subdirectory you choose sets the sample's `dataset_type`). The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
+Copy the starter directory that matches your data arm — `templates/sample_id_experimental/` for experimental cryoET data or `templates/sample_id_simulation/` for MD + synthetic cryoET data — into the right top-level arm: experimental samples go under `Experimental/`, and simulation samples go under `MdSimulation/{Bulk|SingleMolecule|Slab}/` (the subdirectory you choose sets the sample's `dataset_type`). The starter directory contains empty directories to scaffold the correct directory structure. Then follow the naming instructions below.
 
 Rename the top-level `sample_id_*` directory to the desired sample id.
 
@@ -99,7 +99,6 @@ the source of truth for its `data_source` (and, for simulation, its
     {sample_id}/ ...
   MdSimulation/                              # data_source = simulation
     Bulk/            {sample_id}/ ...        # dataset_type = bulk
-    ChromatinFiber/  {sample_id}/ ...        # dataset_type = chromatin_fiber
     SingleMolecule/  {sample_id}/ ...        # dataset_type = single_molecule
     Slab/            {sample_id}/ ...        # dataset_type = slab
 ```
@@ -138,7 +137,7 @@ Experimental/
 ### MD simulation (sample) and associated synthetic cryoET (acquisitions) data — under `MdSimulation/<SubDir>/`
 
 ```
-MdSimulation/{Bulk|ChromatinFiber|SingleMolecule|Slab}/
+MdSimulation/{Bulk|SingleMolecule|Slab}/
   {sample_id}/
     sample.toml                              # sample-level conditions
     MdRuns/                                  # simulation only: one subfolder per MD run

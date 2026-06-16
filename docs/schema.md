@@ -99,7 +99,7 @@ One row per sample. Primary key: `sample_id` (the sample directory name).
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `dataset_type` | enum | `directory` (`MdSimulation/<SubDir>/`) | derived | One of `bulk`, `chromatin_fiber`, `single_molecule`, `slab` — derived from the `MdSimulation/{Bulk,ChromatinFiber,SingleMolecule,Slab}/` subdirectory, **not** authored in `sample.toml`. |
+| `dataset_type` | enum | `directory` (`MdSimulation/<SubDir>/`) | derived | One of `bulk`, `single_molecule`, `slab` — derived from the `MdSimulation/{Bulk,SingleMolecule,Slab}/` subdirectory, **not** authored in `sample.toml`. |
 
 ### 1g. MD run sub-entity (0..N per sample; simulation data only)
 

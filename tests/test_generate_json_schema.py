@@ -75,7 +75,6 @@ def test_dataset_type_enum_in_sample_schema(tmp_path):
     dataset_type = schema["$defs"]["DatasetType"]
     assert set(dataset_type["enum"]) == {
         "bulk",
-        "chromatin_fiber",
         "single_molecule",
         "slab",
     }
