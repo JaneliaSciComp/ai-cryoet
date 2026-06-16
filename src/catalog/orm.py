@@ -281,6 +281,9 @@ class RawTomogramORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    alignment_id: Mapped[str | None] = mapped_column(
+        String(_ID_MAX_LEN), nullable=True
+    )
     pipeline: Mapped[str | None] = mapped_column(String, nullable=True)
     software: Mapped[str | None] = mapped_column(String, nullable=True)
     voxel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -308,6 +311,9 @@ class PostProcessedTomogramORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
+    alignment_id: Mapped[str | None] = mapped_column(
+        String(_ID_MAX_LEN), nullable=True
+    )
     denoising_software: Mapped[str | None] = mapped_column(String, nullable=True)
     ctf_software: Mapped[str | None] = mapped_column(String, nullable=True)
     missing_wedge_software: Mapped[str | None] = mapped_column(String, nullable=True)
