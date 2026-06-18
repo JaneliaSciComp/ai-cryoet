@@ -57,8 +57,6 @@ function searchToFilters(s: SamplesSearchParams): LandingFilterState {
     microscope: s.microscope?.[0],
     pixel_size_min: s.pixel_size_min,
     pixel_size_max: s.pixel_size_max,
-    n_tilts_min: s.n_tilts_min,
-    n_tilts_max: s.n_tilts_max,
     has_tomograms: s.has_tomograms,
   }
 }
@@ -83,8 +81,6 @@ function applyFilterPatch(
     set('microscope', patch.microscope ? [patch.microscope] : undefined)
   if ('pixel_size_min' in patch) set('pixel_size_min', patch.pixel_size_min)
   if ('pixel_size_max' in patch) set('pixel_size_max', patch.pixel_size_max)
-  if ('n_tilts_min' in patch) set('n_tilts_min', patch.n_tilts_min)
-  if ('n_tilts_max' in patch) set('n_tilts_max', patch.n_tilts_max)
   if ('has_tomograms' in patch)
     set('has_tomograms', patch.has_tomograms ? true : undefined)
   return next
@@ -103,10 +99,6 @@ function activeChips(
     chips.push({ key: 'pixel_size_min', label: `Pixel size ≥ ${f.pixel_size_min}` })
   if (f.pixel_size_max != null)
     chips.push({ key: 'pixel_size_max', label: `Pixel size ≤ ${f.pixel_size_max}` })
-  if (f.n_tilts_min != null)
-    chips.push({ key: 'n_tilts_min', label: `Tilts ≥ ${f.n_tilts_min}` })
-  if (f.n_tilts_max != null)
-    chips.push({ key: 'n_tilts_max', label: `Tilts ≤ ${f.n_tilts_max}` })
   if (f.has_tomograms)
     chips.push({ key: 'has_tomograms', label: 'Has tomograms' })
   return chips

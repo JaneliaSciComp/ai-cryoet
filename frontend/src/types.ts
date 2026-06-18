@@ -124,18 +124,14 @@ export type AnnotationOut = {
 
 export type TiltSeriesOut = {
   tilt_series_id: string
-  mdoc_path: string | null
+  derived_from: string | null
+  is_aligned: boolean | null
+  alignment_software: string | null
+  alignment_method: string | null
   st_path: string | null
   zarr_path: string | null
-  n_tilts: number | null
-  tilt_range_min: number | null
-  tilt_range_max: number | null
-  tilt_axis_angle: number | null
-  voltage: number | null
-  pixel_spacing: number | null
-  image_format: string | null
-  microscope: string | null
-  camera: string | null
+  alignment_files: string[]
+  mtime: number | null
 }
 
 export type MdSourceOut = {
@@ -148,7 +144,8 @@ export type AcquisitionOut = {
   resolution: number | null
   microscope: string | null
   facility: string | null
-  tilt_series_quality_score: number | null
+  raw_tilt_series_quality: number | null
+  tilt_angles: number[] | null
   pixel_size: number | null
   voltage: number | null
   camera: string | null
@@ -193,10 +190,8 @@ export type FiltersOptionsOut = {
   microscopes: string[]
   voltages: number[]
   cameras: string[]
-  image_formats: string[]
   pixel_size: RangeOut
   voxel_size: RangeOut
-  n_tilts: RangeOut
 }
 
 export type StatsTotalsOut = {
