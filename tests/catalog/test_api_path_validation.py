@@ -8,7 +8,7 @@ Coverage:
     - Tomogram preview 404s when ``mrc_path`` points outside the root
     - Tomogram preview 404s when ``mrc_path`` is a symlink escaping the root
     - Tilt-series preview 404s when ``zarr_path`` is outside the root
-    - Tilt-series preview 404s when ``mdoc_path`` is outside the root
+    - Tilt-series preview 404s when ``st_path`` is outside the root
     - Polar render is unaffected by path validation (uses cached angles)
 """
 from __future__ import annotations
@@ -56,11 +56,13 @@ def client(tmp_path):
     symlink_inside.parent.mkdir(parents=True, exist_ok=True)
     symlink_inside.symlink_to(outside_mrc)
 
-    # Zarr/mdoc outside the root for tilt-series test
+    # Zarr/st stack outside the root for tilt-series tests. Both exist on disk
+    # so ``Path.resolve(strict=True)`` succeeds but the resolved target escapes
+    # the data root → 404 via ``validate_under_data_root``.
     outside_zarr = outside / "ts.zarr"
     outside_zarr.mkdir()
-    outside_mdoc = outside / "ts.mdoc"
-    outside_mdoc.write_text("# stub\n")
+    outside_st = outside / "ts.st"
+    _write_synthetic_mrc(outside_st)
 
     engine = db.make_engine(f"sqlite:///{tmp_path / 'test.db'}")
     db.init_schema(engine)
@@ -100,11 +102,11 @@ def client(tmp_path):
         ))
         s.add(orm.TiltSeriesORM(
             sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_zarr_outside",
-            zarr_path=str(outside_zarr), tilt_angles=[0.0],
+            zarr_path=str(outside_zarr),
         ))
         s.add(orm.TiltSeriesORM(
-            sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_mdoc_outside",
-            mdoc_path=str(outside_mdoc), tilt_angles=[0.0],
+            sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_st_outside",
+            st_path=str(outside_st),
         ))
         s.commit()
     finally:
@@ -145,8 +147,8 @@ def test_tilt_series_preview_zarr_outside_data_root_404(client):
     assert r.status_code == 404
 
 
-def test_tilt_series_preview_mdoc_outside_data_root_404(client):
-    r = client.get("/tilt-series/sample_a/acq1/ts_mdoc_outside/preview.png")
+def test_tilt_series_preview_st_outside_data_root_404(client):
+    r = client.get("/tilt-series/sample_a/acq1/ts_st_outside/preview.png")
     assert r.status_code == 404
 
 
@@ -155,6 +157,6 @@ def test_tilt_series_neuroglancer_zarr_outside_data_root_404(client):
     assert r.status_code == 404
 
 
-def test_tilt_series_neuroglancer_mdoc_outside_data_root_404(client):
-    r = client.post("/tilt-series/sample_a/acq1/ts_mdoc_outside/neuroglancer")
+def test_tilt_series_neuroglancer_st_outside_data_root_404(client):
+    r = client.post("/tilt-series/sample_a/acq1/ts_st_outside/neuroglancer")
     assert r.status_code == 404
