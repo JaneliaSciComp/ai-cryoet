@@ -34,6 +34,7 @@ except ModuleNotFoundError:
 
 from catalog import db
 from catalog.api.routes import (
+    acquisitions as acquisitions_routes,
     extras,
     filters,
     samples,
@@ -207,6 +208,9 @@ def create_app() -> FastAPI:
     app.include_router(filters.router, prefix="/filters", tags=["filters"])
     app.include_router(stats.router, prefix="/stats", tags=["stats"])
     app.include_router(tomograms.router, prefix="/tomograms", tags=["tomograms"])
+    app.include_router(
+        acquisitions_routes.router, prefix="/acquisitions", tags=["acquisitions"]
+    )
     app.include_router(
         tilt_series_routes.router, prefix="/tilt-series", tags=["tilt-series"]
     )
