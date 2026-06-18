@@ -205,14 +205,13 @@ def test_unparseable_mdoc_emits_warning(tmp_path):
     loc = _sample_loc(sample_dir)
     result = assemble_sample(loc)
 
-    # An unreadable MDOC produces two `unparseable_mdoc` warnings with
-    # distinct locations: one from the acquisition-level MDOC parser
-    # (location ends in ``.Frames``) and one from the tilt-series parser
-    # (location includes the MDOC path under ``.tilt_series[...]``).
+    # An unreadable MDOC produces two `unparseable_mdoc` warnings, both at the
+    # acquisition's ``.Frames`` location: one from the acquisition MDOC field
+    # parser and one from the acquisition-level tilt-angle parser. (Tilt
+    # geometry is acquisition-level now — there is no per-tilt-series parser.)
     bad = [w for w in result.warnings if w.category == "unparseable_mdoc"]
     assert len(bad) == 2
-    assert any(w.location.endswith("Pos1.Frames") for w in bad)
-    assert any(".tilt_series[" in w.location for w in bad)
+    assert all(w.location.endswith("Pos1.Frames") for w in bad)
 
     acq = result.record.acquisitions["Pos1"].acquisition
     assert acq.pixel_size is None
@@ -563,41 +562,3 @@ def test_dangling_md_source_ref_warning(tmp_path):
     # Acquisition still validates and is kept.
     assert result.record is not None
     assert "acq1" in result.record.acquisitions
-
-
-def test_multiple_tilt_series_warning(tmp_path):
-    """An acquisition with >1 tilt series emits a multiple_tilt_series warning."""
-    import catalog.assembler as assembler
-    from catalog.parsers.tilt_series import TiltSeriesParseResult
-    from schema import TiltSeries
-
-    sample_dir = tmp_path / "sample_test"
-    _write_minimal_sample_toml(sample_dir)
-    _write(
-        sample_dir / "Pos1" / "acquisition.toml",
-        """
-        [acquisition]
-        microscope = "Krios"
-        """,
-    )
-    # Need a Frames/ dir so the tilt_series assignment branch runs.
-    (sample_dir / "Pos1" / "Frames").mkdir(parents=True)
-
-    fake_result = TiltSeriesParseResult(
-        records=[
-            TiltSeries(tilt_series_id="ts_a"),
-            TiltSeries(tilt_series_id="ts_b"),
-        ],
-        collisions=[],
-        unreadable=[],
-    )
-    original = assembler.parse_tilt_series_dir
-    assembler.parse_tilt_series_dir = lambda _path, **_kw: fake_result
-    try:
-        result = assemble_sample(_sample_loc(sample_dir))
-    finally:
-        assembler.parse_tilt_series_dir = original
-
-    multi = [w for w in result.warnings if w.category == "multiple_tilt_series"]
-    assert len(multi) == 1
-    assert multi[0].location == "acquisitions.Pos1"

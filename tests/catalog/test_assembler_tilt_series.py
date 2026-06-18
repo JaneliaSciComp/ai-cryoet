@@ -79,34 +79,73 @@ ExposureDose = 0.5
 """
 
 
-def test_assembler_merges_tilt_series_into_acquisition(tmp_path: Path) -> None:
+def test_assembler_sets_acquisition_tilt_angles(tmp_path: Path) -> None:
+    """The MDOC tilt-angle list lands on the ACQUISITION (not a tilt-series row).
+
+    Tilt series are now researcher-authored; with no ``[[tilt_series]]`` block
+    and no ``TiltSeries/`` folder, ``acq_file.tilt_series`` stays empty.
+    """
     sample_dir = tmp_path / "sample_a"
     _write_minimal_sample_toml(sample_dir)
     _write_minimal_acquisition_toml(sample_dir)
     _write(sample_dir / "Pos1" / "Frames" / "ts.mdoc", _MDOC)
-    # Sibling tilt-image file so image_format gets detected.
     (sample_dir / "Pos1" / "Frames" / "001.eer").write_bytes(b"")
 
     result = assemble_sample(_sample_loc(sample_dir))
 
     assert result.record is not None
     acq_file = result.record.acquisitions["Pos1"]
-    assert len(acq_file.tilt_series) == 1
-
-    ts = acq_file.tilt_series[0]
-    assert ts.tilt_series_id == "ts"
-    assert ts.n_tilts == 2
-    assert ts.pixel_spacing == pytest.approx(2.93)
-    assert ts.voltage == pytest.approx(300.0)
-    assert ts.image_format == "EER"
-    # microscope/camera from acquisition.toml only (plan §11.14) — leave None
-    # on the tilt-series row even though acq has microscope='Krios'.
-    assert ts.microscope is None
-    assert ts.camera is None
-    assert ts.tilt_angles == [pytest.approx(-60.0), pytest.approx(-57.0)]
-
+    assert acq_file.tilt_series == []
+    assert acq_file.acquisition.tilt_angles == [
+        pytest.approx(-60.0),
+        pytest.approx(-57.0),
+    ]
     # Acquisition path recorded for the UI's copy-path / file-browser buttons.
     assert acq_file.acquisition.path == str(sample_dir / "Pos1")
+
+
+def test_assembler_enriches_authored_tilt_series(tmp_path: Path) -> None:
+    """An authored ``[[tilt_series]]`` row is enriched with filesystem-derived
+    fields (stack path, alignment artifacts, mtime) from its ``TiltSeries/{id}/``
+    folder. ``is_aligned=true`` + alignment artifacts → no mismatch warning.
+    """
+    sample_dir = tmp_path / "sample_a"
+    _write_minimal_sample_toml(sample_dir)
+    _write_minimal_acquisition_toml(
+        sample_dir,
+        extra="""
+        [[tilt_series]]
+        id = "ts_a"
+        derived_from = "Frames"
+        is_aligned = true
+        """,
+    )
+    ts_dir = sample_dir / "Pos1" / "TiltSeries" / "ts_a"
+    (ts_dir / "stack").mkdir(parents=True)
+    (ts_dir / "stack" / "ts_a.st").write_bytes(b"")
+    (ts_dir / "alignment").mkdir(parents=True)
+    (ts_dir / "alignment" / "ts_a.aln").write_text("alignment params\n")
+
+    result = assemble_sample(_sample_loc(sample_dir))
+
+    assert result.record is not None
+    acq_file = result.record.acquisitions["Pos1"]
+    assert len(acq_file.tilt_series) == 1
+    ts = acq_file.tilt_series[0]
+    assert ts.tilt_series_id == "ts_a"
+    assert ts.derived_from == "Frames"
+    assert ts.is_aligned is True
+    assert ts.st_path == str(ts_dir / "stack" / "ts_a.st")
+    assert ts.alignment_files == [str(ts_dir / "alignment" / "ts_a.aln")]
+    assert ts.mtime is not None
+    # PK parts injected from the path.
+    assert ts.sample_id == "sample_a"
+    assert ts.acquisition_id == "Pos1"
+    # is_aligned matches on-disk artifacts → no mismatch warning.
+    mismatch = [
+        w for w in result.warnings if w.category == "tilt_series_alignment_mismatch"
+    ]
+    assert mismatch == []
 
 
 def test_assembler_records_acquisition_path_for_synthesized(
@@ -187,11 +226,12 @@ TiltAxisAngle = 92.5
 """
 
 
-def test_per_tilt_layout_produces_one_row(tmp_path: Path) -> None:
-    """Gouauxlab-style frames dir (3 per-tilt MDOCs + EERs) yields 1 row.
+def test_per_tilt_layout_sets_acquisition_tilt_angles(tmp_path: Path) -> None:
+    """Gouauxlab-style frames dir (3 per-tilt MDOCs + EERs) → the acquisition's
+    ``tilt_angles`` list (the parser collapses the group by filename angle).
 
-    Before Phase 4.6 each per-tilt MDOC produced its own spurious row.
-    Now the parser collapses the group by common prefix.
+    Per-tilt MDOCs no longer synthesize tilt-series rows; with no authored
+    ``[[tilt_series]]`` block, ``acq_file.tilt_series`` stays empty.
     """
     sample_dir = tmp_path / "sample_gouaux"
     _write_minimal_sample_toml(sample_dir)
@@ -208,89 +248,58 @@ def test_per_tilt_layout_produces_one_row(tmp_path: Path) -> None:
 
     assert result.record is not None
     acq_file = result.record.acquisitions["Pos1"]
-    assert len(acq_file.tilt_series) == 1
-    ts = acq_file.tilt_series[0]
-    assert ts.tilt_series_id == "20241211_Hipp_42"
-    assert ts.n_tilts == 3
-    assert ts.tilt_angles == [
+    assert acq_file.tilt_series == []
+    assert acq_file.acquisition.tilt_angles == [
         pytest.approx(-30.0),
         pytest.approx(0.0),
         pytest.approx(30.0),
     ]
-    # No layout_unknown warnings — all 3 MDOC names match the pattern.
-    layout_warnings = [
-        w for w in result.warnings if w.category == "tilt_series_layout_unknown"
-    ]
-    assert layout_warnings == []
 
 
-def test_assembler_emits_layout_unknown_warning(tmp_path: Path) -> None:
-    """A frames dir of non-series-level MDOCs whose names lack the angle
-    pattern triggers a ``tilt_series_layout_unknown`` warning.
+def test_assembler_warns_undeclared_tilt_series_folder(tmp_path: Path) -> None:
+    """A ``TiltSeries/{id}/`` folder on disk with no ``[[tilt_series]]`` block
+    triggers an ``undeclared_tilt_series_folder`` warning (no row synthesized).
     """
-    sample_dir = tmp_path / "sample_unknown"
+    sample_dir = tmp_path / "sample_undeclared"
     _write_minimal_sample_toml(sample_dir)
     _write_minimal_acquisition_toml(sample_dir)
-    frames_dir = sample_dir / "Pos1" / "Frames"
-    frames_dir.mkdir(parents=True)
-    (frames_dir / "weird_name.mdoc").write_text(_PER_TILT_HEADER)
-    (frames_dir / "another_weird.mdoc").write_text(_PER_TILT_HEADER)
+    (sample_dir / "Pos1" / "TiltSeries" / "ts_x" / "stack").mkdir(parents=True)
 
     result = assemble_sample(_sample_loc(sample_dir))
 
     assert result.record is not None
-    layout_warnings = [
-        w for w in result.warnings if w.category == "tilt_series_layout_unknown"
+    assert result.record.acquisitions["Pos1"].tilt_series == []
+    undeclared = [
+        w
+        for w in result.warnings
+        if w.category == "undeclared_tilt_series_folder"
     ]
-    assert len(layout_warnings) == 1
-    assert "Pos1" in layout_warnings[0].location
+    assert len(undeclared) == 1
+    assert "ts_x" in undeclared[0].location
 
 
-def test_assembler_emits_tilt_series_collision_warning(tmp_path: Path) -> None:
-    """When two MDOCs in an acquisition would yield the same tilt_series_id,
-    the assembler emits a tilt_series_id_collision warning.
-
-    Real discovery scans direct children only, so stem collisions can't
-    happen via filenames alone today. This test exercises the assembler
-    path by calling the parser directly; the assembler wiring relays the
-    parser's collisions list into ScanWarning entries.
+def test_assembler_warns_is_aligned_mismatch(tmp_path: Path) -> None:
+    """An authored ``is_aligned = true`` with no alignment artifacts on disk
+    triggers a ``tilt_series_alignment_mismatch`` warning.
     """
-    from catalog.parsers.tilt_series import (
-        TiltSeriesCollision,
-        TiltSeriesParseResult,
-    )
-
-    # Sanity check: TiltSeriesCollision instances flow through to warnings
-    # via the assembler's loop. Build a minimal sample, monkey-patch the
-    # parser, and assert the warning is emitted.
-    import catalog.assembler as assembler
-
-    sample_dir = tmp_path / "sample_d"
+    sample_dir = tmp_path / "sample_mismatch"
     _write_minimal_sample_toml(sample_dir)
-    _write_minimal_acquisition_toml(sample_dir)
-    _write(sample_dir / "Pos1" / "Frames" / "ts.mdoc", _MDOC)
-
-    fake_result = TiltSeriesParseResult(
-        records=[],
-        collisions=[
-            TiltSeriesCollision(
-                tilt_series_id="ts__Frames",
-                original_stem="ts",
-                mdoc_path=str(sample_dir / "Pos1" / "Frames" / "ts.mdoc"),
-            )
-        ],
-        unreadable=[],
+    _write_minimal_acquisition_toml(
+        sample_dir,
+        extra="""
+        [[tilt_series]]
+        id = "ts_a"
+        is_aligned = true
+        """,
     )
+    # Folder exists (so the id↔folder check passes) but has no alignment/.
+    (sample_dir / "Pos1" / "TiltSeries" / "ts_a" / "stack").mkdir(parents=True)
 
-    original = assembler.parse_tilt_series_dir
-    assembler.parse_tilt_series_dir = lambda _path, **_kw: fake_result
-    try:
-        result = assemble_sample(_sample_loc(sample_dir))
-    finally:
-        assembler.parse_tilt_series_dir = original
+    result = assemble_sample(_sample_loc(sample_dir))
 
-    collisions = [
-        w for w in result.warnings if w.category == "tilt_series_id_collision"
+    assert result.record is not None
+    mismatch = [
+        w for w in result.warnings if w.category == "tilt_series_alignment_mismatch"
     ]
-    assert len(collisions) == 1
-    assert "ts__Frames" in collisions[0].location
+    assert len(mismatch) == 1
+    assert "ts_a" in mismatch[0].location
