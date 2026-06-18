@@ -27,13 +27,14 @@ from catalog.discovery import (
     SampleLocation,
     iter_acquisitions,
     iter_annotations,
+    iter_tilt_series,
     iter_tomograms,
 )
 from catalog.parsers.frame_ext import infer_camera
 from catalog.parsers.mdoc import parse_acquisition_mdocs
 from catalog.parsers.mrc_header import read_mrc_header
 from catalog.parsers.ome_zarr import read_zarr_attrs
-from catalog.parsers.tilt_series import parse_tilt_series_dir
+from catalog.parsers.tilt_series import parse_acquisition_tilt_angles
 from catalog.parsers.toml_files import load_sample_toml
 
 
@@ -47,13 +48,12 @@ ScanWarningCategory = Literal[
     "unparseable_mrc_header",
     "unparseable_zarr_attrs",
     "ambiguous_frame_extension",
-    "tilt_series_id_collision",
-    "tilt_series_layout_unknown",
     "undeclared_tomogram_folder",
     "undeclared_annotation_folder",
+    "undeclared_tilt_series_folder",
+    "tilt_series_alignment_mismatch",
     "annotation_without_target_tomogram",
     "deprecated_md_run_block",
-    "multiple_tilt_series",
     "dangling_md_source_ref",
     # Run-level (no owning sample) — emitted by the scanner, not the assembler.
     "unknown_md_simulation_subdir",
@@ -265,69 +265,105 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             elif cam_result.status == "ok" and acq.camera is None:
                 acq.camera = cam_result.fields.get("camera")
 
-            # Tilt-series parsing. The acquisition-level MDOC parser above
-            # only covers the first MDOC alphabetically; this loop
-            # catalogues every series-level MDOC (one record each) and
-            # collapses per-tilt MDOC groups (gouauxlab convention) into
-            # single records. ``microscope`` / ``camera`` come from
-            # acquisition.toml only.
-            ts_result = parse_tilt_series_dir(
-                acq_loc.frames_dir, acquisition_id=acq_loc.acquisition_id
-            )
-            for mdoc_path_str, err_msg in ts_result.unreadable:
+            # Acquisition tilt scheme: the full per-image tilt-angle list is a
+            # property of the acquisition (shared by all its tilt series), so
+            # extract it from the Frames/ MDOC(s) and set it on the
+            # acquisition. Handles both the series-level and per-tilt MDOC
+            # layouts; MDOC read failures surface as unparseable_mdoc warnings.
+            tilt_angle_result = parse_acquisition_tilt_angles(acq_loc.frames_dir)
+            for _mdoc_path_str, err_msg in tilt_angle_result.unreadable:
                 result.warnings.append(
                     ScanWarning(
                         category="unparseable_mdoc",
-                        location=(
-                            f"acquisitions.{acq_loc.acquisition_id}"
-                            f".tilt_series[{mdoc_path_str}]"
-                        ),
+                        location=f"acquisitions.{acq_loc.acquisition_id}.Frames",
                         message=err_msg,
                     )
                 )
-            for path_str, msg in ts_result.layout_unknown:
+            if acq.tilt_angles is None and tilt_angle_result.tilt_angles is not None:
+                acq.tilt_angles = tilt_angle_result.tilt_angles
+
+        # Tilt-series enrichment: the researcher-authored TiltSeries/{ts_id}/
+        # folders are the canonical tilt-series entities. We do NOT synthesize
+        # rows from disk — a folder with no [[tilt_series]] block warns. For
+        # declared rows, fill filesystem-derived fields (stack paths, alignment
+        # artifacts, mtime) and inject the path-derived PK parts.
+        existing_ts = {
+            ts.tilt_series_id: ts
+            for ts in acq_file.tilt_series
+            if ts.tilt_series_id is not None
+        }
+        for ts_loc in iter_tilt_series(acq_loc):
+            ts = existing_ts.get(ts_loc.tilt_series_id)
+            if ts is None:
                 result.warnings.append(
                     ScanWarning(
-                        category="tilt_series_layout_unknown",
+                        category="undeclared_tilt_series_folder",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
-                            f".tilt_series[{path_str}]"
+                            f".tilt_series[{ts_loc.tilt_series_id}]"
                         ),
-                        message=msg,
+                        message=(
+                            f"folder '{ts_loc.tilt_series_id}' exists on disk but "
+                            "is not declared in acquisition.toml — add a "
+                            "[[tilt_series]] block with "
+                            f"id = \"{ts_loc.tilt_series_id}\""
+                        ),
                     )
                 )
-            for collision in ts_result.collisions:
+                continue
+
+            if ts.st_path is None and ts_loc.st_path is not None:
+                ts.st_path = str(ts_loc.st_path)
+            if ts.zarr_path is None and ts_loc.zarr_path is not None:
+                ts.zarr_path = str(ts_loc.zarr_path)
+            if not ts.alignment_files and ts_loc.alignment_files:
+                ts.alignment_files = sorted(
+                    str(p) for p in ts_loc.alignment_files
+                )
+            if ts.mtime is None:
+                try:
+                    ts.mtime = ts_loc.path.stat().st_mtime
+                except OSError:
+                    pass
+
+            # is_aligned cross-check: warn when the authored flag disagrees
+            # with the alignment artifacts found on disk (only checkable for a
+            # matched folder).
+            has_artifacts = bool(ts_loc.alignment_files)
+            if ts.is_aligned is True and not has_artifacts:
                 result.warnings.append(
                     ScanWarning(
-                        category="tilt_series_id_collision",
+                        category="tilt_series_alignment_mismatch",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
-                            f".tilt_series[{collision.tilt_series_id}]"
+                            f".tilt_series[{ts_loc.tilt_series_id}]"
                         ),
                         message=(
-                            f"MDOC '{collision.mdoc_path}' shares stem "
-                            f"'{collision.original_stem}' with another MDOC in "
-                            f"the same acquisition; disambiguated to "
-                            f"tilt_series_id='{collision.tilt_series_id}'"
+                            f"tilt series '{ts_loc.tilt_series_id}' is_aligned=true "
+                            "but no alignment artifacts found under alignment/"
                         ),
                     )
                 )
-            # Replace any TOML-authored tilt_series list with the parser's
-            # output — the scanner is the canonical writer for this field.
-            acq_file.tilt_series = ts_result.records
-            if len(ts_result.records) > 1:
+            elif not ts.is_aligned and has_artifacts:
                 result.warnings.append(
                     ScanWarning(
-                        category="multiple_tilt_series",
-                        location=f"acquisitions.{acq_loc.acquisition_id}",
+                        category="tilt_series_alignment_mismatch",
+                        location=(
+                            f"acquisitions.{acq_loc.acquisition_id}"
+                            f".tilt_series[{ts_loc.tilt_series_id}]"
+                        ),
                         message=(
-                            f"acquisition '{acq_loc.acquisition_id}' has "
-                            f"{len(ts_result.records)} tilt series; the "
-                            "tilt_series_quality_score on [acquisition] applies "
-                            "to the acquisition as a whole"
+                            f"tilt series '{ts_loc.tilt_series_id}' has alignment "
+                            "artifacts under alignment/ but is_aligned is not true"
                         ),
                     )
                 )
+
+        # The scanner is the source of the path-derived PK parts; inject them
+        # onto every authored tilt-series row regardless of disk matching.
+        for ts in acq_file.tilt_series:
+            ts.sample_id = acq_loc.sample_id
+            ts.acquisition_id = acq_loc.acquisition_id
 
         # Step 3: tomograms (raw + post share one id namespace) -------------
         existing_tomos: dict[str, RawTomogram | PostProcessedTomogram] = {}

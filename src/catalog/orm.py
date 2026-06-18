@@ -221,7 +221,7 @@ class AcquisitionORM(Base):
     phase_plate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     microscope: Mapped[str | None] = mapped_column(String, nullable=True)
     facility: Mapped[str | None] = mapped_column(String, nullable=True)
-    tilt_series_quality_score: Mapped[int | None] = mapped_column(
+    raw_tilt_series_quality: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
     pixel_size: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -230,6 +230,7 @@ class AcquisitionORM(Base):
     tilt_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     tilt_max: Mapped[float | None] = mapped_column(Float, nullable=True)
     tilt_axis: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tilt_angles: Mapped[list | None] = mapped_column(JSON, nullable=True)
     defocus_per_image: Mapped[list | None] = mapped_column(JSON, nullable=True)
     date_collected: Mapped[_dt.date | None] = mapped_column(Date, nullable=True)
     voltage: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -281,7 +282,7 @@ class RawTomogramORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
-    alignment_id: Mapped[str | None] = mapped_column(
+    tilt_series_id: Mapped[str | None] = mapped_column(
         String(_ID_MAX_LEN), nullable=True
     )
     pipeline: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -311,7 +312,7 @@ class PostProcessedTomogramORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tomogram_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
-    alignment_id: Mapped[str | None] = mapped_column(
+    tilt_series_id: Mapped[str | None] = mapped_column(
         String(_ID_MAX_LEN), nullable=True
     )
     denoising_software: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -362,9 +363,10 @@ class TiltSeriesORM(Base):
     """One tilt series per row, FK on the parent acquisition.
 
     Composite PK ``(sample_id, acquisition_id, tilt_series_id)`` mirrors the
-    Pydantic ``TiltSeries`` model. ``tilt_angles`` is a JSON column carrying
-    the full per-image angles list so the polar-plot endpoint never has to
-    re-parse the MDOC.
+    Pydantic ``TiltSeries`` model. The tilt series is a researcher-authored
+    folder under ``TiltSeries/``; alignment is folded in as transformation
+    parameters (``is_aligned`` + ``alignment_*``) rather than a separate
+    entity. The MDOC-derived tilt geometry lives on ``acquisitions``.
     """
 
     __tablename__ = "tilt_series"
@@ -372,19 +374,13 @@ class TiltSeriesORM(Base):
     sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
     tilt_series_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False)
-    mdoc_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    derived_from: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_aligned: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    alignment_software: Mapped[str | None] = mapped_column(String, nullable=True)
+    alignment_method: Mapped[str | None] = mapped_column(String, nullable=True)
     st_path: Mapped[str | None] = mapped_column(String, nullable=True)
     zarr_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    n_tilts: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    tilt_range_min: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tilt_range_max: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tilt_axis_angle: Mapped[float | None] = mapped_column(Float, nullable=True)
-    voltage: Mapped[float | None] = mapped_column(Float, nullable=True)
-    pixel_spacing: Mapped[float | None] = mapped_column(Float, nullable=True)
-    image_format: Mapped[str | None] = mapped_column(String, nullable=True)
-    microscope: Mapped[str | None] = mapped_column(String, nullable=True)
-    camera: Mapped[str | None] = mapped_column(String, nullable=True)
-    tilt_angles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    alignment_files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     mtime: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     __table_args__ = (

@@ -70,6 +70,17 @@ class AnnotationLocation:
     files: tuple[Path, ...]
 
 
+@dataclass(frozen=True)
+class TiltSeriesLocation:
+    path: Path
+    tilt_series_id: str
+    stack_dir: Path | None
+    alignment_dir: Path | None
+    st_path: Path | None
+    zarr_path: Path | None
+    alignment_files: tuple[Path, ...]
+
+
 def _is_zarr_dir(path: Path) -> bool:
     name = path.name
     return any(name.endswith(suffix) for suffix in ZARR_DIR_SUFFIXES)
@@ -335,6 +346,63 @@ def iter_annotations(acq: AcquisitionLocation) -> Iterator[AnnotationLocation]:
             path=child,
             annotation_id=child.name,
             files=tuple(sorted(kept, key=lambda p: str(p))),
+        )
+
+
+def iter_tilt_series(acq: AcquisitionLocation) -> Iterator[TiltSeriesLocation]:
+    """Yield one TiltSeriesLocation per direct child of ``acq.tilt_series_dir``.
+
+    Each ``TiltSeries/{ts_id}/`` is a researcher-authored tilt-series folder.
+    The ``stack/`` and ``alignment/`` subfolders are OPTIONAL — when absent the
+    corresponding fields are just ``None``/empty; the tilt series is still
+    yielded. ``st_path`` resolves to the first ``*.st`` (then ``*.mrc``) file
+    under ``stack/``; ``zarr_path`` to the first ``.zarr`` / ``.ome.zarr`` dir
+    there. ``alignment_files`` collects files (and any ``.zarr`` dirs) directly
+    under ``alignment/``.
+    """
+    if acq.tilt_series_dir is None or not acq.tilt_series_dir.is_dir():
+        return
+    for child in sorted(acq.tilt_series_dir.iterdir()):
+        if not child.is_dir():
+            continue
+
+        stack = child / "stack"
+        stack_dir = stack if stack.is_dir() else None
+        st_path: Path | None = None
+        zarr_path: Path | None = None
+        if stack_dir is not None:
+            st_candidates: list[Path] = []
+            mrc_candidates: list[Path] = []
+            for entry in sorted(stack_dir.iterdir()):
+                if entry.is_file() and entry.suffix == ".st":
+                    st_candidates.append(entry)
+                elif entry.is_file() and entry.suffix == ".mrc":
+                    mrc_candidates.append(entry)
+                elif entry.is_dir() and _is_zarr_dir(entry) and zarr_path is None:
+                    zarr_path = entry
+            if st_candidates:
+                st_path = st_candidates[0]
+            elif mrc_candidates:
+                st_path = mrc_candidates[0]
+
+        alignment = child / "alignment"
+        alignment_dir = alignment if alignment.is_dir() else None
+        alignment_files: list[Path] = []
+        if alignment_dir is not None:
+            for entry in alignment_dir.iterdir():
+                if entry.is_file():
+                    alignment_files.append(entry)
+                elif entry.is_dir() and _is_zarr_dir(entry):
+                    alignment_files.append(entry)
+
+        yield TiltSeriesLocation(
+            path=child,
+            tilt_series_id=child.name,
+            stack_dir=stack_dir,
+            alignment_dir=alignment_dir,
+            st_path=st_path,
+            zarr_path=zarr_path,
+            alignment_files=tuple(sorted(alignment_files, key=lambda p: str(p))),
         )
 
 

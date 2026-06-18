@@ -1,7 +1,6 @@
 from .schema import (
     Acquisition,
     AcquisitionFile,
-    Alignment,
     Annotation,
     Label,
     Fiducial,
@@ -24,7 +23,6 @@ from .schema import (
 __all__ = [
     "Acquisition",
     "AcquisitionFile",
-    "Alignment",
     "Annotation",
     "Label",
     "Fiducial",
