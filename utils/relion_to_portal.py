@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
 """
 relion_to_portal.py — map a RELION-5 tomography pipeline into the CZI CryoET
-Data Portal sample layout ({sample}/{acq}/{Frames,Gains,TiltSeries,Alignments,
+Data Portal sample layout ({sample}/{acq}/{Frames,Gains,TiltSeries,
 Reconstructions/Tomograms}/), using each job's canonical _rlnJobTypeLabel rather
 than the arbitrary jobNNN number.
+
+Tilt series use the layout introduced on the
+``update-tilt-series-alignment-layout-and-metadata`` branch:
+
+    TiltSeries/{ts_id}/stack/      # the .mrc projection stack (+ .rawtlt)
+    TiltSeries/{ts_id}/alignment/  # alignment params / logs
+
+The align job yields TWO tilt series: the RAW stack (folder id from
+--raw-ts-id, default "raw") and the ALIGNED stack the align job produced
+(folder id from --aligned-ts-id, default "aretomo"; vary it per move).
 
 Routing (matched on job-type family, so e.g. relion.motioncorr.own -> motioncorr):
   relion.importtomo            -> Frames/        (raw movies + mdoc + shared gain)
   relion.motioncorr            -> (skipped; motion-corrected frames, not portal-required)
   relion.ctffind               -> (skipped; CTF metadata only)
   relion.excludetilts          -> (skipped; tilt-selection star only)
-  relion.aligntiltseries       -> SPLIT: <acq>.mrc + <acq>.rawtlt -> TiltSeries/
-                                          <acq>.aln + <acq>.com    -> Alignments/
+  relion.aligntiltseries       -> SPLIT into two tilt series under TiltSeries/:
+       <acq>.mrc + <acq>.rawtlt        -> TiltSeries/{raw_ts_id}/stack/      (raw)
+       <acq>_aligned.mrc               -> TiltSeries/{aligned_ts_id}/stack/
+       <acq>.log + <acq>.aln + <acq>.com -> TiltSeries/{aligned_ts_id}/alignment/
   relion.reconstructtomograms  -> Reconstructions/Tomograms/reconstruct_halves/
   relion.denoisetomo           -> Reconstructions/Tomograms/denoised/
 
@@ -22,6 +34,7 @@ Usage:
   python relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR
   python relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR --apply
   python relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR --apply --copy
+  python relion_to_portal.py PIPELINE_DIR TARGET_SAMPLE_DIR --aligned-ts-id aretomo3
 """
 from __future__ import annotations
 import argparse
@@ -136,7 +149,8 @@ def find_mdoc(pipeline: Path, acq: str) -> Path | None:
     hits = list(pipeline.glob(f"**/{acq}.mdoc"))
     return hits[0] if hits else None
 
-def build_plan(pipeline: Path, target: Path, jobs: dict[str, Path]) -> dict[str, list[tuple[Path, Path]]]:
+def build_plan(pipeline: Path, target: Path, jobs: dict[str, Path],
+               raw_ts_id: str = "raw", aligned_ts_id: str = "aretomo") -> dict[str, list[tuple[Path, Path]]]:
     """Return {acq: [(src, dst), ...]}."""
     plan: dict[str, list[tuple[Path, Path]]] = {}
 
@@ -175,10 +189,17 @@ def build_plan(pipeline: Path, target: Path, jobs: dict[str, Path]) -> dict[str,
         if gain:
             moves.append((gain, base / "Gains" / gain.name))
 
-        # --- TiltSeries + Alignments: split the align job's external/<acq>/ ---
+        # --- TiltSeries: split the align job's external/<acq>/ into two tilt
+        #     series under the new TiltSeries/{ts_id}/{stack,alignment}/ layout:
+        #       raw stack       -> {raw_ts_id}/stack/      (<acq>.mrc + .rawtlt)
+        #       aligned stack   -> {aligned_ts_id}/stack/  (<acq>_aligned.mrc)
+        #       alignment files -> {aligned_ts_id}/alignment/ (<acq>.log/.aln/.com)
         if align:
             ext = align / "external" / acq
             if ext.is_dir():
+                raw_stack = base / "TiltSeries" / raw_ts_id / "stack"
+                aligned_stack = base / "TiltSeries" / aligned_ts_id / "stack"
+                aligned_align = base / "TiltSeries" / aligned_ts_id / "alignment"
                 # prefer the canonical "<acq>.rawtlt"; ignore variants like
                 # "new_<acq>.rawtlt" unless it's the only rawtlt present.
                 rawtlts = sorted(ext.glob("*.rawtlt"))
@@ -190,13 +211,17 @@ def build_plan(pipeline: Path, target: Path, jobs: dict[str, Path]) -> dict[str,
                         continue
                     n = f.name
                     if n == f"{acq}.mrc":
-                        moves.append((f, base / "TiltSeries" / n))
+                        moves.append((f, raw_stack / n))
                     elif f == keep_rawtlt:
-                        moves.append((f, base / "TiltSeries" / n))
+                        moves.append((f, raw_stack / n))
+                    elif n == f"{acq}_aligned.mrc":
+                        moves.append((f, aligned_stack / n))
+                    elif n == f"{acq}.log":
+                        moves.append((f, aligned_align / n))
                     elif n.endswith((".aln", ".com")):
-                        moves.append((f, base / "Alignments" / n))
-                    # everything else (_aligned.mrc, _ctf.mrc, extra *.rawtlt,
-                    # *.eps, *.txt, *.log) is derived/CTF -> intentionally skipped
+                        moves.append((f, aligned_align / n))
+                    # everything else (_ctf.mrc, extra *.rawtlt, *.eps, *.txt)
+                    # is derived/CTF QC -> intentionally skipped
 
         # --- Reconstructions/Tomograms ---
         if recon:
@@ -217,7 +242,7 @@ def build_plan(pipeline: Path, target: Path, jobs: dict[str, Path]) -> dict[str,
 # execution
 # ---------------------------------------------------------------------------
 def execute(plan, action: str, apply: bool):
-    fold = {"Frames": 0, "Gains": 0, "TiltSeries": 0, "Alignments": 0, "Reconstructions": 0}
+    fold = {"Frames": 0, "Gains": 0, "TiltSeries": 0, "Reconstructions": 0}
     total = 0
     missing = 0
     for acq, moves in plan.items():
@@ -273,7 +298,7 @@ SKIP_REASON = {
     "relion.ctffind":    "CTF estimation output (no portal slot)",
     "relion.excludetilts": "tilt-selection provenance (.star)",
     "relion.importtomo": "import provenance / unprocessed raw",
-    "relion.aligntiltseries": "alignment QC / derived stacks (aligned/ctf)",
+    "relion.aligntiltseries": "alignment QC (ctf stack / *.eps / *_ctf.txt / extra *.rawtlt)",
     "relion.reconstructtomograms": "reconstruction provenance (.star/logs)",
     "relion.denoisetomo": "denoise provenance / training config",
 }
@@ -338,6 +363,50 @@ def write_manifest(pipeline: Path, target: Path, plan, jobs, csv_path: Path):
     print(f"  {len(rows)} files total -> {r} routed ({human_size(rb)}), {u} unrouted ({human_size(ub)})")
 
 
+def print_toml_guidance(plan, raw_ts_id: str, aligned_ts_id: str):
+    """Print a ready-to-paste [[tilt_series]] block per acquisition.
+
+    The new schema requires a [[tilt_series]] block per TiltSeries/<id>/ folder.
+    This script routes files only; the blocks below must be added by hand so the
+    folder ids and the authored metadata stay in sync.
+    """
+    # which TiltSeries/<id>/ folders did we create for each acquisition?
+    per_acq: dict[str, list[str]] = {}
+    for acq, moves in plan.items():
+        ids: list[str] = []
+        for _src, dst in moves:
+            parts = dst.parts
+            i = parts.index(acq)
+            if i + 2 < len(parts) and parts[i + 1] == "TiltSeries":
+                tsid = parts[i + 2]
+                if tsid not in ids:
+                    ids.append(tsid)
+        if ids:
+            per_acq[acq] = ids
+    if not per_acq:
+        return
+
+    print("\n" + "-" * 60)
+    print("TODO: add a [[tilt_series]] block per acquisition to its")
+    print("      acquisition.toml (the `id` must match the TiltSeries/<id>/")
+    print("      folder name created above):")
+    for acq in sorted(per_acq):
+        ids = per_acq[acq]
+        have_raw = raw_ts_id in ids
+        print(f"\n  # {acq}/acquisition.toml")
+        for tsid in ids:
+            is_aligned = tsid != raw_ts_id
+            derived = raw_ts_id if (is_aligned and have_raw) else "Frames"
+            print("  [[tilt_series]]")
+            print(f'  id           = "{tsid}"')
+            print(f'  derived_from = "{derived}"')
+            print(f"  is_aligned   = {'true' if is_aligned else 'false'}")
+            if is_aligned:
+                print('  # alignment_software = "AreTomo3"        # fill in')
+                print('  # alignment_method   = "patch_tracking"  # fill in')
+    print("\n  # Also retarget tomogram blocks: alignment_id -> tilt_series_id.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pipeline_dir", type=Path)
@@ -345,6 +414,12 @@ def main():
     ap.add_argument("--apply", action="store_true", help="actually perform the action (default: dry run)")
     ap.add_argument("--manifest", type=Path, metavar="CSV",
                     help="write a per-file routed-vs-unrouted inventory (with sizes) to CSV")
+    ap.add_argument("--raw-ts-id", default="raw", metavar="ID",
+                    help="folder id for the RAW (unaligned) tilt series under "
+                         "TiltSeries/ (default: raw)")
+    ap.add_argument("--aligned-ts-id", default="aretomo", metavar="ID",
+                    help="folder id for the ALIGNED tilt series the align job "
+                         "produced (default: aretomo); vary it per move")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--symlink", dest="action", action="store_const", const="symlink", help="symlink files (default); instant, no extra disk")
     g.add_argument("--copy", dest="action", action="store_const", const="copy", help="copy files instead of symlinking (duplicates bytes)")
@@ -365,8 +440,10 @@ def main():
         print(f"  {fam:30} {'-> ' + j.name if j else '(absent)'}")
 
     target = args.target_sample_dir.resolve()
-    plan = build_plan(pipeline, target, jobs)
+    plan = build_plan(pipeline, target, jobs,
+                      raw_ts_id=args.raw_ts_id, aligned_ts_id=args.aligned_ts_id)
     execute(plan, args.action, args.apply)
+    print_toml_guidance(plan, args.raw_ts_id, args.aligned_ts_id)
     if args.manifest:
         write_manifest(pipeline, target, plan, jobs, args.manifest.resolve())
 
