@@ -57,7 +57,7 @@ def _build_record_with_tilt_series_extras() -> SampleRecord:
     ts = TiltSeries.model_validate(
         {
             "tilt_series_id": "ts_a",
-            "n_tilts": 41,
+            "is_aligned": True,
             # arbitrary extra key, like a researcher added 'custom_qc'
             "custom_qc": {"score": 0.92, "reviewer": "ksmith"},
         }
@@ -141,6 +141,8 @@ def test_load_sample_record_emits_tilt_series_extras(tmp_path: Path) -> None:
     )
     pos1 = sample_dir / "Pos1"
     pos1.mkdir()
+    # The id-folder alignment check requires a matching TiltSeries/<id> dir.
+    (pos1 / "TiltSeries" / "ts_a").mkdir(parents=True)
     (pos1 / "acquisition.toml").write_text(
         textwrap.dedent(
             """\
@@ -149,7 +151,7 @@ def test_load_sample_record_emits_tilt_series_extras(tmp_path: Path) -> None:
 
             [[tilt_series]]
             tilt_series_id = "ts_a"
-            n_tilts = 41
+            is_aligned = true
             custom_qc = "passed"
             """
         )
