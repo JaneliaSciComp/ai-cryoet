@@ -122,8 +122,8 @@ Experimental/
       TiltSeries/
         {tilt_series_id}/                    # one subfolder per tilt series (raw and/or aligned)
           stack/                             # .mrc projection stack (+ .zarr / .rawtlt); MAY be empty
-          alignment/
-            alignment.json                   # affine matrix + interpolation recipe
+          alignment/                         # MAY be empty if this is the raw tilt series 
+            alignment.json                   # affine matrix + interpolation recipe (or any other alignment data)
       Reconstructions/
         Tomograms/
           {tomogram_id}/                   # one subfolder per processing pipeline
