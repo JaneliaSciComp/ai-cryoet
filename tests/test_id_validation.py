@@ -139,40 +139,59 @@ def test_tomogram_rejects_bad_derived_from():
         PostProcessedTomogram.model_validate({"id": "tomo_001", "derived_from": ["also/bad"]})
 
 
-def test_tomogram_alignment_id_must_match_declared_alignment():
-    """A tomogram's alignment_id must reference an [[alignment]] in the same acquisition."""
+def test_tomogram_tilt_series_id_must_match_declared_tilt_series():
+    """A tomogram's tilt_series_id must reference a [[tilt_series]] in the same acquisition."""
     with pytest.raises(ValidationError, match="does not match any"):
         AcquisitionFile.model_validate(
             {
                 "acquisition": {},
-                "raw_tomogram": {"id": "tomo_001", "alignment_id": "ghost"},
-                "alignment": [{"id": "imod_patch_v3"}],
+                "raw_tomogram": {"id": "tomo_001", "tilt_series_id": "ghost"},
+                "tilt_series": [{"id": "ts_raw"}],
             }
         )
 
 
-def test_tomogram_alignment_id_resolves_to_declared_alignment():
-    """A tomogram referencing a declared alignment validates; the id round-trips."""
+def test_tomogram_tilt_series_id_resolves_to_declared_tilt_series():
+    """A tomogram referencing a declared tilt series validates; the id round-trips."""
     acq = AcquisitionFile.model_validate(
         {
             "acquisition": {},
-            "raw_tomogram": {"id": "tomo_001", "alignment_id": "imod_patch_v3"},
+            "raw_tomogram": {"id": "tomo_001", "tilt_series_id": "ts_raw"},
             "post_processed_tomogram": [
-                {"id": "tomo_002", "alignment_id": "imod_patch_v3"}
+                {"id": "tomo_002", "tilt_series_id": "ts_raw"}
             ],
-            "alignment": [{"id": "imod_patch_v3"}],
+            "tilt_series": [{"id": "ts_raw"}],
         }
     )
-    assert acq.raw_tomogram.alignment_id == "imod_patch_v3"
-    assert acq.post_processed_tomogram[0].alignment_id == "imod_patch_v3"
+    assert acq.raw_tomogram.tilt_series_id == "ts_raw"
+    assert acq.post_processed_tomogram[0].tilt_series_id == "ts_raw"
 
 
-def test_tomogram_alignment_id_optional():
-    """alignment_id is optional — a tomogram without one still validates."""
+def test_tomogram_tilt_series_id_optional():
+    """tilt_series_id is optional — a tomogram without one still validates."""
     acq = AcquisitionFile.model_validate(
         {"acquisition": {}, "raw_tomogram": {"id": "tomo_001"}}
     )
-    assert acq.raw_tomogram.alignment_id is None
+    assert acq.raw_tomogram.tilt_series_id is None
+
+
+def test_tilt_series_derived_from_frames_sentinel():
+    """derived_from accepts the literal "Frames" sentinel."""
+    acq = AcquisitionFile.model_validate(
+        {"acquisition": {}, "tilt_series": [{"id": "ts_raw", "derived_from": "Frames"}]}
+    )
+    assert acq.tilt_series[0].derived_from == "Frames"
+
+
+def test_tilt_series_derived_from_must_match_known_id():
+    """derived_from that is neither "Frames" nor a tilt_series id in this acquisition fails."""
+    with pytest.raises(ValidationError, match="neither"):
+        AcquisitionFile.model_validate(
+            {
+                "acquisition": {},
+                "tilt_series": [{"id": "ts_aligned", "derived_from": "ghost"}],
+            }
+        )
 
 
 # ── integration through load_sample_record ──────────────────────────────────
