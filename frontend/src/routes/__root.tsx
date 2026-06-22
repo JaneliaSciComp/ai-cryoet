@@ -58,7 +58,24 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Providers>
           <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
             <Header />
-            <Container component="main" sx={{ paddingBlock: 4, flex: 1 }}>
+            {/*
+              Fluid below `lg`, capped at the `lg` width through the `lg`
+              range so laptops keep comfortable margins, then expanding to the
+              `xl` width on large monitors to give the tables room.
+            */}
+            <Container
+              component="main"
+              maxWidth={false}
+              sx={(theme) => ({
+                paddingBlock: 4,
+                flex: 1,
+                mx: 'auto',
+                maxWidth: {
+                  lg: theme.breakpoints.values.lg,
+                  xl: theme.breakpoints.values.xl,
+                },
+              })}
+            >
               {children}
             </Container>
             <Footer />
