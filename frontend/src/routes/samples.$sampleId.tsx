@@ -97,7 +97,7 @@ function SampleDetailRoute() {
         <CustomLink to="/" color="inherit">
           Home
         </CustomLink>
-        <CustomLink to="/" color="inherit">
+        <CustomLink to="/experimental" color="inherit">
           Browse
         </CustomLink>
         <Typography color="text.primary">{sampleId}</Typography>

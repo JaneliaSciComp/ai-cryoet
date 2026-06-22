@@ -29,7 +29,12 @@ export function Header() {
             </Typography>
           </BrandLink>
           <Box sx={{ flexGrow: 1 }} />
-          <StyledCustomLink to="/">Browse</StyledCustomLink>
+          <StyledCustomLink to="/experimental">
+            Experimental Data
+          </StyledCustomLink>
+          <StyledCustomLink to="/md-simulation">
+            MD Simulations
+          </StyledCustomLink>
           <StyledCustomLink to="/manage">Manage</StyledCustomLink>
         </Toolbar>
       </AppBar>

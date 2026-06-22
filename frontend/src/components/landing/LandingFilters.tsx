@@ -14,7 +14,6 @@ import type { FiltersOptionsOut } from '~/types'
 
 export type LandingFilterState = {
   project?: string
-  data_source?: string
   microscope?: string
   pixel_size_min?: number
   pixel_size_max?: number
@@ -28,6 +27,8 @@ type LandingFiltersProps = {
   value: LandingFilterState
   onChange: (patch: Partial<LandingFilterState>) => void
   onReset: () => void
+  // MD simulation samples have no microscope, so that arm hides this filter.
+  showMicroscope?: boolean
 }
 
 function numOrUndef(s: string): number | undefined {
@@ -111,7 +112,7 @@ function MinMaxRow(props: {
 }
 
 export function LandingFilters(props: LandingFiltersProps) {
-  const { options, value, onChange, onReset } = props
+  const { options, value, onChange, onReset, showMicroscope = true } = props
 
   return (
     <Stack spacing={2.5}>
@@ -124,19 +125,14 @@ export function LandingFilters(props: LandingFiltersProps) {
         onChange={(v) => onChange({ project: v })}
       />
 
-      <DropdownFilter
-        label="Data source"
-        value={value.data_source ?? ''}
-        options={options.data_sources}
-        onChange={(v) => onChange({ data_source: v })}
-      />
-
-      <DropdownFilter
-        label="Microscope"
-        value={value.microscope ?? ''}
-        options={options.microscopes}
-        onChange={(v) => onChange({ microscope: v })}
-      />
+      {showMicroscope ? (
+        <DropdownFilter
+          label="Microscope"
+          value={value.microscope ?? ''}
+          options={options.microscopes}
+          onChange={(v) => onChange({ microscope: v })}
+        />
+      ) : null}
 
       <MinMaxRow
         label="Pixel size"
