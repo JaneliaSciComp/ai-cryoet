@@ -18,10 +18,15 @@ export function LandingHero() {
         textAlign: 'center',
       }}
     >
-      <Typography variant="h3" component="h1" gutterBottom>
+      <Typography variant="h3" component="h1" color="secondary.main" gutterBottom>
         AI+CryoET Data Portal
       </Typography>
-      <Typography variant="h6" component="p" sx={{ opacity: 0.85, mb: 4 }}>
+      <Typography
+        variant="h6"
+        component="p"
+        color="inherit"
+        sx={{ opacity: 0.85, mb: 4 }}
+      >
         Track, explore, and visualize data collected for the AI+CryoET project
       </Typography>
       <Stack
