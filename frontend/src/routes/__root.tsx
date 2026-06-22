@@ -19,7 +19,14 @@ import { Footer } from '~/components/Footer'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
-    links: [{ rel: 'stylesheet', href: fontsourceVariableRobotoCss }],
+    links: [
+      { rel: 'stylesheet', href: fontsourceVariableRobotoCss },
+      // Snowflake icon (served from frontend/public). SVG for modern browsers,
+      // .ico fallback, and apple-touch-icon for iOS home-screen shortcuts.
+      { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+      { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+    ],
   }),
   component: RootComponent,
 })

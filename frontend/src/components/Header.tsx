@@ -1,5 +1,6 @@
 import { AppBar, Box, Toolbar, Typography, css, styled } from '@mui/material'
 import { CustomLink } from './CustomLink'
+import snowflakeLogo from '~/assets/snowflake-logo.svg'
 
 const StyledCustomLink = styled(CustomLink)(
   ({ theme }) => css`
@@ -23,8 +24,14 @@ export function Header() {
     <Box>
       <AppBar position="static">
         <Toolbar sx={{ gap: 3 }}>
-          <BrandLink to="/">
-            <Typography variant="h6" component="span">
+          <BrandLink to="/" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box
+              component="img"
+              src={snowflakeLogo}
+              alt=""
+              sx={{ width: 36, height: 36, display: 'block' }}
+            />
+            <Typography variant="h6" component="span" color="inherit">
               AI+CryoET Data Portal
             </Typography>
           </BrandLink>
