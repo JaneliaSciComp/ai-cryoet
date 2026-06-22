@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as MdSimulationRouteImport } from './routes/md-simulation'
+import { Route as ExperimentalRouteImport } from './routes/experimental'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ManageIndexRouteImport } from './routes/manage.index'
 import { Route as SamplesSampleIdRouteImport } from './routes/samples.$sampleId'
@@ -16,6 +18,16 @@ import { Route as ManageAllScansRouteImport } from './routes/manage.all-scans'
 import { Route as ManageScanIdRouteImport } from './routes/manage.$scanId'
 import { Route as AcquisitionsAcquisitionIdRouteImport } from './routes/acquisitions.$acquisitionId'
 
+const MdSimulationRoute = MdSimulationRouteImport.update({
+  id: '/md-simulation',
+  path: '/md-simulation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExperimentalRoute = ExperimentalRouteImport.update({
+  id: '/experimental',
+  path: '/experimental',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -50,6 +62,8 @@ const AcquisitionsAcquisitionIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/experimental': typeof ExperimentalRoute
+  '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
   '/manage/$scanId': typeof ManageScanIdRoute
   '/manage/all-scans': typeof ManageAllScansRoute
@@ -58,6 +72,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/experimental': typeof ExperimentalRoute
+  '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
   '/manage/$scanId': typeof ManageScanIdRoute
   '/manage/all-scans': typeof ManageAllScansRoute
@@ -67,6 +83,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/experimental': typeof ExperimentalRoute
+  '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
   '/manage/$scanId': typeof ManageScanIdRoute
   '/manage/all-scans': typeof ManageAllScansRoute
@@ -77,6 +95,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/experimental'
+    | '/md-simulation'
     | '/acquisitions/$acquisitionId'
     | '/manage/$scanId'
     | '/manage/all-scans'
@@ -85,6 +105,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/experimental'
+    | '/md-simulation'
     | '/acquisitions/$acquisitionId'
     | '/manage/$scanId'
     | '/manage/all-scans'
@@ -93,6 +115,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/experimental'
+    | '/md-simulation'
     | '/acquisitions/$acquisitionId'
     | '/manage/$scanId'
     | '/manage/all-scans'
@@ -102,6 +126,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ExperimentalRoute: typeof ExperimentalRoute
+  MdSimulationRoute: typeof MdSimulationRoute
   AcquisitionsAcquisitionIdRoute: typeof AcquisitionsAcquisitionIdRoute
   ManageScanIdRoute: typeof ManageScanIdRoute
   ManageAllScansRoute: typeof ManageAllScansRoute
@@ -111,6 +137,20 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/md-simulation': {
+      id: '/md-simulation'
+      path: '/md-simulation'
+      fullPath: '/md-simulation'
+      preLoaderRoute: typeof MdSimulationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/experimental': {
+      id: '/experimental'
+      path: '/experimental'
+      fullPath: '/experimental'
+      preLoaderRoute: typeof ExperimentalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -158,6 +198,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ExperimentalRoute: ExperimentalRoute,
+  MdSimulationRoute: MdSimulationRoute,
   AcquisitionsAcquisitionIdRoute: AcquisitionsAcquisitionIdRoute,
   ManageScanIdRoute: ManageScanIdRoute,
   ManageAllScansRoute: ManageAllScansRoute,

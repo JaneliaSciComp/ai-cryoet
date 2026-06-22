@@ -49,7 +49,6 @@ export function SamplesPortalTable(props: {
           </CustomLink>
         ),
       },
-      { accessorKey: 'data_source', header: 'Data source' },
       { accessorKey: 'project', header: 'Project' },
       {
         accessorKey: 'lab_name',

@@ -76,7 +76,7 @@ function AcquisitionDetailRoute() {
         <CustomLink to="/" color="inherit">
           Home
         </CustomLink>
-        <CustomLink to="/" color="inherit">
+        <CustomLink to="/experimental" color="inherit">
           Browse
         </CustomLink>
         <CustomLink
