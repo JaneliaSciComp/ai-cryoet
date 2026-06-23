@@ -25,7 +25,7 @@ export function SamplesPortalTable(props: {
         columnDefType: 'display',
         size: 80,
         Cell: ({ row }) => {
-          const alt = `Center XY slice of the representative tomogram for ${row.original.sample_id}`
+          const alt = `Middle tilt-series image for ${row.original.sample_id}`
           return (
             <PreviewThumbnail
               src={thumbnailUrl(row.original.thumbnail_path)}

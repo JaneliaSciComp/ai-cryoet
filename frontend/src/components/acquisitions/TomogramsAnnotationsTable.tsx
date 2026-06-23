@@ -19,7 +19,7 @@ import type {
   PostProcessedTomogramOut,
   RawTomogramOut,
 } from '~/types'
-import { PreviewThumbnail, ThumbnailPlaceholder, tomogramThumbnailUrl } from '~/components/common/Thumbnail'
+import { PreviewThumbnail, ThumbnailPlaceholder, tomogramPreviewUrl } from '~/components/common/Thumbnail'
 import { NeuroglancerButton } from '~/components/common/NeuroglancerButton'
 
 // Discriminated row so raw vs. post-processed tomograms share one table while
@@ -150,7 +150,7 @@ export function TomogramsAnnotationsTable(props: {
           const alt = `Center XY slice of ${row.original.tomogram_id}`
           return (
             <PreviewThumbnail
-              src={tomogramThumbnailUrl(
+              src={tomogramPreviewUrl(
                 sampleId,
                 acquisition.acquisition_id,
                 row.original.tomogram_id,

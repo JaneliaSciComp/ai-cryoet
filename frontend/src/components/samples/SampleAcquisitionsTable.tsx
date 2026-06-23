@@ -6,16 +6,11 @@ import {
 } from 'material-react-table'
 import type { AcquisitionOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
-import { PreviewThumbnail, tomogramThumbnailUrl, acquisitionRepTomogramId } from '~/components/common/Thumbnail'
+import { PreviewThumbnail, acquisitionThumbnailUrl } from '~/components/common/Thumbnail'
 
 // Mirrors the API's `n_tomograms` semantics: raw + post-processed combined.
 function tomogramCount(a: AcquisitionOut): number {
   return (a.raw_tomogram ? 1 : 0) + a.post_processed_tomograms.length
-}
-
-function acquisitionPreviewSrc(sampleId: string, a: AcquisitionOut): string | null {
-  const repId = acquisitionRepTomogramId(a)
-  return repId ? tomogramThumbnailUrl(sampleId, a.acquisition_id, repId) : null
 }
 
 export function SampleAcquisitionsTable(props: {
@@ -33,10 +28,10 @@ export function SampleAcquisitionsTable(props: {
         enableSorting: false,
         size: 140,
         Cell: ({ row }) => {
-          const alt = `Center XY slice of the representative tomogram for ${row.original.acquisition_id}`
+          const alt = `Middle tilt-series image for ${row.original.acquisition_id}`
           return (
             <PreviewThumbnail
-              src={acquisitionPreviewSrc(sampleId, row.original)}
+              src={acquisitionThumbnailUrl(sampleId, row.original.acquisition_id)}
               alt={alt}
               tooltipTitle={alt}
               width={96}
