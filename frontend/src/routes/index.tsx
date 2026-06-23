@@ -6,7 +6,6 @@ import {
   useSamplesQuery,
   useStatsOverviewQuery,
 } from '~/utils/queryOptions'
-import { LandingHero } from '~/components/landing/LandingHero'
 import { StatsBanner } from '~/components/landing/StatsBanner'
 import { CoverageSummary } from '~/components/landing/CoverageSummary'
 
@@ -37,7 +36,6 @@ function Landing() {
         mx: 'auto',
       })}
     >
-      <LandingHero />
       <StatsBanner stats={stats} />
       <CoverageSummary rows={rows} />
     </Stack>
