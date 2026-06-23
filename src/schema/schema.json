@@ -35,7 +35,7 @@
           "title": "Facility",
           "type": "string"
         },
-        "acquistion_quality": {
+        "acquisition_quality": {
           "title": "Acquistion Quality",
           "maximum": 5,
           "minimum": 1,

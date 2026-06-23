@@ -249,7 +249,7 @@ class Acquisition(_Base):
     phase_plate: bool | None = None
     microscope: str | None = None
     facility: str | None = None              # imaging facility, e.g. "Janelia"
-    acquistion_quality: AcquistionQuality | None = None
+    acquisition_quality: AcquistionQuality | None = None
     # MDOC
     pixel_size: float | None = None          # angstrom
     dose_per_tilt: list[float] | None = None # e/Å² per tilt

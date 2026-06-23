@@ -167,7 +167,7 @@ class AcquisitionOut(BaseModel):
     phase_plate: bool | None = None
     microscope: str | None = None
     facility: str | None = None
-    acquistion_quality: int | None = None
+    acquisition_quality: int | None = None
     # MDOC / frame-extension derived
     pixel_size: float | None = None
     dose_per_tilt: list[float] | None = None

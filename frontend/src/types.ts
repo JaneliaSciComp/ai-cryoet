@@ -149,7 +149,7 @@ export type AcquisitionOut = {
   phase_plate: boolean | null
   microscope: string | null
   facility: string | null
-  acquistion_quality: number | null
+  acquisition_quality: number | null
   // MDOC / frame-extension derived
   pixel_size: number | null
   dose_per_tilt: number[] | null
