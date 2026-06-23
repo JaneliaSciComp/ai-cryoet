@@ -13,6 +13,8 @@ import os
 import sys
 from pathlib import Path
 
+from loguru import logger
+
 from catalog import db, scanner
 
 
@@ -65,7 +67,38 @@ def _build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("CATALOG_THUMBNAIL_DIR"),
         help="directory for pre-generated thumbnail cache (defaults to $CATALOG_THUMBNAIL_DIR)",
     )
+    scan.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="emit DEBUG logging (per-acquisition detail)",
+    )
+    scan.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress per-sample progress; only warnings and errors",
+    )
     return p
+
+
+def _configure_logging(args) -> None:
+    """Send progress to stderr via loguru. Default INFO (per-sample);
+    -v DEBUG (per-acquisition); -q WARNING only."""
+    level = "INFO"
+    if getattr(args, "verbose", False):
+        level = "DEBUG"
+    elif getattr(args, "quiet", False):
+        level = "WARNING"
+    logger.remove()  # drop loguru's default handler before installing ours
+    logger.add(
+        sys.stderr,
+        level=level,
+        format=(
+            "<green>{time:HH:mm:ss}</green> <level>{level: <7}</level> "
+            "<level>{message}</level>"
+        ),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_scan(args) -> int:
+    _configure_logging(args)
     root = args.root
     if root is None:
         env_root = os.environ.get("CATALOG_DATA_ROOT")

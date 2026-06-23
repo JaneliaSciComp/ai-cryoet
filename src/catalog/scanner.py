@@ -11,11 +11,13 @@ is responsible for serializing scans.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from loguru import logger
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
@@ -84,9 +86,21 @@ def scan_root(
         with session.begin():
             soft_deleted_ids = state.load_soft_deleted_ids(session)
 
+        sample_locs = list(discovery.iter_samples(root))
+        total = len(sample_locs)
+        logger.info(
+            "scanning {} — {} sample(s) discovered (force={}, thumbnails={})",
+            root,
+            total,
+            force,
+            "on" if thumbnail_dir is not None else "off",
+        )
+        run_started = time.perf_counter()
+
         fs_sample_ids: set[str] = set()
-        for sample_loc in discovery.iter_samples(root):
+        for idx, sample_loc in enumerate(sample_locs, start=1):
             fs_sample_ids.add(sample_loc.sample_id)
+            logger.info("[{}/{}] {}", idx, total, sample_loc.sample_id)
 
             # Per-sample work in its own transaction
             try:
@@ -170,6 +184,16 @@ def scan_root(
             state.finish_scan(
                 session, scan_run_id, status="completed", report=report
             )
+        logger.info(
+            "scan complete in {:.1f}s — upserted={}, skipped={}, "
+            "healed={}, warnings={}, errors={}",
+            time.perf_counter() - run_started,
+            report.upserted,
+            report.skipped,
+            report.thumbnails_healed,
+            len(report.warnings),
+            len(report.errors),
+        )
     except Exception:
         # Mark the scan failed; let the exception propagate per on_error semantics.
         try:
@@ -217,6 +241,10 @@ def _scan_one_sample(
                 stored = session.get(orm.SampleORM, sample_loc.sample_id)
                 rel = stored.thumbnail_path if stored else None
                 if rel and not (thumbnail_dir / rel).is_file():
+                    logger.info(
+                        "  thumbnail missing on disk — re-generating for {}",
+                        sample_loc.sample_id,
+                    )
                     new_rel = thumbnails.generate_thumbnails(
                         sample_loc.sample_id,
                         thumbnails.refs_from_db(session, sample_loc.sample_id),
@@ -226,6 +254,7 @@ def _scan_one_sample(
                     stored.thumbnail_path = new_rel
                     session.add(stored)
                     report.thumbnails_healed += 1
+        logger.debug("  skipped (unchanged): {}", sample_loc.sample_id)
         report.skipped += 1
         report.skipped_ids.append(sample_loc.sample_id)
         return
@@ -250,11 +279,21 @@ def _scan_one_sample(
         disk_size = discovery.dir_size_bytes(sample_loc.path)
         thumb_rel = None
         if thumbnail_dir is not None:
+            n_acqs = len(result.record.acquisitions)
+            logger.info(
+                "  generating thumbnails for {} acquisition(s)…", n_acqs
+            )
+            thumb_started = time.perf_counter()
             thumb_rel = thumbnails.generate_thumbnails(
                 sample_loc.sample_id,
                 thumbnails.refs_from_record(result.record),
                 thumbnail_dir,
                 skip_existing=False,
+            )
+            logger.info(
+                "  thumbnails done in {:.1f}s (representative={})",
+                time.perf_counter() - thumb_started,
+                thumb_rel or "none",
             )
         persistence.upsert_sample_record(
             session,

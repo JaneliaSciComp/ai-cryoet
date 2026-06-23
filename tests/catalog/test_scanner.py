@@ -374,7 +374,7 @@ def test_force_recomputes_disk_size_bytes(engine, tmp_path):
 _FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 
 
-def _fake_render_one(mrc_path: str, dest: Path) -> bool:
+def _fake_render_one(ref, dest: Path) -> bool:
     """Patch target: writes fake PNG bytes to dest and returns True."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(_FAKE_PNG)
