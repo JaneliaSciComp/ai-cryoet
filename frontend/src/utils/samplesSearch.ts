@@ -44,9 +44,11 @@ export const samplesSearchSchema = z.object({
   has_tomograms: booleanish,
   pixel_size_min: z.coerce.number().optional(),
   pixel_size_max: z.coerce.number().optional(),
+  n_tilts_min: z.coerce.number().optional(),
+  n_tilts_max: z.coerce.number().optional(),
   voxel_spacing_min: z.coerce.number().optional(),
   voxel_spacing_max: z.coerce.number().optional(),
-})
+});
 
 export type SamplesSearchParams = z.infer<typeof samplesSearchSchema>
 
@@ -79,8 +81,8 @@ export function buildSamplesQueryString(params: SamplesSearchParams): string {
   if (params.has_tomograms !== undefined) {
     addOne('has_tomograms', params.has_tomograms)
   }
-  addOne('pixel_size_min', params.pixel_size_min)
-  addOne('pixel_size_max', params.pixel_size_max)
+  addOne("n_tilts_min", params.n_tilts_min);
+  addOne("n_tilts_max", params.n_tilts_max)
   addOne('voxel_spacing_min', params.voxel_spacing_min)
   addOne('voxel_spacing_max', params.voxel_spacing_max)
   const qs = sp.toString()

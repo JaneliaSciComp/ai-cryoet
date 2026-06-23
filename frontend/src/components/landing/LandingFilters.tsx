@@ -13,12 +13,14 @@ import {
 import type { FiltersOptionsOut } from '~/types'
 
 export type LandingFilterState = {
-  project?: string
-  microscope?: string
-  pixel_size_min?: number
-  pixel_size_max?: number
-  has_tomograms?: boolean
-}
+  project?: string;
+  microscope?: string;
+  pixel_size_min?: number;
+  pixel_size_max?: number;
+  n_tilts_min?: number;
+  n_tilts_max?: number;
+  has_tomograms?: boolean;
+};
 
 type LandingFiltersProps = {
   options: FiltersOptionsOut
