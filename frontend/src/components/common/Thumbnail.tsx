@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Box, Modal, Tooltip, Typography } from '@mui/material'
+import { Box, CircularProgress, Modal, Tooltip, Typography } from '@mui/material'
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined'
 import type { AcquisitionOut } from '~/types'
 
@@ -13,15 +13,18 @@ type Size = number | string
 export function ThumbnailPlaceholder(props: {
   width?: Size
   height?: Size
+  // When set, the slot is sized by aspect ratio (e.g. `1` for a square) against
+  // its width instead of a fixed height.
+  aspectRatio?: Size
   icon?: ReactNode
   label?: string
 }) {
-  const { width = 56, height = 40, icon, label } = props
+  const { width = 56, height = 40, aspectRatio, icon, label } = props
   return (
     <Box
       sx={{
         width,
-        height,
+        ...(aspectRatio != null ? { aspectRatio } : { height }),
         borderRadius: 1,
         bgcolor: 'action.hover',
         display: 'flex',
@@ -42,13 +45,26 @@ export function ThumbnailPlaceholder(props: {
   )
 }
 
+// Full-screen enlarged view. When a `highResSrc` is given it's the preferred
+// image, but it's fetched on demand and can be slow — so we keep showing the
+// already-loaded `src` thumbnail (scaled up) with a loading spinner over it
+// until the high-res image arrives, then swap it in. With no `highResSrc` (or
+// if it fails to load) the thumbnail is shown on its own.
 function ThumbnailLightbox(props: {
   open: boolean
   src: string
+  highResSrc?: string | null
   alt?: string
   onClose: () => void
 }) {
-  const { open, src, alt = '', onClose } = props
+  const { open, src, highResSrc, alt = '', onClose } = props
+  const [hiResLoaded, setHiResLoaded] = useState(false)
+  const [hiResFailed, setHiResFailed] = useState(false)
+
+  const wantHiRes = highResSrc != null && highResSrc !== src && !hiResFailed
+  const showHiRes = wantHiRes && hiResLoaded
+  const loading = wantHiRes && !hiResLoaded
+
   return (
     <Modal open={open} onClose={onClose}>
       <Box
@@ -62,18 +78,47 @@ function ThumbnailLightbox(props: {
           outline: 'none',
         }}
       >
-        <Box
-          component="img"
-          src={src}
-          alt={alt}
-          sx={{
-            maxWidth: '90vw',
-            maxHeight: '90vh',
-            objectFit: 'contain',
-            borderRadius: 2,
-            display: 'block',
-          }}
-        />
+        <Box sx={{ position: 'relative', display: 'flex' }}>
+          <Box
+            component="img"
+            src={showHiRes ? (highResSrc as string) : src}
+            alt={alt}
+            sx={{
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              objectFit: 'contain',
+              borderRadius: 2,
+              display: 'block',
+            }}
+          />
+          {/* Off-screen probe that drives the swap once the high-res image is
+              decoded; rendering it (rather than swapping `src` directly) keeps
+              the thumbnail visible the whole time it's loading. */}
+          {wantHiRes && !hiResLoaded && (
+            <Box
+              component="img"
+              src={highResSrc as string}
+              alt=""
+              aria-hidden
+              onLoad={() => setHiResLoaded(true)}
+              onError={() => setHiResFailed(true)}
+              sx={{ display: 'none' }}
+            />
+          )}
+          {loading && (
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <CircularProgress />
+            </Box>
+          )}
+        </Box>
       </Box>
     </Modal>
   )
@@ -84,22 +129,44 @@ function ThumbnailLightbox(props: {
 // series). Keeps the same footprint either way so table rows don't jump.
 // Pass `clickable` to let users open a full-screen lightbox on click.
 // Pass `tooltipTitle` to show a tooltip that auto-dismisses when the lightbox opens.
+// Pass `lightboxSrc` to enlarge a different (e.g. higher-resolution, on-demand)
+// image than the one displayed — it's only fetched when the lightbox opens
+// (the lightbox mounts on demand), and the thumbnail is shown with a spinner
+// until it arrives. When omitted, the lightbox simply enlarges the thumbnail.
 export function PreviewThumbnail(props: {
   src?: string | null
+  lightboxSrc?: string | null
   alt?: string
   width?: Size
   height?: Size
+  // When set, the image is sized by aspect ratio (e.g. `1` for a square)
+  // against its width instead of a fixed height.
+  aspectRatio?: Size
   clickable?: boolean
   tooltipTitle?: string
   objectFit?: 'cover' | 'contain'
+  // Whether to draw the drop-shadow "card" behind the loaded image. On by
+  // default for table/list thumbnails; turn off where the image should fill
+  // its slot edge-to-edge.
+  elevated?: boolean
+  placeholderIcon?: ReactNode
+  placeholderLabel?: string
 }) {
-  const { src, alt = '', width = 56, height = 40, clickable = false, tooltipTitle, objectFit = 'cover' } = props
+  const { src, lightboxSrc, alt = '', width = 56, height = 40, aspectRatio, clickable = false, tooltipTitle, objectFit = 'cover', elevated = true, placeholderIcon, placeholderLabel } = props
   const [failed, setFailed] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
   if (!src || failed) {
-    return <ThumbnailPlaceholder width={width} height={height} />
+    return (
+      <ThumbnailPlaceholder
+        width={width}
+        height={height}
+        aspectRatio={aspectRatio}
+        icon={placeholderIcon}
+        label={placeholderLabel}
+      />
+    )
   }
 
   const img = (
@@ -112,12 +179,14 @@ export function PreviewThumbnail(props: {
       onClick={clickable ? () => setLightboxOpen(true) : undefined}
       sx={{
         width,
-        height,
+        ...(aspectRatio != null ? { aspectRatio } : { height }),
         objectFit,
         borderRadius: 1,
         display: 'block',
         ...(loaded
-          ? { boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }
+          ? elevated
+            ? { boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }
+            : {}
           : { bgcolor: 'action.hover' }),
         ...(clickable && { cursor: 'pointer' }),
       }}
@@ -137,6 +206,7 @@ export function PreviewThumbnail(props: {
         <ThumbnailLightbox
           open={lightboxOpen}
           src={src}
+          highResSrc={lightboxSrc}
           alt={alt}
           onClose={() => setLightboxOpen(false)}
         />
@@ -147,10 +217,14 @@ export function PreviewThumbnail(props: {
 
 // ── Thumbnail URL helpers ────────────────────────────────────────────────
 
-// Relpath scheme must match catalog/thumbnails._relpath.
-export function tomogramThumbnailUrl(s: string, a: string, t: string): string {
-  const enc = (x: string) => x.split('/').map(encodeURIComponent).join('/')
-  return `/api/thumbnails/${enc(s)}/${enc(a)}/${enc(t)}.png`
+const enc = (x: string) => x.split('/').map(encodeURIComponent).join('/')
+
+// Pre-generated per-acquisition cached thumbnail (the median tilt-series
+// image). Relpath scheme must match catalog/thumbnails._relpath:
+// {sample}/{acq}.png. Used in tables/lists and the sample-detail hero where
+// fast cached loads matter.
+export function acquisitionThumbnailUrl(s: string, a: string): string {
+  return `/api/thumbnails/${enc(s)}/${enc(a)}.png`
 }
 
 export function thumbnailUrl(relpath?: string | null): string | null {
@@ -159,9 +233,24 @@ export function thumbnailUrl(relpath?: string | null): string | null {
     : null
 }
 
-// Acquisition representative: post[0] then raw, by tomogram_id sort.
-export function acquisitionRepTomogramId(a: AcquisitionOut): string | null {
-  return a.post_processed_tomograms[0]?.tomogram_id ?? a.raw_tomogram?.tomogram_id ?? null
+// On-demand median/middle tilt-series image (rendered fresh at higher
+// resolution from the zarr/.st/Frames stack). Used on the acquisition-detail
+// hero, where the click-to-enlarge lightbox benefits from the sharper render.
+// Returns 422 when no stack artifact is reachable.
+export function tiltSeriesPreviewUrl(s: string, a: string, ts: string): string {
+  return `/api/tilt-series/${enc(s)}/${enc(a)}/${enc(ts)}/preview.png`
+}
+
+// On-demand tomogram center-XY slice — distinct per tomogram, used in the
+// tomograms table where each row is its own reconstruction.
+export function tomogramPreviewUrl(s: string, a: string, t: string): string {
+  return `/api/tomograms/${enc(s)}/${enc(a)}/${enc(t)}/preview.png`
+}
+
+// First tilt series of an acquisition — the representative used for the
+// median-tilt hero image.
+export function acquisitionRepTiltSeriesId(a: AcquisitionOut): string | null {
+  return a.tilt_series[0]?.tilt_series_id ?? null
 }
 
 // Tilt geometry is an acquisition-level property (shared by all the
@@ -169,6 +258,5 @@ export function acquisitionRepTomogramId(a: AcquisitionOut): string | null {
 // Route prefix is /acquisitions (api/main.py); frontend proxies under /api.
 // Returns 422 when the acquisition has no cached tilt_angles (EER-only).
 export function acquisitionPolarUrl(s: string, a: string): string {
-  const enc = (x: string) => x.split('/').map(encodeURIComponent).join('/')
   return `/api/acquisitions/${enc(s)}/${enc(a)}/polar.png`
 }
