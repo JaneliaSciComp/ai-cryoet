@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { Stack, Typography } from '@mui/material'
-import LinkIcon from '@mui/icons-material/Link'
+import { IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { CopyIconButton } from '~/components/common/CopyIconButton'
 import { toFileglancerUrl } from '~/utils/fileglancer'
 
@@ -12,8 +12,9 @@ interface FileglancerPathSectionProps {
   children?: ReactNode
 }
 
-// Shared path display used by the sample- and acquisition-detail views: a
-// monospace path with copy-link / copy-path buttons and optional inset content.
+// Shared path display used by the sample- and acquisition-detail views: the
+// on-disk path with a copy-path button, a link out to Fileglancer, and
+// optional inset content.
 export function FileglancerPathSection(props: FileglancerPathSectionProps) {
   const { path, children } = props
 
@@ -25,18 +26,29 @@ export function FileglancerPathSection(props: FileglancerPathSectionProps) {
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Typography
             variant="body2"
-            sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '0.8125rem',
+              wordBreak: 'break-all',
+            }}
           >
             {path}
           </Typography>
-          {fileglancerLink ? (
-            <CopyIconButton
-              text={fileglancerLink}
-              tooltip="Copy Fileglancer link"
-              icon={<LinkIcon fontSize="small" />}
-            />
-          ) : null}
           <CopyIconButton text={path} tooltip="Copy path" />
+          {fileglancerLink ? (
+            <Tooltip title="View data in Fileglancer">
+              <IconButton
+                aria-label="View data in Fileglancer"
+                size="small"
+                component="a"
+                href={fileglancerLink}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <OpenInNewIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null}
         </Stack>
       ) : null}
 

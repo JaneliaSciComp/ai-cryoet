@@ -173,9 +173,10 @@ function SampleDetailRoute() {
           )
         })()}
         details={
-          <FileglancerPathSection path={samplePath}>
+          <Stack spacing={3}>
             <SampleContentsCard sample={sample} />
-          </FileglancerPathSection>
+            <FileglancerPathSection path={samplePath} />
+          </Stack>
         }
       />
 
