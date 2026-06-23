@@ -7,6 +7,7 @@ import {
 import type { AcquisitionOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
 import { PreviewThumbnail, acquisitionThumbnailUrl } from '~/components/common/Thumbnail'
+import { QualityBadge } from '~/components/common/QualityBadge'
 
 // Mirrors the API's `n_tomograms` semantics: raw + post-processed combined.
 function tomogramCount(a: AcquisitionOut): number {
@@ -53,6 +54,14 @@ export function SampleAcquisitionsTable(props: {
           >
             {row.original.acquisition_id}
           </CustomLink>
+        ),
+      },
+      {
+        accessorKey: 'acquisition_quality',
+        header: 'Quality',
+        size: 120,
+        Cell: ({ row }) => (
+          <QualityBadge quality={row.original.acquisition_quality} />
         ),
       },
       {

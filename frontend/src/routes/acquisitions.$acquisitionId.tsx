@@ -16,6 +16,7 @@ import { FileglancerPathSection } from '~/components/common/FileglancerPathSecti
 import { DetailHero } from '~/components/common/DetailHero'
 import { DetailPageHeader } from '~/components/common/DetailPageHeader'
 import { SectionHeading } from '~/components/common/SectionHeading'
+import { QualityBadge } from '~/components/common/QualityBadge'
 import { MetadataDrawer } from '~/components/common/MetadataDrawer'
 import { MetadataSection } from '~/components/common/MetadataSection'
 import type { MetadataSectionData } from '~/components/common/MetadataSection'
@@ -134,6 +135,12 @@ function AcquisitionSummary(props: {
       <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>
         Acquisition summary
       </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+        <Typography variant="body2" color="text.secondary">
+          Quality
+        </Typography>
+        <QualityBadge quality={props.acquisition.acquisition_quality} />
+      </Box>
       {/* Boxes sit side by side and wrap to a single column only when they no
           longer fit (flex-basis + flexWrap), rather than at a fixed breakpoint.
           flex-start keeps the lighter tilt series box from stretching to match

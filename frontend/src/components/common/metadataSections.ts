@@ -190,6 +190,13 @@ export function acquisitionMetadataSections(
       { label: 'Acquisition ID', value: acq.acquisition_id },
       { label: 'Facility', value: acq.facility },
       { label: 'Resolution', value: num(acq.resolution, 'Å') },
+      {
+        label: 'Acquisition quality',
+        value:
+          acq.acquisition_quality != null
+            ? `${acq.acquisition_quality} / 5`
+            : null,
+      },
       { label: 'Date collected', value: acq.date_collected },
       { label: 'Frame count', value: num(acq.frame_count) },
     ],
@@ -202,13 +209,6 @@ export function acquisitionMetadataSections(
       { label: 'Camera', value: acq.camera },
       { label: 'Voltage', value: num(acq.voltage, 'kV') },
       { label: 'Pixel size', value: num(acq.pixel_size, 'Å') },
-      {
-        label: 'Acquisition quality',
-        value:
-          acq.acquistion_quality != null
-            ? `${acq.acquistion_quality} / 5`
-            : null,
-      },
       { label: 'Energy filter', value: acq.energy_filter },
       {
         label: 'Energy filter slit width',
