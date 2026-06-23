@@ -1,7 +1,12 @@
 # Utility scripts
 
-Utilities for staging Janelia cryoET facility data into the ai-cryoet portal
-ingestion layout.
+Utilities for the ai-cryoet portal:
+
+- **Data staging** — `reorg_facility_to_portal.py` and `relion_to_portal.py`
+  stage Janelia cryoET facility data and RELION pipeline output into the portal
+  ingestion layout.
+- **Frontend icons** — `icon/` regenerates the snowflake app icon, navbar logo,
+  and favicons used by the frontend.
 
 ## `reorg_facility_to_portal.py`
 
@@ -167,3 +172,37 @@ The `--manifest` option is useful for auditing exactly which pipeline files were
 routed where and which were left behind (and why).
 
 See `./relion_to_portal.py --help` for details.
+
+---
+
+## `icon/` — frontend icon generators
+
+Scripts that regenerate the AI+CryoET snowflake icons used by the frontend (the
+navbar logo and the browser favicon). The design is a snowflake / neural-network
+hybrid in two colors: petrol `#145266` (background) and icy blue `#a8d4f0`
+(nodes/branches) — the same palette the MUI theme is derived from.
+
+| Script                     | Output                                                                 |
+|----------------------------|------------------------------------------------------------------------|
+| `create_ai_cryoet_svg.py`  | `frontend/public/favicon.svg` (petrol tile) and `frontend/src/assets/snowflake-logo.svg` (transparent, for the navbar). Written straight into the frontend. |
+| `create_ai_cryoet_icon.py` | The original raster renders (`ai_cryoet_snowflake_*.png`, written to the current directory). Its 1024px output is the source for the `.ico` / `apple-touch` fallbacks. |
+
+### Regenerating the frontend icons
+
+```bash
+# 1. Vector assets — written directly into the frontend:
+python utils/icon/create_ai_cryoet_svg.py
+
+# 2. Raster fallbacks — render the source PNG, then derive the .ico + apple-touch.
+#    Needs Pillow (`pip install Pillow`) for the render and ImageMagick for convert:
+cd utils/icon
+python create_ai_cryoet_icon.py            # produces ai_cryoet_snowflake_1024.png (+512, +132)
+convert ai_cryoet_snowflake_1024.png -define icon:auto-resize=16,32,48,64 \
+    ../../frontend/public/favicon.ico
+convert ai_cryoet_snowflake_1024.png -resize 180x180 \
+    ../../frontend/public/apple-touch-icon.png
+rm ai_cryoet_snowflake_*.png               # intermediates; not committed
+```
+
+The `<link>` tags that reference these live in `frontend/src/routes/__root.tsx`;
+the navbar logo is imported in `frontend/src/components/Header.tsx`.

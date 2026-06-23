@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
   createRootRouteWithContext,
+  useRouterState,
 } from '@tanstack/react-router'
 import { CacheProvider } from '@emotion/react'
 import { Box, Container, CssBaseline, ThemeProvider } from '@mui/material'
@@ -16,10 +17,18 @@ import React from 'react'
 import { theme } from '~/styles/theme'
 import { Header } from '~/components/Header'
 import { Footer } from '~/components/Footer'
+import { LandingHero } from '~/components/landing/LandingHero'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
-    links: [{ rel: 'stylesheet', href: fontsourceVariableRobotoCss }],
+    links: [
+      { rel: 'stylesheet', href: fontsourceVariableRobotoCss },
+      // Snowflake icon (served from frontend/public). SVG for modern browsers,
+      // .ico fallback, and apple-touch-icon for iOS home-screen shortcuts.
+      { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+      { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+      { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+    ],
   }),
   component: RootComponent,
 })
@@ -49,6 +58,12 @@ function Providers({ children }: { children: React.ReactNode }) {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  // The landing hero is a full-bleed banner, so it renders as a direct sibling
+  // of <Header> — outside the centered, max-width <Container> below — letting
+  // it span the viewport and sit flush under the nav.
+  const isLanding = pathname === '/'
+
   return (
     <html>
       <head>
@@ -58,6 +73,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Providers>
           <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
             <Header />
+            {isLanding && <LandingHero />}
             {/*
               Fluid below `lg`, capped at the `lg` width through the `lg`
               range so laptops keep comfortable margins, then expanding to the
