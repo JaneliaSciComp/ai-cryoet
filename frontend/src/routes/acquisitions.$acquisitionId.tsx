@@ -1,22 +1,24 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { createFileRoute, notFound } from '@tanstack/react-router'
-import {
-  Box,
-  Breadcrumbs,
-  Divider,
-  Grid,
-  Link,
-  Stack,
-  Typography,
-} from '@mui/material'
+import { Box, Breadcrumbs, Divider, Paper, Stack, Typography } from '@mui/material'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import type { AcquisitionOut, WarningOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
-import { PreviewThumbnail, ThumbnailPlaceholder, acquisitionPolarUrl } from '~/components/common/Thumbnail'
+import {
+  PreviewThumbnail,
+  acquisitionPolarUrl,
+  acquisitionRepTiltSeriesId,
+  acquisitionThumbnailUrl,
+  tiltSeriesPreviewUrl,
+} from '~/components/common/Thumbnail'
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
+import { DetailHero } from '~/components/common/DetailHero'
+import { DetailPageHeader } from '~/components/common/DetailPageHeader'
+import { SectionHeading } from '~/components/common/SectionHeading'
 import { MetadataDrawer } from '~/components/common/MetadataDrawer'
-import { ViewAllMetadataButton } from '~/components/common/ViewAllMetadataButton'
 import { MetadataSection } from '~/components/common/MetadataSection'
+import type { MetadataSectionData } from '~/components/common/MetadataSection'
 import {
   acquisitionMetadataSections,
   sampleMetadataSections,
@@ -65,6 +67,109 @@ function warningsForAcquisition(
   )
 }
 
+// A single grey metadata card mirroring the former "Acquisition summary" box
+// style: a subtitle and a stack of label/value rows. Empty values show the same
+// "—" placeholder as the metadata drawer so every applicable field stays
+// visible.
+function AcquisitionSummaryCard(props: MetadataSectionData) {
+  const { title, rows } = props
+  return (
+    <Paper
+      elevation={0}
+      sx={{ px: 2.5, py: 2, borderRadius: 2, bgcolor: 'grey.100' }}
+    >
+      <Typography variant="subtitle2" gutterBottom>
+        {title}
+      </Typography>
+      <Stack spacing={0.5}>
+        {rows.map((row, i) => {
+          const empty = row.value == null || row.value === ''
+          return (
+            <Box
+              key={`${row.label}-${i}`}
+              sx={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {row.label}
+              </Typography>
+              <Typography
+                variant="body2"
+                color={empty ? 'text.disabled' : undefined}
+              >
+                {empty ? '—' : row.value}
+              </Typography>
+            </Box>
+          )
+        })}
+      </Stack>
+    </Paper>
+  )
+}
+
+// "Acquisition summary" section: a heading on the page background above two
+// side-by-side grey cards. The card data reuses the metadata-drawer section
+// builders so the two stay in sync.
+function AcquisitionSummary(props: {
+  acquisition: AcquisitionOut
+  tiltSeriesPlot?: ReactNode
+}) {
+  const sections = acquisitionMetadataSections(props.acquisition)
+  const microscope = sections.find((s) => s.title === 'Microscope & Imaging')
+  // The drawer's full tilt geometry / per–tilt-series sections carry many rows;
+  // the summary box shows only the overall tilt count and range, kept under the
+  // "Tilt Series" heading it has always used.
+  const tiltGeometrySection = sections.find(
+    (s) => s.title === 'Tilt Geometry & Dose',
+  )
+  const tiltSeries = tiltGeometrySection
+    ? {
+        title: 'Tilt Series',
+        rows: tiltGeometrySection.rows.filter((r) =>
+          ['Tilt count', 'Tilt range'].includes(r.label),
+        ),
+      }
+    : undefined
+  return (
+    <Box>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>
+        Acquisition summary
+      </Typography>
+      {/* Boxes sit side by side and wrap to a single column only when they no
+          longer fit (flex-basis + flexWrap), rather than at a fixed breakpoint.
+          flex-start keeps the lighter tilt series box from stretching to match
+          the microscope box; the tilt-angle plot sits beneath that box. */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 2,
+          alignItems: 'flex-start',
+        }}
+      >
+        {microscope ? (
+          <Box sx={{ flex: '1 1 220px', minWidth: 0 }}>
+            <AcquisitionSummaryCard {...microscope} />
+          </Box>
+        ) : null}
+        {tiltSeries ? (
+          <Box
+            sx={{
+              flex: '1 1 220px',
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            <AcquisitionSummaryCard {...tiltSeries} />
+            {props.tiltSeriesPlot}
+          </Box>
+        ) : null}
+      </Box>
+    </Box>
+  )
+}
+
 function AcquisitionDetailRoute() {
   const { acquisitionId } = Route.useParams()
   const { sampleId } = Route.useSearch()
@@ -99,100 +204,89 @@ function AcquisitionDetailRoute() {
       </Breadcrumbs>
 
       {/* ── Title section ──────────────────────────────────────────── */}
-      <Box>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 2,
-          }}
-        >
-          <Typography variant="h5" component="h1" gutterBottom>
-            {acquisitionId}
-          </Typography>
-          <ViewAllMetadataButton
-            placement="title"
-            onClick={() => setMetadataOpen(true)}
-          />
-        </Box>
-
-        {acqWarnings.length > 0 ? (
-          // /manage isn't built yet; plain link for now (filters to this
-          // acquisition's warnings once that route exists).
-          <Link
-            href={`/manage?sample=${encodeURIComponent(
-              sampleId,
-            )}&acquisition=${encodeURIComponent(acquisitionId)}`}
-            variant="body2"
-            fontWeight={700}
-          >
-            *There are warnings for this acquisition's metadata. Click to view
-          </Link>
-        ) : null}
-
-        <ViewAllMetadataButton
-          placement="below"
-          onClick={() => setMetadataOpen(true)}
-        />
-      </Box>
+      <DetailPageHeader
+        title={acquisitionId}
+        onViewMetadata={() => setMetadataOpen(true)}
+        warning={
+          acqWarnings.length > 0
+            ? {
+                // /manage isn't built yet; plain link for now (filters to this
+                // acquisition's warnings once that route exists).
+                href: `/manage?sample=${encodeURIComponent(
+                  sampleId,
+                )}&acquisition=${encodeURIComponent(acquisitionId)}`,
+                text: "*There are warnings for this acquisition's metadata. Click to view",
+              }
+            : null
+        }
+      />
 
       <Divider />
 
       {/* ── Tilt series + path ─────────────────────────────────────── */}
-      <Grid container spacing={4}>
-        <Grid item xs={12} md={4}>
-          {(() => {
-            const hasAngles = (acquisition.tilt_angles?.length ?? 0) > 0
-            const polarSrc = hasAngles
-              ? acquisitionPolarUrl(sampleId, acquisitionId)
-              : null
-            return polarSrc ? (
-              <PreviewThumbnail
-                src={polarSrc}
-                alt={`Tilt-angle plot for ${acquisitionId}`}
-                width="100%"
-                height={220}
-                objectFit="contain"
-                clickable
-                tooltipTitle="Click to enlarge tilt-angle plot"
-              />
-            ) : (
-              <ThumbnailPlaceholder
-                width="100%"
-                height={220}
-                icon={<LayersOutlinedIcon />}
-                label="Tilt series"
-              />
-            )
-          })()}
-        </Grid>
-
-        <Grid item xs={12} md={8}>
-          <FileglancerPathSection
-            path={acquisition.path}
-            metadataFilename="acquisition.toml"
-          />
-        </Grid>
-      </Grid>
+      <DetailHero
+        thumbnail={(() => {
+          const tsId = acquisitionRepTiltSeriesId(acquisition)
+          // The cached 512px thumbnail is rendered from the acquisition's
+          // raw Frames/ even when no tilt series is declared, so show it
+          // whenever it loads (matching the tables); PreviewThumbnail falls
+          // back to the labeled placeholder if no thumbnail exists. Click
+          // always enlarges: when a tilt_series_id exists the lightbox
+          // fetches the sharper on-demand render (showing a spinner over
+          // the thumbnail until it arrives); otherwise it just enlarges the
+          // thumbnail.
+          return (
+            <PreviewThumbnail
+              src={acquisitionThumbnailUrl(sampleId, acquisitionId)}
+              lightboxSrc={
+                tsId
+                  ? tiltSeriesPreviewUrl(sampleId, acquisitionId, tsId)
+                  : undefined
+              }
+              alt={`Middle tilt-series image for ${acquisitionId}`}
+              width="100%"
+              aspectRatio={1}
+              objectFit="contain"
+              elevated={false}
+              clickable
+              tooltipTitle="Click to enlarge middle tilt-series image"
+              placeholderIcon={<LayersOutlinedIcon />}
+              placeholderLabel="Tilt series"
+            />
+          )
+        })()}
+        details={
+          <FileglancerPathSection path={acquisition.path}>
+            <AcquisitionSummary
+              acquisition={acquisition}
+              tiltSeriesPlot={(() => {
+                const n = acquisition.tilt_angles?.length ?? 0
+                if (n === 0) return null
+                return (
+                  <PreviewThumbnail
+                    src={acquisitionPolarUrl(sampleId, acquisitionId)}
+                    alt={`Tilt-angle plot for ${acquisitionId}`}
+                    width="100%"
+                    // Match the rendered figure's 5:3 ratio (render_polar_png
+                    // uses figsize=(5, 3)) so the box hugs the plot instead of
+                    // padding it with white space top and bottom.
+                    aspectRatio={5 / 3}
+                    objectFit="contain"
+                    clickable
+                    tooltipTitle={`Tilt-angle plot — each line is a tilt image; color shows acquisition order (image 1 to ${n}).`}
+                  />
+                )
+              })()}
+            />
+          </FileglancerPathSection>
+        }
+      />
 
       <Divider />
 
       {/* ── Tomograms and annotations ──────────────────────────────── */}
       <Box>
-        <Box
-          sx={{
-            bgcolor: 'action.hover',
-            borderRadius: 2,
-            px: 2,
-            py: 1.25,
-            mb: 2,
-          }}
-        >
-          <Typography variant="h6" component="h2">
-            Tomograms and annotations
-          </Typography>
-        </Box>
+        <SectionHeading>Tomograms and annotations</SectionHeading>
         <TomogramsAnnotationsTable
           sampleId={sampleId}
           acquisition={acquisition}
