@@ -1,4 +1,17 @@
-import { Box, Chip, Divider, Grid, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import {
+  Box,
+  Button,
+  Chip,
+  Divider,
+  Drawer,
+  Grid,
+  IconButton,
+  Stack,
+  Typography,
+} from "@mui/material";
+import FilterListIcon from "@mui/icons-material/FilterList";
+import CloseIcon from "@mui/icons-material/Close";
 import { useFiltersOptionsQuery, useSamplesQuery } from "~/utils/queryOptions";
 import { useDebounce } from "~/hooks/useDebounce";
 import type { SamplesSearchParams } from "~/utils/samplesSearch";
@@ -132,16 +145,30 @@ export function SamplesBrowser(props: {
 
   const chips = activeChips(filters, dataSource !== "simulation");
 
+  // On small screens the sidebar collapses into a button that opens this drawer.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const filterPanel = (
+    <LandingFilters
+      options={filterOptions}
+      value={filters}
+      onChange={patch}
+      onReset={reset}
+      showMicroscope={dataSource !== "simulation"}
+    />
+  );
+
   return (
     <Grid container spacing={4}>
-      <Grid item xs={12} md={3} lg={2}>
-        <LandingFilters
-          options={filterOptions}
-          value={filters}
-          onChange={patch}
-          onReset={reset}
-          showMicroscope={dataSource !== "simulation"}
-        />
+      {/* md+: filters live in a sidebar. On xs they move into the drawer below. */}
+      <Grid
+        item
+        xs={12}
+        md={3}
+        lg={2}
+        sx={{ display: { xs: "none", md: "block" } }}
+      >
+        {filterPanel}
       </Grid>
 
       <Grid item xs={12} md={9} lg={10}>
@@ -151,9 +178,25 @@ export function SamplesBrowser(props: {
           row with it.
         */}
         <Stack spacing={3}>
-          <Typography variant="h4" component="h1">
-            {title}
-          </Typography>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            spacing={2}
+          >
+            <Typography variant="h4" component="h1">
+              {title}
+            </Typography>
+            {/* xs only: open the filters drawer. */}
+            <Button
+              variant="outlined"
+              startIcon={<FilterListIcon />}
+              onClick={() => setFiltersOpen(true)}
+              sx={{ display: { xs: "inline-flex", md: "none" }, flexShrink: 0 }}
+            >
+              Filters{chips.length > 0 ? ` (${chips.length})` : ""}
+            </Button>
+          </Stack>
           <Box>
             <Typography variant="h6">
               Showing {rows.length.toLocaleString()} of {total.toLocaleString()}{" "}
@@ -199,6 +242,26 @@ export function SamplesBrowser(props: {
           </Box>
         </Stack>
       </Grid>
+
+      {/* xs filters drawer; live-applies as you change values (no Apply step). */}
+      <Drawer
+        anchor="left"
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        sx={{ display: { md: "none" } }}
+      >
+        <Box sx={{ width: 300, p: 2 }}>
+          <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 1 }}>
+            <IconButton
+              aria-label="Close filters"
+              onClick={() => setFiltersOpen(false)}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          {filterPanel}
+        </Box>
+      </Drawer>
     </Grid>
   );
 }
