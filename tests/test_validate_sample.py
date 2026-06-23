@@ -389,8 +389,9 @@ def test_tomogram_derived_from_unknown(tmp_path):
     assert "acq1" not in result.record.acquisitions
 
 
-def test_tomogram_id_without_matching_folder_fails(tmp_path):
-    """Declared tomogram id must equal a folder under Reconstructions/Tomograms."""
+def test_tomogram_id_without_matching_folder_drops_entry(tmp_path):
+    """A declared tomogram id with no matching folder is dropped with a warning,
+    not failed — the acquisition still loads instead of being discarded whole."""
     _minimal_sample(tmp_path)
     _write(
         tmp_path / "acq1" / "acquisition.toml",
@@ -405,13 +406,48 @@ def test_tomogram_id_without_matching_folder_fails(tmp_path):
     (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "bp_3dctf_bn4").mkdir(parents=True)
     result = load_sample_record(tmp_path)
     assert result.record is not None
-    assert "acq1" in result.acquisition_errors
-    msg = result.acquisition_errors["acq1"]
-    assert "tomogram[bp_3dctf_bin4]" in msg
-    assert "no matching folder" in msg
+    # No longer a hard error: the acquisition is kept, the offender dropped.
+    assert "acq1" not in result.acquisition_errors
+    assert "acq1" in result.record.acquisitions
+    assert result.record.acquisitions["acq1"].raw_tomogram is None
+    # …surfaced as a warning, located at the acquisition-prefixed entity ref.
+    warning = next(w for w in result.warnings if "no matching folder" in w)
+    assert "acquisitions.acq1.tomogram[bp_3dctf_bin4]" in warning
     # Fuzzy suggestion should point at the close-but-typo'd folder.
-    assert "bp_3dctf_bn4" in msg
-    assert "acq1" not in result.record.acquisitions
+    assert "bp_3dctf_bn4" in warning
+
+
+def test_folder_mismatch_drops_only_offender_keeps_siblings(tmp_path):
+    """A tomogram id typo drops only that tomogram — a validly-declared tilt
+    series in the same acquisition.toml survives.
+
+    Regression: a single folder mismatch used to invalidate the whole
+    acquisition.toml, silently discarding correctly-declared tilt series (and
+    thus disabling their previews).
+    """
+    _minimal_sample(tmp_path)
+    _write(
+        tmp_path / "acq1" / "acquisition.toml",
+        """
+        [acquisition]
+
+        [[post_processed_tomogram]]
+        id = "wrong_id"
+
+        [[tilt_series]]
+        id = "ts_a"
+        """,
+    )
+    # The tilt-series folder matches; the tomogram folder does not.
+    (tmp_path / "acq1" / "TiltSeries" / "ts_a").mkdir(parents=True)
+    (tmp_path / "acq1" / "Reconstructions" / "Tomograms" / "denoised").mkdir(parents=True)
+    result = load_sample_record(tmp_path)
+    assert result.record is not None
+    assert "acq1" not in result.acquisition_errors
+    acq = result.record.acquisitions["acq1"]
+    assert acq.post_processed_tomogram == []  # folderless tomogram dropped
+    assert [ts.tilt_series_id for ts in acq.tilt_series] == ["ts_a"]  # survived
+    assert any("tomogram[wrong_id]" in w for w in result.warnings)
 
 
 def test_tomogram_id_matched_under_synthetic_layout(tmp_path):
@@ -435,7 +471,9 @@ def test_tomogram_id_matched_under_synthetic_layout(tmp_path):
     )
 
 
-def test_annotation_id_without_matching_folder_fails(tmp_path):
+def test_annotation_id_without_matching_folder_drops_entry(tmp_path):
+    """A folderless annotation is dropped with a warning; the valid tomogram
+    sibling in the same acquisition.toml survives."""
     _minimal_sample(tmp_path)
     _write(
         tmp_path / "acq1" / "acquisition.toml",
@@ -454,11 +492,13 @@ def test_annotation_id_without_matching_folder_fails(tmp_path):
     # No matching annotation folder.
     (tmp_path / "acq1" / "Reconstructions" / "Annotations").mkdir(parents=True)
     result = load_sample_record(tmp_path)
-    assert "acq1" in result.acquisition_errors
-    msg = result.acquisition_errors["acq1"]
-    assert "annotation[membrain_seg_v10]" in msg
-    assert "no matching folder" in msg
-    assert "acq1" not in result.record.acquisitions
+    assert result.record is not None
+    assert "acq1" not in result.acquisition_errors
+    acq = result.record.acquisitions["acq1"]
+    assert acq.raw_tomogram.tomogram_id == "tomo_001"  # sibling survives
+    assert acq.annotation == []  # folderless annotation dropped
+    warning = next(w for w in result.warnings if "no matching folder" in w)
+    assert "acquisitions.acq1.annotation[membrain_seg_v10]" in warning
 
 
 def test_md_source_valid_reference(tmp_path):

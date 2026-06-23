@@ -221,43 +221,97 @@ def _has_matching_folder(
     return any((acq_dir / sub / entity_id).is_dir() for sub in parent_dirs)
 
 
+def _scrub_dangling_refs(
+    acq_model: AcquisitionFile,
+    dropped_tomo_ids: set[str],
+    dropped_ts_ids: set[str],
+) -> None:
+    """Clear references to dropped entities from the surviving entries.
+
+    Dropping a folderless tomogram/tilt-series (see
+    :func:`_check_id_folder_alignment`) can leave a kept entry pointing at an
+    id that no longer exists. The cross-ref validator
+    (:meth:`AcquisitionFile._check_cross_refs`) would then reject the whole
+    acquisition over a dangling pointer we created — so scrub those refs first.
+    """
+    tomograms: list = list(acq_model.post_processed_tomogram)
+    if acq_model.raw_tomogram is not None:
+        tomograms.append(acq_model.raw_tomogram)
+    for tomo in tomograms:
+        if dropped_tomo_ids and tomo.derived_from:
+            tomo.derived_from = [
+                r for r in tomo.derived_from if r not in dropped_tomo_ids
+            ]
+        if tomo.tilt_series_id in dropped_ts_ids:
+            tomo.tilt_series_id = None
+    for ann in acq_model.annotation:
+        if ann.target_tomogram in dropped_tomo_ids:
+            ann.target_tomogram = None
+    for ts in acq_model.tilt_series:
+        if ts.derived_from in dropped_ts_ids:
+            ts.derived_from = None
+
+
 def _check_id_folder_alignment(
     acq_dir: Path, acq_model: AcquisitionFile
 ) -> list[str]:
-    """Verify each declared tomogram/annotation id has a matching folder.
+    """Drop declared tomogram/annotation/tilt-series entries whose id has no
+    matching folder on disk, returning one warning message per dropped entry.
 
-    The TOML-authored ``id`` field MUST equal the folder's directory name
-    on disk so the two cannot drift. If no matching folder exists, return
-    a one-line error per offender (with a fuzzy suggestion when the
-    closest folder name is plausibly the intended target).
+    The TOML-authored ``id`` MUST equal the entity's on-disk directory name.
+    A single mismatch used to invalidate the *entire* acquisition.toml, which
+    silently discarded unrelated valid declarations in the same file (e.g. a
+    tomogram typo would also drop correctly-declared tilt series, disabling
+    their previews). Instead we drop only the offending entry — keeping its
+    valid siblings — and surface a warning so the typo gets fixed without
+    collateral data loss. References to a dropped id from surviving entries
+    are scrubbed (:func:`_scrub_dangling_refs`) so the cross-ref re-validation
+    doesn't fail the whole sample. A fuzzy suggestion is appended when the
+    closest folder name is plausibly the intended target.
     """
-    errors: list[str] = []
+    warnings: list[str] = []
+    dropped_tomo_ids: set[str] = set()
+    dropped_ts_ids: set[str] = set()
 
     tomo_candidates = _candidate_folder_names(acq_dir, _TOMOGRAM_PARENT_DIRS)
-    # Raw and post-processed tomograms share one id namespace within the
-    # acquisition; check both against the same on-disk processing folders.
-    tomograms = list(acq_model.post_processed_tomogram)
-    if acq_model.raw_tomogram is not None:
-        tomograms.insert(0, acq_model.raw_tomogram)
-    for tomo in tomograms:
-        if _has_matching_folder(acq_dir, _TOMOGRAM_PARENT_DIRS, tomo.tomogram_id):
-            continue
-        joined_parents = " or ".join(repr(p) for p in _TOMOGRAM_PARENT_DIRS)
+    joined_parents = " or ".join(repr(p) for p in _TOMOGRAM_PARENT_DIRS)
+
+    def _tomo_msg(tomogram_id: str) -> str:
         msg = (
-            f"tomogram[{tomo.tomogram_id}]: id has no matching folder under "
+            f"tomogram[{tomogram_id}]: id has no matching folder under "
             f"{joined_parents}; "
             f"the id must equal the tomogram's directory name"
         )
         match = process.extractOne(
-            tomo.tomogram_id, tomo_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
+            tomogram_id, tomo_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
         )
         if match:
             msg += f" (did you mean '{match[0]}'?)"
-        errors.append(msg)
+        return msg
+
+    # Raw and post-processed tomograms share one id namespace within the
+    # acquisition; check both against the same on-disk processing folders.
+    if acq_model.raw_tomogram is not None and not _has_matching_folder(
+        acq_dir, _TOMOGRAM_PARENT_DIRS, acq_model.raw_tomogram.tomogram_id
+    ):
+        warnings.append(_tomo_msg(acq_model.raw_tomogram.tomogram_id))
+        dropped_tomo_ids.add(acq_model.raw_tomogram.tomogram_id)
+        acq_model.raw_tomogram = None
+
+    kept_post = []
+    for tomo in acq_model.post_processed_tomogram:
+        if _has_matching_folder(acq_dir, _TOMOGRAM_PARENT_DIRS, tomo.tomogram_id):
+            kept_post.append(tomo)
+            continue
+        warnings.append(_tomo_msg(tomo.tomogram_id))
+        dropped_tomo_ids.add(tomo.tomogram_id)
+    acq_model.post_processed_tomogram = kept_post
 
     ann_candidates = _candidate_folder_names(acq_dir, _ANNOTATION_PARENT_DIRS)
+    kept_ann = []
     for ann in acq_model.annotation:
         if _has_matching_folder(acq_dir, _ANNOTATION_PARENT_DIRS, ann.annotation_id):
+            kept_ann.append(ann)
             continue
         msg = (
             f"annotation[{ann.annotation_id}]: id has no matching folder under "
@@ -269,17 +323,18 @@ def _check_id_folder_alignment(
         )
         if match:
             msg += f" (did you mean '{match[0]}'?)"
-        errors.append(msg)
+        warnings.append(msg)
+    acq_model.annotation = kept_ann
 
     ts_candidates = _candidate_folder_names(acq_dir, _TILT_SERIES_PARENT_DIRS)
+    kept_ts = []
     for ts in acq_model.tilt_series:
         # tilt_series_id may be None on partial / scanner-pending rows; only
         # the authored folder name is cross-checked against disk.
-        if ts.tilt_series_id is None:
-            continue
-        if _has_matching_folder(
+        if ts.tilt_series_id is None or _has_matching_folder(
             acq_dir, _TILT_SERIES_PARENT_DIRS, ts.tilt_series_id
         ):
+            kept_ts.append(ts)
             continue
         msg = (
             f"tilt_series[{ts.tilt_series_id}]: id has no matching folder under "
@@ -291,9 +346,14 @@ def _check_id_folder_alignment(
         )
         if match:
             msg += f" (did you mean '{match[0]}'?)"
-        errors.append(msg)
+        warnings.append(msg)
+        dropped_ts_ids.add(ts.tilt_series_id)
+    acq_model.tilt_series = kept_ts
 
-    return errors
+    if dropped_tomo_ids or dropped_ts_ids:
+        _scrub_dangling_refs(acq_model, dropped_tomo_ids, dropped_ts_ids)
+
+    return warnings
 
 
 # ── walker ───────────────────────────────────────────────────────────────────
@@ -556,30 +616,30 @@ def load_sample_record(
                 result.warnings.append(str(w.message))
 
         if acq_model is not None:
-            layout_errors = _check_id_folder_alignment(acq_toml.parent, acq_model)
-            if layout_errors:
-                joined = "; ".join(layout_errors)
-                existing = result.acquisition_errors.get(acq_name)
-                result.acquisition_errors[acq_name] = (
-                    f"{existing}; {joined}" if existing else joined
+            # A declared id with no matching folder no longer fails the whole
+            # acquisition.toml: the offending entry is dropped (in-place) and
+            # reported as a warning, so valid sibling declarations survive.
+            # Prefix the acquisition path so the warning's location is
+            # unambiguous on the /manage view (one mismatch per acquisition).
+            for lw in _check_id_folder_alignment(acq_toml.parent, acq_model):
+                result.warnings.append(f"acquisitions.{acq_name}.{lw}")
+
+            # The dangling-md_run-ref check only applies to simulation samples.
+            # On experimental samples an md_source block is a category error
+            # (no md_runs exist), left for SampleRecord to reject whole-sample
+            # with a clear message — don't pre-empt it here with a misleading
+            # "no matching md_run" error.
+            #
+            # A dangling ref (md_run_id with no MdRuns/ folder) is downgraded
+            # to a warning so a data move mid-migration doesn't break the
+            # acquisition; the acquisition still validates and is kept.
+            if sample_model.data_source == DataSource.simulation:
+                ref_warning = _md_source_ref_warning(
+                    acq_model, valid_md_run_ids
                 )
-            else:
-                # The dangling-md_run-ref check only applies to simulation samples.
-                # On experimental samples an md_source block is a category error
-                # (no md_runs exist), left for SampleRecord to reject whole-sample
-                # with a clear message — don't pre-empt it here with a misleading
-                # "no matching md_run" error.
-                #
-                # A dangling ref (md_run_id with no MdRuns/ folder) is downgraded
-                # to a warning so a data move mid-migration doesn't break the
-                # acquisition; the acquisition still validates and is kept.
-                if sample_model.data_source == DataSource.simulation:
-                    ref_warning = _md_source_ref_warning(
-                        acq_model, valid_md_run_ids
-                    )
-                    if ref_warning is not None:
-                        result.warnings.append(ref_warning)
-                validated_acqs[acq_name] = acq_model
+                if ref_warning is not None:
+                    result.warnings.append(ref_warning)
+            validated_acqs[acq_name] = acq_model
 
     # Build the full record. Pass already-validated acquisitions through
     # by dumping back to dict (preserves alias round-tripping for the
