@@ -82,9 +82,6 @@ def list_samples(
     pixel_size_max: float | None = Query(None),
     voxel_size_min: float | None = Query(None),
     voxel_size_max: float | None = Query(None),
-    n_tilts_min: int | None = Query(None),
-    n_tilts_max: int | None = Query(None),
-    image_format: list[str] | None = Query(None),
     has_tomograms: bool | None = Query(None),
     q: str | None = Query(None),
     has_warnings: bool | None = Query(None),
@@ -265,29 +262,6 @@ def list_samples(
             )
         )
 
-    # ── Tilt-series EXISTS filters ────────────────────────────────────────
-    ts_conds = [orm.TiltSeriesORM.sample_id == orm.SampleORM.sample_id]
-    if n_tilts_min is not None:
-        ts_conds.append(
-            or_(
-                orm.TiltSeriesORM.n_tilts.is_(None),
-                orm.TiltSeriesORM.n_tilts >= n_tilts_min,
-            )
-        )
-    if n_tilts_max is not None:
-        ts_conds.append(
-            or_(
-                orm.TiltSeriesORM.n_tilts.is_(None),
-                orm.TiltSeriesORM.n_tilts <= n_tilts_max,
-            )
-        )
-    if image_format:
-        ts_conds.append(orm.TiltSeriesORM.image_format.in_(image_format))
-    if len(ts_conds) > 1:
-        stmt = stmt.where(
-            exists(select(1).where(and_(*ts_conds)).correlate(orm.SampleORM))
-        )
-
     # ── Warnings filter ───────────────────────────────────────────────────
     if has_warnings is True:
         stmt = stmt.where(func.coalesce(warn_count_sq.c.wc, 0) > 0)
@@ -438,7 +412,8 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
                 resolution=a.resolution,
                 microscope=a.microscope,
                 facility=a.facility,
-                tilt_series_quality_score=a.tilt_series_quality_score,
+                acquistion_quality=a.acquistion_quality,
+                tilt_angles=a.tilt_angles,
                 pixel_size=a.pixel_size,
                 voltage=a.voltage,
                 camera=a.camera,

@@ -142,18 +142,14 @@ class AnnotationOut(BaseModel):
 
 class TiltSeriesOut(BaseModel):
     tilt_series_id: str
-    mdoc_path: str | None = None
+    derived_from: str | None = None
+    is_aligned: bool | None = None
+    alignment_software: str | None = None
+    alignment_method: str | None = None
     st_path: str | None = None
     zarr_path: str | None = None
-    n_tilts: int | None = None
-    tilt_range_min: float | None = None
-    tilt_range_max: float | None = None
-    tilt_axis_angle: float | None = None
-    voltage: float | None = None
-    pixel_spacing: float | None = None
-    image_format: str | None = None
-    microscope: str | None = None
-    camera: str | None = None
+    alignment_files: list[str] = []
+    mtime: float | None = None
 
 
 class MdSourceOut(BaseModel):
@@ -166,7 +162,8 @@ class AcquisitionOut(BaseModel):
     resolution: float | None = None
     microscope: str | None = None
     facility: str | None = None
-    tilt_series_quality_score: int | None = None
+    acquistion_quality: int | None = None
+    tilt_angles: list[float] | None = None
     pixel_size: float | None = None
     voltage: float | None = None
     camera: str | None = None
@@ -213,10 +210,8 @@ class FiltersOptionsOut(BaseModel):
     microscopes: list[str] = []
     voltages: list[float] = []
     cameras: list[str] = []
-    image_formats: list[str] = []
     pixel_size: RangeOut = RangeOut()
     voxel_size: RangeOut = RangeOut()
-    n_tilts: RangeOut = RangeOut()
 
 
 class StatsTotalsOut(BaseModel):

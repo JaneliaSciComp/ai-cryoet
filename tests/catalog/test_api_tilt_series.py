@@ -1,14 +1,18 @@
-"""Tilt-series preview + polar endpoints (plan §7.5).
+"""Tilt-series preview/neuroglancer + acquisition polar endpoints (plan §7.5).
 
 Coverage:
     - GET preview.png — zarr path (synthetic ome.zarr) returns PNG
-    - GET preview.png — frames-dir fallback returns PNG when zarr absent
-    - GET preview.png — 422 when both zarr and mdoc_path are NULL
-    - GET preview.png — 422 when frames dir has no viewable images
-    - GET polar.png — 200 + PNG when tilt_angles cached
-    - GET polar.png — 422 when tilt_angles missing
-    - GET polar.png — cache returns identical bytes on second call
-    - 404 for unknown tilt_series id / soft-deleted parent
+    - GET preview.png — st_path (.st/.mrc stack) returns PNG
+    - GET preview.png — acquisition Frames/ fallback returns PNG when the
+      series has no stack artifact of its own
+    - GET preview.png — 422 when the series has no stack artifact AND the
+      acquisition has no resolvable Frames dir
+    - GET preview.png — 422 when the Frames dir has no viewable images
+    - GET preview.png — 404 for unknown tilt_series id / soft-deleted parent
+    - GET /acquisitions/{s}/{a}/polar.png — 200 + PNG when tilt_angles cached
+    - GET /acquisitions/{s}/{a}/polar.png — 422 when tilt_angles missing
+    - GET /acquisitions/{s}/{a}/polar.png — cache returns identical bytes
+    - GET /acquisitions/{s}/{a}/polar.png — 404 for unknown acquisition
 """
 from __future__ import annotations
 
@@ -18,7 +22,6 @@ from pathlib import Path
 import mrcfile
 import numpy as np
 import pytest
-import tifffile
 import zarr
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -38,16 +41,24 @@ def _write_zarr_tilt_stack(zarr_path: Path, n: int = 5) -> None:
     root.update_attributes({"tilt_angles": [-30.0, -15.0, 0.0, 15.0, 30.0][:n]})
 
 
-def _write_synthetic_tiff(path: Path, name: str) -> None:
-    """Write a TIFF named so ``extract_tilt_angle_from_filename`` recovers an angle."""
+def _write_st_stack(path: Path, n: int = 5) -> None:
+    """Write an ``.st``/``.mrc`` projection stack (3D)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    img = np.linspace(0, 200, 16 * 16, dtype=np.float32).reshape(16, 16)
-    tifffile.imwrite(path / name, img)
+    data = np.linspace(0, 100, n * 8 * 8, dtype=np.float32).reshape(n, 8, 8)
+    with mrcfile.new(path, overwrite=True) as mrc:
+        mrc.set_data(data)
 
 
-def _write_mdoc_stub(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("# stub mdoc\n")
+def _write_frame_tiffs(frames_dir: Path) -> None:
+    """Write TIFF frames named so ``extract_tilt_angle_from_filename`` recovers angles."""
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    import tifffile
+
+    for name in ("scan_001_-30.0.tif", "scan_002_0.0.tif", "scan_003_30.0.tif"):
+        tifffile.imwrite(
+            frames_dir / name,
+            np.linspace(0, 200, 16 * 16, dtype=np.float32).reshape(16, 16),
+        )
 
 
 @pytest.fixture
@@ -55,25 +66,26 @@ def client(tmp_path):
     data_root = tmp_path / "data"
     data_root.mkdir()
 
-    # ts_zarr  — has zarr stack
-    zarr_path = data_root / "ts_zarr" / "frames" / "ts1.zarr"
+    # acq1: has zarr/st tilt series + a Frames/ dir with viewable images so the
+    # frames-fallback series (ts_frames) can resolve.
+    acq1_dir = data_root / "sample_a" / "acq1"
+    acq1_dir.mkdir(parents=True)
+
+    zarr_path = acq1_dir / "TiltSeries" / "ts_zarr" / "stack" / "ts1.zarr"
     _write_zarr_tilt_stack(zarr_path)
-    mdoc_zarr = data_root / "ts_zarr" / "frames" / "ts1.mdoc"
-    _write_mdoc_stub(mdoc_zarr)
 
-    # ts_frames — no zarr, TIFF siblings with embedded angles
-    frames_dir = data_root / "ts_frames" / "frames"
-    frames_dir.mkdir(parents=True)
-    for name in ("scan_001_-30.0.tif", "scan_002_0.0.tif", "scan_003_30.0.tif"):
-        tifffile.imwrite(frames_dir / name, np.linspace(0, 200, 16*16, dtype=np.float32).reshape(16, 16))
-    mdoc_frames = frames_dir / "scan.mdoc"
-    _write_mdoc_stub(mdoc_frames)
+    st_path = acq1_dir / "TiltSeries" / "ts_st" / "stack" / "ts1.st"
+    _write_st_stack(st_path)
 
-    # ts_empty — mdoc_path points at a frames dir with NO viewable images
-    empty_dir = data_root / "ts_empty" / "frames"
-    empty_dir.mkdir(parents=True)
-    mdoc_empty = empty_dir / "stub.mdoc"
-    _write_mdoc_stub(mdoc_empty)
+    _write_frame_tiffs(acq1_dir / "Frames")
+
+    # acq_noframes: a tilt series with no stack artifact and an acquisition
+    # with no path at all → _resolve_acq_frames_dir returns None → 422.
+
+    # acq_emptyframes: Frames/ exists but holds no viewable images → 422.
+    acq_emptyframes_dir = data_root / "sample_a" / "acq_emptyframes"
+    (acq_emptyframes_dir / "Frames").mkdir(parents=True)
+    (acq_emptyframes_dir / "Frames" / "notes.txt").write_text("nothing here\n")
 
     engine = db.make_engine(f"sqlite:///{tmp_path / 'test.db'}")
     db.init_schema(engine)
@@ -97,39 +109,58 @@ def client(tmp_path):
         s.add(orm.SampleORM(
             sample_id="sample_a", data_source=DataSource.experimental, project=Project.chromatin,
         ))
-        s.add(orm.AcquisitionORM(sample_id="sample_a", acquisition_id="acq1"))
+        s.add(orm.AcquisitionORM(
+            sample_id="sample_a", acquisition_id="acq1",
+            path=str(acq1_dir), pixel_size=10.0,
+            tilt_angles=[-30.0, -15.0, 0.0, 15.0, 30.0],
+        ))
+        s.add(orm.AcquisitionORM(
+            sample_id="sample_a", acquisition_id="acq_noframes",
+            path=None, tilt_angles=None,
+        ))
+        s.add(orm.AcquisitionORM(
+            sample_id="sample_a", acquisition_id="acq_emptyframes",
+            path=str(acq_emptyframes_dir),
+        ))
+
+        # zarr-backed series
         s.add(orm.TiltSeriesORM(
             sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_zarr",
-            mdoc_path=str(mdoc_zarr), zarr_path=str(zarr_path),
-            tilt_angles=[-30.0, -15.0, 0.0, 15.0, 30.0],
-            n_tilts=5, mtime=1234567890.0,
+            zarr_path=str(zarr_path), mtime=1234567890.0,
         ))
+        # st-backed series
+        s.add(orm.TiltSeriesORM(
+            sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_st",
+            st_path=str(st_path), mtime=1234567890.0,
+        ))
+        # no stack artifact → falls back to acq1's Frames/ (has images)
         s.add(orm.TiltSeriesORM(
             sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_frames",
-            mdoc_path=str(mdoc_frames),
-            tilt_angles=[-30.0, 0.0, 30.0],
-            n_tilts=3, mtime=1234567890.0,
+            mtime=1234567890.0,
         ))
+        # no stack artifact, acquisition has no Frames/ dir → 422
         s.add(orm.TiltSeriesORM(
-            sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_empty",
-            mdoc_path=str(mdoc_empty),
-            tilt_angles=None,
-            n_tilts=None,
+            sample_id="sample_a", acquisition_id="acq_noframes",
+            tilt_series_id="ts_nopath",
         ))
+        # no stack artifact, Frames/ exists but no viewable images → 422
         s.add(orm.TiltSeriesORM(
-            sample_id="sample_a", acquisition_id="acq1", tilt_series_id="ts_nopath",
-            tilt_angles=[-10.0, 0.0, 10.0],
+            sample_id="sample_a", acquisition_id="acq_emptyframes",
+            tilt_series_id="ts_empty",
         ))
-        # Soft-deleted parent
+
+        # Soft-deleted parent sample
         s.add(orm.SampleORM(
             sample_id="sample_dead", data_source=DataSource.experimental, project=Project.chromatin,
             deleted_at=time.time(),
         ))
-        s.add(orm.AcquisitionORM(sample_id="sample_dead", acquisition_id="acq1"))
+        s.add(orm.AcquisitionORM(
+            sample_id="sample_dead", acquisition_id="acq1",
+            path=str(acq1_dir), tilt_angles=[0.0],
+        ))
         s.add(orm.TiltSeriesORM(
             sample_id="sample_dead", acquisition_id="acq1", tilt_series_id="ts_zarr",
-            mdoc_path=str(mdoc_zarr), zarr_path=str(zarr_path),
-            tilt_angles=[0.0],
+            zarr_path=str(zarr_path),
         ))
         s.commit()
     finally:
@@ -147,6 +178,13 @@ def test_preview_zarr_returns_png(client):
     assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_preview_st_returns_png(client):
+    r = client.get("/tilt-series/sample_a/acq1/ts_st/preview.png")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_preview_frames_fallback_returns_png(client):
     r = client.get("/tilt-series/sample_a/acq1/ts_frames/preview.png")
     assert r.status_code == 200, r.text
@@ -154,13 +192,13 @@ def test_preview_frames_fallback_returns_png(client):
     assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-def test_preview_no_viewable_images_422(client):
-    r = client.get("/tilt-series/sample_a/acq1/ts_empty/preview.png")
+def test_preview_no_frames_dir_422(client):
+    r = client.get("/tilt-series/sample_a/acq_noframes/ts_nopath/preview.png")
     assert r.status_code == 422
 
 
-def test_preview_no_path_at_all_422(client):
-    r = client.get("/tilt-series/sample_a/acq1/ts_nopath/preview.png")
+def test_preview_no_viewable_images_422(client):
+    r = client.get("/tilt-series/sample_a/acq_emptyframes/ts_empty/preview.png")
     assert r.status_code == 422
 
 
@@ -174,27 +212,27 @@ def test_preview_soft_deleted_parent_404(client):
     assert r.status_code == 404
 
 
-# ── polar.png ───────────────────────────────────────────────────────────
+# ── acquisition polar.png ─────────────────────────────────────────────────
 
 def test_polar_returns_png(client):
-    r = client.get("/tilt-series/sample_a/acq1/ts_zarr/polar.png")
+    r = client.get("/acquisitions/sample_a/acq1/polar.png")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "image/png"
     assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_polar_cache_returns_same_bytes(client):
-    r1 = client.get("/tilt-series/sample_a/acq1/ts_zarr/polar.png")
-    r2 = client.get("/tilt-series/sample_a/acq1/ts_zarr/polar.png")
+    r1 = client.get("/acquisitions/sample_a/acq1/polar.png")
+    r2 = client.get("/acquisitions/sample_a/acq1/polar.png")
     assert r1.status_code == 200 and r2.status_code == 200
     assert r1.content == r2.content
 
 
 def test_polar_missing_angles_422(client):
-    r = client.get("/tilt-series/sample_a/acq1/ts_empty/polar.png")
+    r = client.get("/acquisitions/sample_a/acq_noframes/polar.png")
     assert r.status_code == 422
 
 
-def test_polar_unknown_tilt_series_404(client):
-    r = client.get("/tilt-series/sample_a/acq1/nope/polar.png")
+def test_polar_unknown_acquisition_404(client):
+    r = client.get("/acquisitions/sample_a/nope/polar.png")
     assert r.status_code == 404

@@ -1,17 +1,21 @@
-"""Tilt-series preview + polar + Neuroglancer endpoints (plan §7.5).
+"""Per-tilt-series preview + Neuroglancer endpoints.
 
-Composite-key URLs throughout: ``/tilt-series/{sample_id}/{acquisition_id}/
-{tilt_series_id}/...`` (decision §11.8).
+Composite-key URLs: ``/tilt-series/{sample_id}/{acquisition_id}/
+{tilt_series_id}/...``.
 
-Preview path order: prefer ``zarr_path`` (lazy, fast); fall back to TIFF/MRC
-siblings in the frames directory (skipping EER for the preview — too slow
-to sum at request time). The polar plot uses cached ``tilt_angles`` from
-the DB row — no MDOC re-parsing.
+Source-resolution order (decision §5 of the tilt-series/alignment plan): the
+tilt series is a researcher-authored ``TiltSeries/{ts_id}/`` folder whose image
+data lives under ``stack/``. Prefer the zarr store (``zarr_path``; lazy, fast);
+fall back to the ``.st``/``.mrc`` projection stack (``st_path``); finally fall
+back to the **acquisition's** raw ``Frames/`` images when the series has no
+stack artifact of its own (the frames are shared by all the acquisition's tilt
+series).
+
+The polar plot is no longer per-series — the tilt geometry is a property of the
+acquisition. See ``routes/acquisitions.py`` for ``/acquisitions/.../polar.png``.
 """
 from __future__ import annotations
 
-import hashlib
-from functools import lru_cache
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -41,7 +45,24 @@ def _lookup_tilt_series(
     return row
 
 
-# ── Preview ───────────────────────────────────────────────────────────────
+def _resolve_acq_frames_dir(
+    session: Session, request: Request, sample_id: str, acquisition_id: str
+) -> Path | None:
+    """Resolve the acquisition's ``Frames/`` dir for the raw-frames fallback.
+
+    The MDOC/frames live on the acquisition (shared by all its tilt series),
+    so we derive the dir from ``Acquisition.path`` rather than the tilt-series
+    row. Returns ``None`` when the acquisition has no path or no ``Frames/``.
+    """
+    acq = session.get(orm.AcquisitionORM, (sample_id, acquisition_id))
+    if acq is None or not acq.path:
+        return None
+    frames = Path(acq.path) / "Frames"
+    resolved = validate_under_data_root(request, str(frames))
+    return resolved if resolved.is_dir() else None
+
+
+# ── Render helpers ──────────────────────────────────────────────────────────
 
 
 def _render_zarr_median_png(zarr_path: str) -> bytes:
@@ -66,6 +87,18 @@ def _render_zarr_median_png(zarr_path: str) -> bytes:
     return _array_to_png_bytes(img, percentile=(5, 95), width=800)
 
 
+def _render_st_median_png(st_path: str) -> bytes:
+    """Render the median projection of an ``.st``/``.mrc`` tilt stack to PNG."""
+    import numpy as np
+
+    from catalog.imaging._mrc import _array_to_png_bytes, read_mrc_volume
+
+    vol, _spacing, _axes = read_mrc_volume(st_path)
+    median_idx = vol.shape[0] // 2
+    img = np.array(vol[median_idx], dtype=np.float32)
+    return _array_to_png_bytes(img, percentile=(5, 95), width=800)
+
+
 def _render_frames_median_png(frames_dir: str) -> bytes:
     """Find the median-angle TIFF/MRC tilt in ``frames_dir`` and render it."""
     import numpy as np
@@ -86,9 +119,10 @@ def _render_frames_median_png(frames_dir: str) -> bytes:
     return _array_to_png_bytes(img.astype(np.float32), percentile=(5, 95), width=800)
 
 
-@router.get(
-    "/{sample_id}/{acquisition_id}/{tilt_series_id}/preview.png"
-)
+# ── Preview ───────────────────────────────────────────────────────────────
+
+
+@router.get("/{sample_id}/{acquisition_id}/{tilt_series_id}/preview.png")
 async def tilt_series_preview(
     sample_id: str,
     acquisition_id: str,
@@ -96,9 +130,10 @@ async def tilt_series_preview(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    """Median-angle tilt image as PNG. Prefer zarr; fall back to TIFF/MRC.
+    """Median-tilt image as PNG.
 
-    422 if neither a zarr store nor viewable frames exist.
+    Prefers the authored ``stack/`` (zarr, then ``.st``/``.mrc``); falls back
+    to the acquisition's raw ``Frames/`` images. 422 if none are reachable.
     """
     row = _lookup_tilt_series(session, sample_id, acquisition_id, tilt_series_id)
 
@@ -107,13 +142,20 @@ async def tilt_series_preview(
         if not resolved.exists():
             raise HTTPException(status_code=422, detail="zarr path missing on disk")
         png_bytes = await run_in_threadpool(_render_zarr_median_png, str(resolved))
+    elif row.st_path:
+        resolved = validate_under_data_root(request, row.st_path)
+        if not resolved.exists():
+            raise HTTPException(status_code=422, detail="stack path missing on disk")
+        png_bytes = await run_in_threadpool(_render_st_median_png, str(resolved))
     else:
-        if not row.mdoc_path:
-            raise HTTPException(status_code=422, detail="no mdoc_path or zarr_path")
-        mdoc_resolved = validate_under_data_root(request, row.mdoc_path)
-        frames_dir = mdoc_resolved.parent if mdoc_resolved.is_file() else mdoc_resolved
-        if not frames_dir.is_dir():
-            raise HTTPException(status_code=422, detail="frames dir not found")
+        frames_dir = _resolve_acq_frames_dir(
+            session, request, sample_id, acquisition_id
+        )
+        if frames_dir is None:
+            raise HTTPException(
+                status_code=422,
+                detail="no stack artifact and no acquisition Frames dir",
+            )
         try:
             png_bytes = await run_in_threadpool(
                 _render_frames_median_png, str(frames_dir)
@@ -128,69 +170,11 @@ async def tilt_series_preview(
     )
 
 
-# ── Polar plot ────────────────────────────────────────────────────────────
-
-
-@lru_cache(maxsize=128)
-def _cached_polar_png(
-    sample_id: str,
-    acquisition_id: str,
-    tilt_series_id: str,
-    mtime: float | None,
-    version: int,
-    angles_tuple: tuple[float, ...],
-) -> bytes:
-    """LRU-cache the polar render keyed on the plan's cache key.
-
-    ``angles_tuple`` is in the key so changes to the cached angles list
-    invalidate even if mtime is unavailable (e.g. mdoc deleted post-scan).
-    """
-    from catalog.imaging._polar import render_polar_png
-
-    return render_polar_png(list(angles_tuple))
-
-
-@router.get(
-    "/{sample_id}/{acquisition_id}/{tilt_series_id}/polar.png"
-)
-async def tilt_series_polar(
-    sample_id: str,
-    acquisition_id: str,
-    tilt_series_id: str,
-    session: Session = Depends(get_session),
-):
-    """Semicircular polar plot of cached ``tilt_angles``.
-
-    422 if the row has no cached angles. Does NOT re-parse the MDOC.
-    """
-    from catalog.imaging._polar import POLAR_RENDER_VERSION
-
-    row = _lookup_tilt_series(session, sample_id, acquisition_id, tilt_series_id)
-    angles = row.tilt_angles or []
-    if not angles:
-        raise HTTPException(status_code=422, detail="no cached tilt angles")
-
-    png_bytes = await run_in_threadpool(
-        _cached_polar_png,
-        sample_id,
-        acquisition_id,
-        tilt_series_id,
-        row.mtime,
-        POLAR_RENDER_VERSION,
-        tuple(float(a) for a in angles),
-    )
-    return Response(
-        content=png_bytes,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
-    )
-
-
 # ── Neuroglancer ──────────────────────────────────────────────────────────
 
 
 def _load_zarr_stack(zarr_path: str):
-    """Load the full zarr tilt stack + median index + pixel spacing tuple."""
+    """Load the full zarr tilt stack + median index + tilt angles."""
     import numpy as np
     import zarr
 
@@ -204,6 +188,15 @@ def _load_zarr_stack(zarr_path: str):
     )
     stack = np.array(ds[:], dtype=np.float32)
     return stack, median_idx, tilt_angles
+
+
+def _load_st_stack(st_path: str):
+    """Load an ``.st``/``.mrc`` tilt stack as a 3D array + median index."""
+    from catalog.imaging._mrc import read_mrc_volume
+
+    vol, _spacing, _axes = read_mrc_volume(st_path)
+    median_idx = vol.shape[0] // 2
+    return vol, median_idx, list(range(vol.shape[0]))
 
 
 def _load_frames_stack(frames_dir: str):
@@ -240,27 +233,36 @@ async def tilt_series_neuroglancer(
 ):
     """Launch a Neuroglancer viewer over the tilt-series stack.
 
-    Prefer zarr (lazy, fast); fall back to TIFF/MRC frames. 422 if neither
-    is reachable.
+    Prefer the authored ``stack/`` (zarr, then ``.st``/``.mrc``); fall back to
+    the acquisition's raw ``Frames/`` images. 422 if none are reachable.
     """
     row = _lookup_tilt_series(session, sample_id, acquisition_id, tilt_series_id)
-    pixel_spacing = float(row.pixel_spacing) if row.pixel_spacing else 1.0
+    acq = session.get(orm.AcquisitionORM, (sample_id, acquisition_id))
+    pixel_spacing = float(acq.pixel_size) if acq and acq.pixel_size else 1.0
 
     if row.zarr_path:
         resolved = validate_under_data_root(request, row.zarr_path)
         if not resolved.exists():
             raise HTTPException(status_code=422, detail="zarr path missing on disk")
         source = ("zarr", str(resolved))
+        layer_name = Path(row.zarr_path).stem
+    elif row.st_path:
+        resolved = validate_under_data_root(request, row.st_path)
+        if not resolved.exists():
+            raise HTTPException(status_code=422, detail="stack path missing on disk")
+        source = ("st", str(resolved))
+        layer_name = Path(row.st_path).stem
     else:
-        if not row.mdoc_path:
-            raise HTTPException(status_code=422, detail="no mdoc_path or zarr_path")
-        mdoc_resolved = validate_under_data_root(request, row.mdoc_path)
-        frames_dir = mdoc_resolved.parent if mdoc_resolved.is_file() else mdoc_resolved
-        if not frames_dir.is_dir():
-            raise HTTPException(status_code=422, detail="frames dir not found")
+        frames_dir = _resolve_acq_frames_dir(
+            session, request, sample_id, acquisition_id
+        )
+        if frames_dir is None:
+            raise HTTPException(
+                status_code=422,
+                detail="no stack artifact and no acquisition Frames dir",
+            )
         source = ("frames", str(frames_dir))
-
-    layer_name = Path(row.zarr_path or row.mdoc_path).stem
+        layer_name = tilt_series_id
 
     def launch():
         from catalog.imaging._neuroglancer import view_neuroglancer
@@ -268,6 +270,8 @@ async def tilt_series_neuroglancer(
         kind, path = source
         if kind == "zarr":
             stack, median_idx, _angles = _load_zarr_stack(path)
+        elif kind == "st":
+            stack, median_idx, _angles = _load_st_stack(path)
         else:
             stack, median_idx, _angles = _load_frames_stack(path)
         return view_neuroglancer(

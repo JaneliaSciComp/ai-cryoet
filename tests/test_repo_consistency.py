@@ -76,15 +76,16 @@ _SKELETON_DIRS = {
     "sample_id_experimental": {
         "acquisition_id/Frames",
         "acquisition_id/Gains",
-        "acquisition_id/TiltSeries",
-        "acquisition_id/Alignments/alignment_id",
+        "acquisition_id/TiltSeries/tilt_series_id/stack",
+        "acquisition_id/TiltSeries/tilt_series_id/alignment",
         "acquisition_id/Reconstructions/Tomograms/tomogram_id",
         "acquisition_id/Reconstructions/Annotations/annotation_id",
     },
     "sample_id_simulation": {
         "MdRuns/md_run_id/Trajectories",
         "MdRuns/md_run_id/Snapshots",
-        "SyntheticCryoET/acquisition_id/TiltSeries",
+        "SyntheticCryoET/acquisition_id/TiltSeries/tilt_series_id/stack",
+        "SyntheticCryoET/acquisition_id/TiltSeries/tilt_series_id/alignment",
         "SyntheticCryoET/acquisition_id/Reconstructions/Tomograms/tomogram_id",
         "SyntheticCryoET/acquisition_id/Reconstructions/Annotations/annotation_id",
     },
@@ -96,7 +97,7 @@ def test_starter_skeletons_match_documented_layout():
     README documents for its data arm — no missing, extra, or drifted folders.
 
     Guards the experimental/simulation split: simulation drops the movie-frame
-    folders (``Frames``/``Gains``/``Alignments``), adds ``MdRuns/``, and wraps
+    folders (``Frames``/``Gains``), adds ``MdRuns/``, and wraps
     acquisitions in ``SyntheticCryoET/``.
     """
     templates = _REPO_ROOT / "templates"

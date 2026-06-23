@@ -63,7 +63,6 @@ def seeded_client(tmp_path):
         ))
         s.add(orm.TiltSeriesORM(
             sample_id="live_a", acquisition_id="acq1", tilt_series_id="ts1",
-            n_tilts=40, image_format="EER",
         ))
 
         # ── Live sample 2: synapse / simulation, type "tissue" ──────────
@@ -84,7 +83,6 @@ def seeded_client(tmp_path):
         ))
         s.add(orm.TiltSeriesORM(
             sample_id="live_b", acquisition_id="acq1", tilt_series_id="ts1",
-            n_tilts=60, image_format="TIFF",
         ))
 
         # ── Live sample 3: chromatin / cryoet again — duplicates must collapse,
@@ -108,14 +106,12 @@ def seeded_client(tmp_path):
         ))
         s.add(orm.TiltSeriesORM(
             sample_id="live_c", acquisition_id="acq1", tilt_series_id="ts1",
-            n_tilts=120,  # new range maximum
-            image_format="EER",  # duplicate
         ))
 
         # ── Soft-deleted sample: carries values that would otherwise leak
         # ("Talos" microscope, voltage=120, "GIF" camera, type "deleted_type",
-        # image_format "MRC", voxel_spacing=99 (min) and 999 (max),
-        # n_tilts=1 (min) and 9999 (max), pixel_size=0.1 (min) and 99.9 (max)).
+        # voxel_spacing=99 (min) and 999 (max),
+        # pixel_size=0.1 (min) and 99.9 (max)).
         s.add(orm.SampleORM(
             sample_id="dead",
             data_source=DataSource.experimental,
@@ -141,11 +137,9 @@ def seeded_client(tmp_path):
         ))
         s.add(orm.TiltSeriesORM(
             sample_id="dead", acquisition_id="acq1", tilt_series_id="ts1",
-            n_tilts=1, image_format="MRC",
         ))
         s.add(orm.TiltSeriesORM(
             sample_id="dead", acquisition_id="acq2", tilt_series_id="ts1",
-            n_tilts=9999, image_format="MRC",
         ))
 
         s.commit()
@@ -179,8 +173,6 @@ def test_lists_are_sorted_unique_and_exclude_soft_deleted(seeded_client):
     assert body["voltages"] == [200.0, 300.0]
     # Soft-deleted "GIF" must NOT appear.
     assert body["cameras"] == ["Falcon4", "K3"]
-    # Soft-deleted "MRC" must NOT appear.
-    assert body["image_formats"] == ["EER", "TIFF"]
 
 
 def test_soft_deleted_sample_type_absent(seeded_client):
@@ -205,22 +197,16 @@ def test_range_bounds_reflect_live_data(seeded_client):
     assert body["voxel_size"]["min"] == 5.0
     assert body["voxel_size"]["max"] == 15.0
 
-    # n_tilts across live tilt_series: {40, 60, 120}
-    assert body["n_tilts"]["min"] == 40
-    assert body["n_tilts"]["max"] == 120
-
 
 def test_soft_deleted_does_not_widen_ranges(seeded_client):
     """The soft-deleted sample has extreme outliers (pixel_size=0.1/99.9,
-    voxel_spacing=99/999, n_tilts=1/9999). None of them should bleed in."""
+    voxel_spacing=99/999). None of them should bleed in."""
     r = seeded_client.get("/filters/options")
     body = r.json()
     assert body["pixel_size"]["min"] != 0.1
     assert body["pixel_size"]["max"] != 99.9
     assert body["voxel_size"]["min"] != 99.0
     assert body["voxel_size"]["max"] != 999.0
-    assert body["n_tilts"]["min"] != 1
-    assert body["n_tilts"]["max"] != 9999
 
 
 # ── empty database ──────────────────────────────────────────────────────
@@ -232,41 +218,9 @@ def test_empty_database_returns_empty_lists_and_null_ranges(empty_client):
     body = r.json()
     for key in (
         "projects", "data_sources", "types",
-        "microscopes", "voltages", "cameras", "image_formats",
+        "microscopes", "voltages", "cameras",
     ):
         assert body[key] == [], f"{key} should be empty"
-    for key in ("pixel_size", "voxel_size", "n_tilts"):
+    for key in ("pixel_size", "voxel_size"):
         assert body[key]["min"] is None
         assert body[key]["max"] is None
-
-
-def test_empty_tilt_series_facet_only(tmp_path):
-    """Even with live samples + acquisitions + tomograms, an empty tilt_series
-    table yields ``image_formats == []`` and ``n_tilts = (None, None)``."""
-    app, Session = _make_app(tmp_path)
-    s = Session()
-    try:
-        s.add(orm.SampleORM(
-            sample_id="x", data_source=DataSource.experimental,
-            project=Project.chromatin, type="cell",
-        ))
-        s.add(orm.AcquisitionORM(
-            sample_id="x", acquisition_id="acq1",
-            microscope="Krios", pixel_size=1.0, voltage=300.0, camera="K3",
-        ))
-        s.add(orm.PostProcessedTomogramORM(
-            sample_id="x", acquisition_id="acq1", tomogram_id="t1",
-            voxel_size=5.0,
-        ))
-        s.commit()
-    finally:
-        s.close()
-
-    client = TestClient(app)
-    body = client.get("/filters/options").json()
-    assert body["image_formats"] == []
-    assert body["n_tilts"]["min"] is None
-    assert body["n_tilts"]["max"] is None
-    # Sanity: the other facets are not empty.
-    assert body["microscopes"] == ["Krios"]
-    assert body["voxel_size"]["min"] == 5.0

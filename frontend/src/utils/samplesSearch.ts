@@ -41,14 +41,11 @@ export const samplesSearchSchema = z.object({
   microscope: stringArray,
   voltage: numberArray,
   camera: stringArray,
-  image_format: stringArray,
   has_tomograms: booleanish,
   pixel_size_min: z.coerce.number().optional(),
   pixel_size_max: z.coerce.number().optional(),
   voxel_spacing_min: z.coerce.number().optional(),
   voxel_spacing_max: z.coerce.number().optional(),
-  n_tilts_min: z.coerce.number().int().optional(),
-  n_tilts_max: z.coerce.number().int().optional(),
 })
 
 export type SamplesSearchParams = z.infer<typeof samplesSearchSchema>
@@ -79,7 +76,6 @@ export function buildSamplesQueryString(params: SamplesSearchParams): string {
   addMany('microscope', params.microscope)
   addMany('voltage', params.voltage)
   addMany('camera', params.camera)
-  addMany('image_format', params.image_format)
   if (params.has_tomograms !== undefined) {
     addOne('has_tomograms', params.has_tomograms)
   }
@@ -87,8 +83,6 @@ export function buildSamplesQueryString(params: SamplesSearchParams): string {
   addOne('pixel_size_max', params.pixel_size_max)
   addOne('voxel_spacing_min', params.voxel_spacing_min)
   addOne('voxel_spacing_max', params.voxel_spacing_max)
-  addOne('n_tilts_min', params.n_tilts_min)
-  addOne('n_tilts_max', params.n_tilts_max)
   const qs = sp.toString()
   return qs ? `?${qs}` : ''
 }

@@ -45,12 +45,9 @@ def _make_record_with_tilt_series(
     ts_list = [
         TiltSeries(
             tilt_series_id=tid,
-            mdoc_path=f"/data/{sample_id}/Pos1/Frames/{tid}.mdoc",
-            n_tilts=41,
-            tilt_range_min=-60.0,
-            tilt_range_max=60.0,
-            image_format="EER",
-            tilt_angles=[-60.0, -57.0, -54.0],
+            derived_from="Frames",
+            is_aligned=False,
+            st_path=f"/data/{sample_id}/Pos1/TiltSeries/{tid}/stack/{tid}.st",
             mtime=1234567890.0,
         )
         for tid in tilt_series_ids
@@ -80,9 +77,10 @@ def test_upsert_writes_tilt_series_row(session) -> None:
     assert row.sample_id == "s1"
     assert row.acquisition_id == "Pos1"
     assert row.tilt_series_id == "ts_a"
-    assert row.n_tilts == 41
-    assert row.image_format == "EER"
-    assert row.tilt_angles == [-60.0, -57.0, -54.0]
+    assert row.derived_from == "Frames"
+    assert row.is_aligned is False
+    assert row.st_path.endswith("/TiltSeries/ts_a/stack/ts_a.st")
+    assert row.mtime == 1234567890.0
 
 
 def test_soft_delete_leaves_tilt_series_rows_in_place(session) -> None:

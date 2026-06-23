@@ -35,8 +35,8 @@
           "title": "Facility",
           "type": "string"
         },
-        "tilt_series_quality_score": {
-          "title": "Tilt Series Quality Score",
+        "acquistion_quality": {
+          "title": "Acquistion Quality",
           "maximum": 5,
           "minimum": 1,
           "type": "integer"
@@ -67,6 +67,13 @@
         "tilt_axis": {
           "title": "Tilt Axis",
           "type": "number"
+        },
+        "tilt_angles": {
+          "title": "Tilt Angles",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
         },
         "defocus_per_image": {
           "title": "Defocus Per Image",
@@ -102,35 +109,6 @@
         }
       },
       "title": "Acquisition",
-      "type": "object"
-    },
-    "Alignment": {
-      "additionalProperties": true,
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "software": {
-          "title": "Software",
-          "type": "string"
-        },
-        "method": {
-          "title": "Method",
-          "type": "string"
-        },
-        "files": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Files",
-          "type": "array"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "title": "Alignment",
       "type": "object"
     },
     "Annotation": {
@@ -184,8 +162,8 @@
           "title": "Id",
           "type": "string"
         },
-        "alignment_id": {
-          "title": "Alignment Id",
+        "tilt_series_id": {
+          "title": "Tilt Series Id",
           "type": "string"
         },
         "denoising_software": {
@@ -260,8 +238,8 @@
           "title": "Id",
           "type": "string"
         },
-        "alignment_id": {
-          "title": "Alignment Id",
+        "tilt_series_id": {
+          "title": "Tilt Series Id",
           "type": "string"
         },
         "pipeline": {
@@ -323,7 +301,7 @@
     },
     "TiltSeries": {
       "additionalProperties": true,
-      "description": "One tilt series within an acquisition (composite-PK child of Acquisition).\n\nComposite primary key: ``(sample_id, acquisition_id, tilt_series_id)``.\n``tilt_series_id`` is the MDOC stem (with collision-disambiguating suffix\nwhen needed; see plan \u00a711.23). Powers the per-tilt-series UI cards\n(polar plot + median-tilt preview + Neuroglancer launch). All non-PK\nfields are optional so a tilt series can be ingested before MDOC parse\nsucceeds.",
+      "description": "One tilt series within an acquisition (composite-PK child of Acquisition).\n\nComposite primary key: ``(sample_id, acquisition_id, tilt_series_id)``.\nThe tilt series is a researcher-authored folder under ``TiltSeries/`` \u2014\n``tilt_series_id`` is its directory name (accepted as the TOML ``id``\nalias). A tilt series may be stored raw/unaligned or already geometrically\ntransformed (``is_aligned``); alignment is folded in as transformation\nparameters rather than a separate entity. The MDOC-derived tilt geometry\nlives on :class:`Acquisition` (one acquisition tilt scheme, shared by all\nits tilt series). All non-PK fields are optional so a tilt series can be\ningested before disk enrichment runs.",
       "properties": {
         "sample_id": {
           "title": "Sample Id",
@@ -333,12 +311,24 @@
           "title": "Acquisition Id",
           "type": "string"
         },
-        "tilt_series_id": {
-          "title": "Tilt Series Id",
+        "id": {
+          "title": "Id",
           "type": "string"
         },
-        "mdoc_path": {
-          "title": "Mdoc Path",
+        "derived_from": {
+          "title": "Derived From",
+          "type": "string"
+        },
+        "is_aligned": {
+          "title": "Is Aligned",
+          "type": "boolean"
+        },
+        "alignment_software": {
+          "title": "Alignment Software",
+          "type": "string"
+        },
+        "alignment_method": {
+          "title": "Alignment Method",
           "type": "string"
         },
         "st_path": {
@@ -349,52 +339,11 @@
           "title": "Zarr Path",
           "type": "string"
         },
-        "n_tilts": {
-          "title": "N Tilts",
-          "type": "integer"
-        },
-        "tilt_range_min": {
-          "title": "Tilt Range Min",
-          "type": "number"
-        },
-        "tilt_range_max": {
-          "title": "Tilt Range Max",
-          "type": "number"
-        },
-        "tilt_axis_angle": {
-          "title": "Tilt Axis Angle",
-          "type": "number"
-        },
-        "voltage": {
-          "title": "Voltage",
-          "type": "number"
-        },
-        "pixel_spacing": {
-          "title": "Pixel Spacing",
-          "type": "number"
-        },
-        "image_format": {
-          "title": "Image Format",
-          "enum": [
-            "EER",
-            "TIFF",
-            "MRC"
-          ],
-          "type": "string"
-        },
-        "microscope": {
-          "title": "Microscope",
-          "type": "string"
-        },
-        "camera": {
-          "title": "Camera",
-          "type": "string"
-        },
-        "tilt_angles": {
-          "title": "Tilt Angles",
+        "alignment_files": {
           "items": {
-            "type": "number"
+            "type": "string"
           },
+          "title": "Alignment Files",
           "type": "array"
         },
         "mtime": {
@@ -437,13 +386,6 @@
         "$ref": "#/$defs/TiltSeries"
       },
       "title": "Tilt Series",
-      "type": "array"
-    },
-    "alignment": {
-      "items": {
-        "$ref": "#/$defs/Alignment"
-      },
-      "title": "Alignment",
       "type": "array"
     }
   },

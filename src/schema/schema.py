@@ -21,7 +21,7 @@ import datetime as _dt
 import re as _re
 import warnings as _warnings
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 from rapidfuzz import fuzz, process
@@ -136,11 +136,13 @@ class DatasetType(str, Enum):
     slab = "slab"
 
 
-# Tilt-series quality score: a constrained 1-5 integer (5 Excellent … 1 Low).
-# The 5->1 rubric is documentation-only (template comment + docs/schema.md);
-# the schema enforces only the integer range. A constrained int (not an
-# IntEnum) so the ORM maps it to Integer (see tests/catalog/test_orm_drift.py).
-TiltQuality = Annotated[int, Field(ge=1, le=5)]
+# Acquistion quality: a constrained 1-5 integer (5 Excellent … 1 Low).
+# Characterizes the quality an acquisition (alignability +
+# projection-image survival). The 5->1 rubric is documentation-only (template
+# comment + docs/schema.md); the schema enforces only the integer range. A
+# constrained int (not an IntEnum) so the ORM maps it to Integer (see
+# tests/catalog/test_orm_drift.py).
+AcquistionQuality = Annotated[int, Field(ge=1, le=5)]
 
 
 class Sample(_Base):
@@ -247,7 +249,7 @@ class Acquisition(_Base):
     phase_plate: bool | None = None
     microscope: str | None = None
     facility: str | None = None              # imaging facility, e.g. "Janelia"
-    tilt_series_quality_score: TiltQuality | None = None  # 1-5 rubric (5 best)
+    acquistion_quality: AcquistionQuality | None = None
     # MDOC
     pixel_size: float | None = None          # angstrom
     dose_per_tilt: list[float] | None = None # e/Å² per tilt
@@ -255,6 +257,10 @@ class Acquisition(_Base):
     tilt_min: float | None = None            # degrees
     tilt_max: float | None = None            # degrees
     tilt_axis: float | None = None           # degrees
+    # full per-image angle list parsed from the Frames/ MDOC; the
+    # acquisition-level polar plot reads this (kept whole for fidelity with
+    # dose-symmetric / irregular tilt schemes).
+    tilt_angles: list[float] | None = None
     defocus_per_image: list[float] | None = None  # micrometres, per tilt
     date_collected: _dt.date | None = None
     voltage: float | None = None             # kV
@@ -271,10 +277,10 @@ class Acquisition(_Base):
 class RawTomogram(_Base):
     # directory / acquisition.toml [raw_tomogram] (folder name = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
-    # id of the [[alignment]] (in this acquisition) used to align the tilt
-    # series for this reconstruction; validated against the acquisition's
-    # alignment ids in AcquisitionFile._check_cross_refs.
-    alignment_id: IdStr | None = None
+    # id of the [[tilt_series]] (in this acquisition) this reconstruction was
+    # built from; validated against the acquisition's tilt-series ids in
+    # AcquisitionFile._check_cross_refs.
+    tilt_series_id: IdStr | None = None
     pipeline: str | None = None
     software: str | None = None
     derived_from: list[IdStr] = Field(default_factory=list)
@@ -294,10 +300,10 @@ class RawTomogram(_Base):
 class PostProcessedTomogram(_Base):
     # directory / acquisition.toml [[post_processed_tomogram]] (folder name = tomogram_id = TOML `id`)
     tomogram_id: IdStr = Field(alias="id")
-    # id of the [[alignment]] (in this acquisition) used to align the tilt
-    # series for this reconstruction; validated against the acquisition's
-    # alignment ids in AcquisitionFile._check_cross_refs.
-    alignment_id: IdStr | None = None
+    # id of the [[tilt_series]] (in this acquisition) this reconstruction was
+    # built from; validated against the acquisition's tilt-series ids in
+    # AcquisitionFile._check_cross_refs.
+    tilt_series_id: IdStr | None = None
     denoising_software: str | None = None
     ctf_software: str | None = None
     missing_wedge_software: str | None = None
@@ -331,47 +337,35 @@ class TiltSeries(_Base):
     """One tilt series within an acquisition (composite-PK child of Acquisition).
 
     Composite primary key: ``(sample_id, acquisition_id, tilt_series_id)``.
-    ``tilt_series_id`` is the MDOC stem (with collision-disambiguating suffix
-    when needed; see plan §11.23). Powers the per-tilt-series UI cards
-    (polar plot + median-tilt preview + Neuroglancer launch). All non-PK
-    fields are optional so a tilt series can be ingested before MDOC parse
-    succeeds.
+    The tilt series is a researcher-authored folder under ``TiltSeries/`` —
+    ``tilt_series_id`` is its directory name (accepted as the TOML ``id``
+    alias). A tilt series may be stored raw/unaligned or already geometrically
+    transformed (``is_aligned``); alignment is folded in as transformation
+    parameters rather than a separate entity. The MDOC-derived tilt geometry
+    lives on :class:`Acquisition` (one acquisition tilt scheme, shared by all
+    its tilt series). All non-PK fields are optional so a tilt series can be
+    ingested before disk enrichment runs.
     """
 
-    # composite PK fields (path-injected by the scanner; optional in
-    # Pydantic so partial loads don't blow up but pinned NOT NULL in the DB)
+    # composite PK fields (sample_id/acquisition_id path-injected by the
+    # scanner; tilt_series_id authored as folder name / TOML ``id``. Optional
+    # in Pydantic so partial loads don't blow up but pinned NOT NULL in the DB)
     sample_id: IdStr | None = None
     acquisition_id: IdStr | None = None
-    tilt_series_id: IdStr | None = None
-    # filesystem (parser-discovered)
-    mdoc_path: str | None = None
+    tilt_series_id: IdStr | None = Field(default=None, alias="id")
+    # acquisition.toml [[tilt_series]] — authored
+    # "Frames" (raw from frames) OR another tilt_series_id in this acquisition.
+    derived_from: str | None = None
+    is_aligned: bool | None = None
+    alignment_software: str | None = None
+    alignment_method: str | None = None
+    # filesystem (resolved under {ts_id}/stack/)
     st_path: str | None = None
     zarr_path: str | None = None
-    # MDOC-derived geometry
-    n_tilts: int | None = None
-    tilt_range_min: float | None = None
-    tilt_range_max: float | None = None
-    tilt_axis_angle: float | None = None
-    # MDOC-derived imaging
-    voltage: float | None = None
-    pixel_spacing: float | None = None
-    image_format: Literal["EER", "TIFF", "MRC"] | None = None
-    microscope: str | None = None
-    camera: str | None = None
-    # full per-image angle list — cached on the row so polar-plot renders
-    # don't re-parse the MDOC. ~1 KB for ~120 floats; see plan §11.7.
-    tilt_angles: list[float] | None = None
+    # filesystem (alignment artifacts discovered under {ts_id}/alignment/)
+    alignment_files: list[str] = Field(default_factory=list)
     # filesystem mtime gating
     mtime: float | None = None
-
-
-class Alignment(_Base):
-    # directory / acquisition.toml [[alignment]] (folder name = alignment_id = TOML `id`)
-    alignment_id: IdStr = Field(alias="id")
-    software: str | None = None
-    method: str | None = None
-    # directory scan (artifacts discovered in the alignment folder)
-    files: list[str] = Field(default_factory=list)
 
 
 class MdSource(_Base):
@@ -396,7 +390,6 @@ class AcquisitionFile(_Base):
     post_processed_tomogram: list[PostProcessedTomogram] = Field(default_factory=list)
     annotation: list[Annotation] = Field(default_factory=list)
     tilt_series: list[TiltSeries] = Field(default_factory=list)
-    alignment: list[Alignment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_cross_refs(self) -> "AcquisitionFile":
@@ -408,7 +401,11 @@ class AcquisitionFile(_Base):
         if self.raw_tomogram is not None:
             tomograms.insert(0, self.raw_tomogram)
         tomo_ids = {t.tomogram_id for t in tomograms}
-        alignment_ids = {a.alignment_id for a in self.alignment}
+        ts_ids = {
+            ts.tilt_series_id
+            for ts in self.tilt_series
+            if ts.tilt_series_id is not None
+        }
         problems: list[str] = []
         problems.extend(_case_insensitive_duplicates(
             (t.tomogram_id for t in tomograms), "tomogram id"
@@ -417,7 +414,12 @@ class AcquisitionFile(_Base):
             (a.annotation_id for a in self.annotation), "annotation id"
         ))
         problems.extend(_case_insensitive_duplicates(
-            (a.alignment_id for a in self.alignment), "alignment id"
+            (
+                ts.tilt_series_id
+                for ts in self.tilt_series
+                if ts.tilt_series_id is not None
+            ),
+            "tilt series id",
         ))
         for t in tomograms:
             for ref in t.derived_from:
@@ -425,10 +427,21 @@ class AcquisitionFile(_Base):
                     problems.append(
                         f"tomogram '{t.tomogram_id}' derived_from references unknown tomogram '{ref}'"
                     )
-            if t.alignment_id is not None and t.alignment_id not in alignment_ids:
+            if t.tilt_series_id is not None and t.tilt_series_id not in ts_ids:
                 problems.append(
-                    f"tomogram '{t.tomogram_id}' alignment_id '{t.alignment_id}' "
-                    f"does not match any [[alignment]] in this acquisition"
+                    f"tomogram '{t.tomogram_id}' tilt_series_id '{t.tilt_series_id}' "
+                    f"does not match any [[tilt_series]] in this acquisition"
+                )
+        # A tilt series may derive from the literal "Frames" (raw, straight off
+        # the frame stack) or from another tilt series in this acquisition.
+        for ts in self.tilt_series:
+            if ts.derived_from is None or ts.derived_from == "Frames":
+                continue
+            if ts.derived_from not in ts_ids:
+                problems.append(
+                    f"tilt_series '{ts.tilt_series_id}' derived_from "
+                    f"'{ts.derived_from}' is neither \"Frames\" nor a "
+                    f"tilt_series id in this acquisition"
                 )
         for a in self.annotation:
             if a.target_tomogram is not None and a.target_tomogram not in tomo_ids:

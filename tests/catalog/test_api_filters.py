@@ -5,8 +5,8 @@ params act as OR within a facet; range filters are NULL-tolerant; aggregate
 counts on the SELECT list are filter-independent (decision §11.15).
 
 Fixture seeds five live samples covering a spread of project/data_source/
-type/microscope/voltage/camera/pixel_size/voxel_spacing/n_tilts/image_format
-combinations, plus one tomogram-less sample for ``has_tomograms`` tests.
+type/microscope/voltage/camera/pixel_size/voxel_spacing combinations, plus
+one tomogram-less sample for ``has_tomograms`` tests.
 """
 from __future__ import annotations
 
@@ -40,15 +40,15 @@ def client(tmp_path):
 
     # ── Seed: five live samples ───────────────────────────────────────────
     # sample_alpha   chromatin/cryoet/lamella   Krios @300kV K3, px=1.0
-    #                tomo voxel=10.0, tilt-series n_tilts=60 EER
+    #                tomo voxel=10.0, 1 tilt-series
     # sample_beta    chromatin/cryoet/cell      Glacios @200kV Falcon, px=2.5
-    #                tomo voxel=20.0, tilt-series n_tilts=120 TIFF
+    #                tomo voxel=20.0, 1 tilt-series
     # sample_gamma   synapse/simulation/lamella Krios @300kV K3, px=1.5
     #                tomo voxel=NULL (NULL-tolerance), 2 tomograms
-    #                tilt-series n_tilts=NULL MRC
+    #                1 tilt-series
     # sample_delta   chromatin/cryoet/lamella   no acquisitions, no tomograms
     # sample_epsilon synapse/cryoet/cell        Krios @300kV K3, px=NULL
-    #                3 tomograms (count-independence test), n_tilts=80 EER
+    #                3 tomograms (count-independence test), 1 tilt-series
     s = Session()
     try:
         # samples
@@ -148,19 +148,19 @@ def client(tmp_path):
         s.add_all([
             orm.TiltSeriesORM(
                 sample_id="sample_alpha", acquisition_id="acq1",
-                tilt_series_id="ts1", n_tilts=60, image_format="EER",
+                tilt_series_id="ts1",
             ),
             orm.TiltSeriesORM(
                 sample_id="sample_beta", acquisition_id="acq1",
-                tilt_series_id="ts1", n_tilts=120, image_format="TIFF",
+                tilt_series_id="ts1",
             ),
             orm.TiltSeriesORM(
                 sample_id="sample_gamma", acquisition_id="acq1",
-                tilt_series_id="ts1", n_tilts=None, image_format="MRC",
+                tilt_series_id="ts1",
             ),
             orm.TiltSeriesORM(
                 sample_id="sample_epsilon", acquisition_id="acq1",
-                tilt_series_id="ts1", n_tilts=80, image_format="EER",
+                tilt_series_id="ts1",
             ),
         ])
 
@@ -241,19 +241,6 @@ def test_filter_camera_repeatable(client):
     }
 
 
-def test_filter_image_format(client):
-    assert _ids(client.get("/samples", params={"image_format": "TIFF"})) == {
-        "sample_beta",
-    }
-
-
-def test_filter_image_format_repeatable(client):
-    r = client.get(
-        "/samples", params=[("image_format", "EER"), ("image_format", "TIFF")]
-    )
-    assert _ids(r) == {"sample_alpha", "sample_beta", "sample_epsilon"}
-
-
 # ── Range filters ─────────────────────────────────────────────────────────
 
 
@@ -308,19 +295,6 @@ def test_voxel_spacing_max(client):
     """voxel_spacing_max=10.0 selects tomograms with vs<=10 OR vs IS NULL."""
     assert _ids(client.get("/samples", params={"voxel_size_max": 10.0})) == {
         "sample_alpha", "sample_gamma", "sample_epsilon",
-    }
-
-
-def test_n_tilts_min(client):
-    """n_tilts_min=100 — NULL still passes."""
-    assert _ids(client.get("/samples", params={"n_tilts_min": 100})) == {
-        "sample_beta", "sample_gamma",  # gamma's NULL passes
-    }
-
-
-def test_n_tilts_max_exact_bound(client):
-    assert _ids(client.get("/samples", params={"n_tilts_max": 60})) == {
-        "sample_alpha", "sample_gamma",  # 60 (exact) + NULL passes
     }
 
 

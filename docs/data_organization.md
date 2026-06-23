@@ -50,7 +50,7 @@ Each `acquisition.toml` grows over time. Record the raw reconstruction once in `
 
 **Rules:**
 - Do **not** delete or modify a tomogram or annotation entry once added. Reprocessing produces a **new** entry with a new `id`, placed at the bottom of the file.
-- The `id` must match one folder name under `Reconstructions/Tomograms/`, `Reconstructions/Annotations/`, or `Alignments/`.
+- The `id` must match one folder name under `TiltSeries/`, `Reconstructions/Tomograms/`, or `Reconstructions/Annotations/`.
 - Use `derived_from` and `target_tomogram` to record lineage (see above).
 
 ### 5. Validate
@@ -119,10 +119,11 @@ Experimental/
       acquisition.toml                       # per-acquisition params + processing log
       Frames/                                # raw movie frames (.eer / .tiff) + .mdoc
       Gains/                                 # gain reference
-      TiltSeries/                            # .mrc + .zarr + .rawtlt
-      Alignments/
-        {alignment_id}/                      # one subfolder per alignment run
-          *.json                             # machine-emitted alignment files
+      TiltSeries/
+        {tilt_series_id}/                    # one subfolder per tilt series (raw and/or aligned)
+          stack/                             # .mrc projection stack (+ .zarr / .rawtlt); MAY be empty
+          alignment/                         # MAY be empty if this is the raw tilt series 
+            alignment.json                   # affine matrix + interpolation recipe (or any other alignment data)
       Reconstructions/
         Tomograms/
           {tomogram_id}/                   # one subfolder per processing pipeline
@@ -149,6 +150,9 @@ MdSimulation/{Bulk|SingleMolecule|Slab}/
       {acquisition_id}/                      # synthetic cryoET from one md_run frame
         acquisition.toml                     # per-acquisition params + [md_source]
         TiltSeries/
+          {tilt_series_id}/                  # one subfolder per tilt series
+            stack/
+            alignment/
         Reconstructions/
           Tomograms/
             {tomogram_id}/                 # one subfolder per processing pipeline
@@ -171,7 +175,7 @@ match an `MdRuns/{id}/` folder name; a dangling reference warns rather than
 failing the acquisition. Both `MdRuns/{id}/md_run.toml` and `[md_source]` are
 relevant only to simulation samples and are rejected on experimental samples.
 
-The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chanzuckerberg.github.io/cryoet-data-portal/stable/cryoet_data_portal_docsite_data.html) at the Sample > Acquisition > (Frames, Gains, TiltSeries, Alignments, Reconstructions) level, with three deliberate departures:
+The directory skeleton is adapted from the [CZI CryoET Data Portal](https://chanzuckerberg.github.io/cryoet-data-portal/stable/cryoet_data_portal_docsite_data.html) at the Sample > Acquisition > (Frames, Gains, TiltSeries, Reconstructions) level, with three deliberate departures:
 
 - **Two metadata files per sample.** Sample-level conditions live in `sample.toml` at the sample root. Per-acquisition parameters and the processing log live in `{acquisition}/acquisition.toml`. Fields derivable from MDOC files and file headers are authored in neither file; the ingest pipeline will read them directly.
 - **Tomograms are kept in per-pipeline subfolders** (e.g., `bp_3dctf_bin4/`, `bp_3dctf_bin4_ddw/`) rather than flattened into `Tomograms/`. This avoids filename collisions when new processing versions are added, and the folder name acts as the `processing_id`.
@@ -195,12 +199,17 @@ gouauxlab_20250418_AMmilled29-2/             # sample identity = directory name
     Gains/
       gain_reference.gain
     TiltSeries/                              # TO CREATE: from .eer conversion
-      *.mrc
-      *.zarr
-      *.rawtlt
-    Alignments/
-      imod_patch_v3/                         # one subfolder per alignment run
-        *.json
+      ts_raw/                                # raw, unaligned tilt series
+        stack/
+          *.mrc
+          *.zarr
+          *.rawtlt
+        alignment/
+      ts_aligned/                            # aligned tilt series (derived_from = "ts_raw")
+        stack/
+          *.mrc
+        alignment/
+          alignment.json                     # affine matrix + interpolation recipe
     Reconstructions/
       Tomograms/
         bp_3dctf_bin4/                       # renamed from "raw/"
@@ -230,7 +239,7 @@ Changes from the current `annotation_HHMI_reorg` layout:
 2. Rename `activezone/` → `activezone_{N}/` to match the star-file id (schema rule: annotation `id` = folder name).
 3. Add `sample.toml` at the sample level.
 4. Add `acquisition.toml` in each acquisition directory.
-5. Create `TiltSeries/` (pending `.eer` conversion).
+5. Create `TiltSeries/{tilt_series_id}/{stack,alignment}/` (pending `.eer` conversion). Multiple tilt series per acquisition — e.g. one raw and one aligned — are an expected, first-class case.
 
 ---
 
@@ -245,7 +254,7 @@ One file per sample, placed at the root of the sample directory. Contains only w
 One file per acquisition, placed at the root of each acquisition directory. It contains:
 
 1. Researcher-authored imaging parameters not available from MDOC files (nominal resolution, nominal tilt spacing, target defocus range, energy filter model, phase plate, microscope model, imaging `facility`).
-2. A **tilt-series quality score** (`tilt_series_quality_score`): an integer on a 1–5 rubric — **5** Excellent, **4** Good, **3** Fair, **2** Poor, **1** Low. (This replaces the former free-text `quality` field, which has been removed.)
+2. An **acquistion quality score** (`acquistion_quality`): an integer on a 1–5 rubric, the author's estimate of the acquistion quality (alignability + projection-image survival) — **5** Excellent (reconstructions could be publication-ready), **4** Good (useful for analysis such as subtomogram averaging or segmentation), **3** Medium (minor projection images discarded before reconstruction), **2** Marginal (major projection images discarded; usable only after heavy manual work), **1** Low (not alignable / not useful for analysis).
 3. A **processing log**: a `[raw_tomogram]` table plus `[[post_processed_tomogram]]` and `[[annotation]]` entries appended over time as processing produces new outputs.
 
 The acquisition directory name *is* the acquisition's identity, so `acquisition.id` is omitted from the file.
@@ -264,7 +273,7 @@ The only required authored field is `sample.project`. `sample.data_source` is se
 
 ### Folder naming rules
 
-Five folder names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tomogram processing subfolder (`tomogram_id`), each annotation subfolder (`annotation_id`), and each alignment subfolder (`alignment_id`). The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
+Five folder names become primary keys in the portal database: the sample directory (`sample_id`), each acquisition directory (`acquisition_id`), each tilt-series subfolder under `TiltSeries/` (`tilt_series_id`; the folder holds a `stack/` and an `alignment/` subdirectory), each tomogram processing subfolder (`tomogram_id`), and each annotation subfolder (`annotation_id`). The same strings may also be used in path expressions, URLs, and shell commands, so they are restricted to a conservative, cross-platform-safe allowlist.
 
 A valid id must:
 

@@ -132,13 +132,14 @@ One row per imaging position. Primary key: `(sample_id, acquisition_id)`.
 | `phase_plate` | boolean | `acquisition.toml` (`[acquisition]`) | researcher authored | |
 | `microscope` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Model name. |
 | `facility` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Imaging facility, e.g. `Janelia`. |
-| `tilt_series_quality_score` | integer | `acquisition.toml` (`[acquisition]`) | researcher authored | 1–5 rubric: **5** Excellent, **4** Good, **3** Fair, **2** Poor, **1** Low. |
+| `acquistion_quality` | integer | `acquisition.toml` (`[acquisition]`) | researcher authored | 1–5 rubric, the author's estimate of the acquistion quality (alignability + projection-image survival): **5** Excellent (reconstructions could be publication-ready), **4** Good (useful for analysis — subtomogram avg, segmentation), **3** Medium (minor projection images discarded before reconstruction), **2** Marginal (major projection images discarded; usable only after heavy manual work), **1** Low (not alignable / not useful for analysis). |
 | `pixel_size` | float | `MDOC` | derived | Angstrom. |
 | `dose_per_tilt` | list[float] | `MDOC` | derived | e/Å² per tilt. |
 | `total_dose` | float | `MDOC` (summed) | derived | e/Å². |
 | `tilt_min` | float | `MDOC` | derived | Degrees. Minimum tilt angle recorded. |
 | `tilt_max` | float | `MDOC` | derived | Degrees. |
 | `tilt_axis` | float | `MDOC` | derived | Degrees. |
+| `tilt_angles` | list[float] | `MDOC` | derived | Full per-image tilt-angle list parsed from the `Frames/` MDOC. Describes the acquisition's tilt scheme, shared by all of its tilt series, and powers the acquisition-level polar plot. |
 | `defocus_per_image` | list[float] | `MDOC` | derived | Micrometres, per tilt. |
 | `date_collected` | date | `MDOC` | derived | |
 | `voltage` | float | `MDOC` | derived | kV. |
@@ -151,32 +152,39 @@ One row per imaging position. Primary key: `(sample_id, acquisition_id)`.
 
 One row per tilt series within an acquisition. Primary key:
 `(sample_id, acquisition_id, tilt_series_id)`, where `tilt_series_id` is the
-MDOC stem (with a collision-disambiguating suffix when needed). These rows are
-**not researcher-authored** — the catalog scanner is the canonical writer,
-populating each row by parsing the acquisition's MDOC files and probing the
-filesystem. They power the per-tilt-series UI cards (polar plot + median-tilt
-preview + Neuroglancer launch). All non-PK fields are optional so a tilt series
-can be ingested before MDOC parse succeeds.
+name of the folder under `TiltSeries/`. These rows are **researcher-authored**
+as `[[tilt_series]]` blocks in `acquisition.toml` (one block per `TiltSeries/{tilt_series_id}/`
+folder — there is no per-folder `tiltseries.toml`); the catalog scanner enriches
+each authored row with filesystem-derived paths and timestamps. **Multiple tilt
+series per acquisition are expected** — a raw/unaligned series (not required), an
+aligned series derived from either the frames or the raw tilt series, another alignment derived from the first alignment, etc.
+
+Each `TiltSeries/{tilt_series_id}/` folder holds a `stack/` subdirectory (the
+`.mrc` projection stack, plus optional `.zarr` / `.rawtlt`; may be empty) and an
+`alignment/` subdirectory (`alignment.json` affine matrix + interpolation recipe).
+Alignment is no longer a separate top-level entity — it is folded into the tilt
+series as transformation parameters (`is_aligned`, `alignment_software`,
+`alignment_method`, plus the discovered `alignment_files`).
+
+The MDOC-derived **tilt geometry now lives on the parent `Acquisition`** (see
+the `tilt_angles` field above and the related `tilt_min` / `tilt_max` /
+`tilt_axis` / `pixel_size` / `voltage` fields). The MDOC stays in `Frames/` and
+describes the acquisition's tilt scheme, shared by all of its tilt series, so the
+polar plot is rendered at the acquisition level rather than per tilt series.
 
 | Field | Type | Source | Source Type | Notes |
 |---|---|---|---|---|
-| `tilt_series_id` | text (PK) | `directory` / `MDOC` | derived | MDOC stem, with a collision-disambiguating suffix when needed. |
+| `tilt_series_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[[tilt_series]].id`) | researcher authored | Folder name under `TiltSeries/`; the TOML `id` must match the folder. |
 | `acquisition_id` | text (FK) | `directory` | derived | Parent acquisition folder name. |
 | `sample_id` | text (FK) | `directory` | derived | Parent sample folder name. |
-| `mdoc_path` | text | `directory` | derived | Path to the parsed `.mdoc` file. |
-| `st_path` | text | `directory` | derived | Path to the stacked tilt-series file. |
-| `zarr_path` | text | `directory` | derived | Path to the OME-Zarr rendering, when present. |
-| `n_tilts` | integer | `MDOC` | derived | Number of tilt images in the series. |
-| `tilt_range_min` | float | `MDOC` | derived | Degrees. Minimum tilt angle in the series. |
-| `tilt_range_max` | float | `MDOC` | derived | Degrees. Maximum tilt angle in the series. |
-| `tilt_axis_angle` | float | `MDOC` | derived | Degrees. Tilt-axis rotation. |
-| `voltage` | float | `MDOC` | derived | kV. |
-| `pixel_spacing` | float | `MDOC` | derived | Ångström. Per-series pixel spacing. |
-| `image_format` | text | `MDOC` / frame extension | derived | One of `EER`, `TIFF`, `MRC`. |
-| `microscope` | text | parent acquisition | derived | Column exists but is **not** populated by the scanner — left NULL on the tilt-series row. Microscope lives on the parent acquisition (researcher-authored in `acquisition.toml`); not re-parsed from the MDOC (§11.14). |
-| `camera` | text | parent acquisition | derived | Column exists but is **not** populated by the scanner — left NULL on the tilt-series row. Camera lives on the parent acquisition (frame-extension–derived); not re-parsed from the MDOC (§11.14). |
-| `tilt_angles` | list[float] | `MDOC` | derived | Full per-image angle list, cached on the row so polar-plot renders don't re-parse the MDOC. |
-| `mtime` | float | `directory` | derived | MDOC modification time, used to gate re-parsing. |
+| `derived_from` | text | `acquisition.toml` (`[[tilt_series]]`) | researcher authored | Either the literal `"Frames"` or another `tilt_series_id` in the same acquisition. |
+| `is_aligned` | boolean | `acquisition.toml` (`[[tilt_series]]`) | researcher authored | Whether the stack is already geometrically transformed (aligned). |
+| `alignment_software` | text | `acquisition.toml` (`[[tilt_series]]`) | researcher authored | e.g. `IMOD`, `AreTomo3`. |
+| `alignment_method` | text | `acquisition.toml` (`[[tilt_series]]`) | researcher authored | e.g. `fiducial`, `patch_tracking`, `feature_tracking`. |
+| `st_path` | text | `directory` | derived | Path to the stacked tilt-series `.mrc` file, resolved under `{tilt_series_id}/stack/`. |
+| `zarr_path` | text | `directory` | derived | Path to the OME-Zarr rendering under `{tilt_series_id}/stack/`, when present. |
+| `alignment_files` | list[text] | `directory` | derived | Alignment artifacts discovered under `{tilt_series_id}/alignment/`. |
+| `mtime` | float | `directory` | derived | Modification time, used to gate re-parsing. |
 
 ### 2b. MD source sub-entity (one per acquisition; simulation data only)
 
@@ -254,18 +262,3 @@ One row per annotation output. Primary key: `(sample_id, acquisition_id, annotat
 | `type` | text | `acquisition.toml` (`[[annotation]]`) | researcher authored | e.g. `membrane_segmentation`, `nucleosome_placement`, `nucleosome_orientation`, `sta_result`. |
 | `target_tomogram` | text (FK) | `acquisition.toml` (`[[annotation]]`) | researcher authored | Tomogram this was generated from. |
 | `files` | list[text] | `directory` | derived | `.star`, `.mrc`, `.ome.zarr`, `.png` artifacts discovered in the folder. |
-
----
-
-## 5. Alignment entity
-
-One row per tilt-series alignment output. Primary key: `(sample_id, acquisition_id, alignment_id)`. Each `[[alignment]]` block in `acquisition.toml` corresponds to one `{alignment_id}/` subfolder under the acquisition's `Alignments/` directory.
-
-| Field | Type | Source | Source Type | Notes |
-|---|---|---|---|---|
-| `alignment_id` | text (PK) | `directory` ↔ `acquisition.toml` (`[[alignment]].id`) | researcher authored | Alignment folder name under `Alignments/`, e.g. `imod_patch_v3`; the TOML `id` must match the folder. |
-| `acquisition_id` | text (FK) | `directory` | derived | Parent acquisition folder name. |
-| `sample_id` | text (FK) | `directory` | derived | Parent sample folder name. |
-| `software` | text | `acquisition.toml` (`[[alignment]]`) | researcher authored | Alignment software (e.g. `IMOD`, `AreTomo3`). |
-| `method` | text | `acquisition.toml` (`[[alignment]]`) | researcher authored | e.g. `fiducial`, `patch_tracking`, `feature_tracking`. |
-| `files` | list[text] | `directory` | derived | Machine-emitted alignment artifacts discovered in the folder. |

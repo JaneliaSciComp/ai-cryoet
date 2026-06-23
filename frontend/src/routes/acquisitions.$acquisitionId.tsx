@@ -11,7 +11,7 @@ import {
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
 import type { AcquisitionOut, WarningOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
-import { PreviewThumbnail, ThumbnailPlaceholder, tiltSeriesPolarUrl } from '~/components/common/Thumbnail'
+import { PreviewThumbnail, ThumbnailPlaceholder, acquisitionPolarUrl } from '~/components/common/Thumbnail'
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
 import { TomogramsAnnotationsTable } from '~/components/acquisitions/TomogramsAnnotationsTable'
 import {
@@ -116,14 +116,14 @@ function AcquisitionDetailRoute() {
       <Grid container spacing={4}>
         <Grid item xs={12} md={4}>
           {(() => {
-            const ts = acquisition.tilt_series[0]
-            const polarSrc = ts
-              ? tiltSeriesPolarUrl(sampleId, acquisitionId, ts.tilt_series_id)
+            const hasAngles = (acquisition.tilt_angles?.length ?? 0) > 0
+            const polarSrc = hasAngles
+              ? acquisitionPolarUrl(sampleId, acquisitionId)
               : null
             return polarSrc ? (
               <PreviewThumbnail
                 src={polarSrc}
-                alt={`Tilt-angle plot for ${ts.tilt_series_id}`}
+                alt={`Tilt-angle plot for ${acquisitionId}`}
                 width="100%"
                 height={220}
                 objectFit="contain"

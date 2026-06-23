@@ -10,10 +10,10 @@
 # HOW TO USE THIS TEMPLATE
 # ────────────────────────
 # 1. Uncomment the [acquisition] section and replace every "<FILL IN>" placeholder.
-# 2. Add an [[alignment]] block for each tilt-series alignment.
+# 2. Add a [[tilt_series]] block for each tilt series (raw and/or aligned).
 # 3. Append a [raw_tomogram] / [[post_processed_tomogram]] block for each
-#    tomogram processing pipeline output. Point each one's `alignment_id` at
-#    the [[alignment]] whose result it was reconstructed from.
+#    tomogram processing pipeline output. Point each one's `tilt_series_id` at
+#    the [[tilt_series]] it was reconstructed from.
 # 4. Append an [[annotation]] block for each annotation.
 # 5. Entries are immutable once added — reprocessing produces a NEW entry
 #    with a new `id`. Never modify or delete existing entries.
@@ -45,23 +45,24 @@
 # phase_plate   = "<FILL IN>"   # boolean, true | false
 # microscope    = "<FILL IN>"   # text, model name, e.g. "Titan Krios", "Glacios"
 # facility      = "<FILL IN>"   # text, imaging facility, e.g. "Janelia"
-# tilt_series_quality_score = "<FILL IN>"   # integer 1-5 rubric:
-#                                           #   5 = Excellent, full tilt series is publication ready
-#                                           #   4 = Good, full tilt series is analysis ready
-#                                           #   3 = Fair, minor parts need to be or have been discarded prior to analysis
-#                                           #   2 = Poor, major parts need to be or have been discarded prior to analysis
-#                                           #   1 = Low, not useful for analysis
+# acquisition_quality = "<FILL IN>"        # integer 1-5, author's estimate of the acquisition quality (alignability + projection-image survival):
+#                                          #   5 = Excellent, reconstructions could be publication-ready
+#                                          #   4 = Good, useful for analysis (subtomogram averaging, segmentation)
+#                                          #   3 = Medium, minor projection images discarded before reconstruction
+#                                          #   2 = Marginal, major projection images discarded; usable only after heavy manual work
+#                                          #   1 = Low, not alignable / not useful for analysis
 
-# ── Alignments (uncomment and fill in) ────────────────────────────────────────
-# One acquisition can have MULTIPLE alignments — copy-paste this block to add as
-# many [[alignment]] entries as needed (one per alignment run of the tilt series).
-# Each tomogram below references the alignment it was reconstructed from via its
-# `alignment_id`.
+# ── Tilt series (uncomment and fill in) ────────────────────────────────────────
+# One acquisition can have MULTIPLE tilt series, both raw/unaligned and aligned — copy-paste this block to add as
+# many [[tilt_series]] entries as needed. Each tomogram below references the tilt series it was reconstructed
+# from via its `tilt_series_id`.
 
-# [[alignment]]
-# id       = "<FILL IN>"   # text, MUST equal the alignment's folder name under Alignments/, e.g. "imod_patch_v3"
-# software = "<FILL IN>"   # text, e.g. "IMOD 4.12", "AreTomo3"
-# method   = "<FILL IN>"   # text, e.g. fiducial | patch_tracking | feature_tracking
+# [[tilt_series]]
+# id                  = "<FILL IN>"   # text, tilt series id, MUST equal the tilt series' folder name under TiltSeries/
+# derived_from        = "<FILL IN>"   # text, MUST equal either "Frames" or another tilt series' folder name under TiltSeries/
+# is_aligned          = "<FILL IN>"   # boolean, true | false; indicates whether the tilt series is aligned
+# alignment_software  = "<FILL IN>"   # text, e.g. "IMOD 4.12", "AreTomo3"
+# alignment_method    = "<FILL IN>"   # text, e.g. fiducial | patch_tracking | feature_tracking
 
 # ── MD source  (simulation data only) ────────────────────────────────────────
 # Which MD run + frame this acquisition's synthetic data came from.
@@ -78,15 +79,15 @@
 # ════════════════════════════════════════════════════════════════
 
 # [raw_tomogram]
-# id            = "<FILL IN>"   # text, MUST equal the tomogram's folder name
-# alignment_id  = "<FILL IN>"   # text, id of the [[alignment]] above whose result this tomogram was reconstructed from. MUST equal an alignment id recorded above. Omit if not applicable.
-# pipeline      = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
-# software      = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
-# derived_from  = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
+# id             = "<FILL IN>"   # text, MUST equal the tomogram's folder name
+# tilt_series_id = "<FILL IN>"   # text, id of the [[tilt_series]] above this reconstruction was built from. MUST equal a tilt_series id recorded above. Omit if not applicable.
+# pipeline       = "<FILL IN>"   # text, e.g. "backprojection + 3D CTF correction"
+# software       = "<FILL IN>"   # text, e.g. "IMOD 4.12 + novaCTF"
+# derived_from   = "<FILL IN>"   # list[text], list of tomogram ids in this acquisition; empty for raw reconstructions
 
 # [[post_processed_tomogram]]
 # id                        = "<FILL IN>"   # text, MUST equal the tomogram's folder name
-# alignment_id              = "<FILL IN>"   # text, id of the [[alignment]] above whose result this tomogram was reconstructed from. MUST equal an alignment id recorded above. Omit if not applicable.
+# tilt_series_id            = "<FILL IN>"   # text, id of the [[tilt_series]] above this reconstruction was built from. MUST equal a tilt_series id recorded above. Omit if not applicable.
 # denoising_software        = "<FILL IN>"   # text
 # ctf_software              = "<FILL IN>"   # text
 # missing_wedge_software    = "<FILL IN>"   # text

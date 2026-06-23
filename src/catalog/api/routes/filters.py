@@ -90,19 +90,6 @@ def get_filter_options(session: Session = Depends(get_session)):
         .order_by(orm.AcquisitionORM.camera)
     ).scalars().all())
 
-    # ── Categorical: tilt_series.image_format ──────────────────────────────
-    image_formats = list(session.execute(
-        select(orm.TiltSeriesORM.image_format)
-        .join(
-            orm.SampleORM,
-            orm.SampleORM.sample_id == orm.TiltSeriesORM.sample_id,
-        )
-        .where(orm.SampleORM.deleted_at.is_(None))
-        .where(orm.TiltSeriesORM.image_format.is_not(None))
-        .distinct()
-        .order_by(orm.TiltSeriesORM.image_format)
-    ).scalars().all())
-
     # ── Numeric ranges ─────────────────────────────────────────────────────
     pixel_size_row = session.execute(
         select(
@@ -159,20 +146,6 @@ def get_filter_options(session: Session = Depends(get_session)):
         max=_safe_max(raw_voxel_row[1], post_voxel_row[1]),
     )
 
-    n_tilts_row = session.execute(
-        select(
-            func.min(orm.TiltSeriesORM.n_tilts),
-            func.max(orm.TiltSeriesORM.n_tilts),
-        )
-        .join(
-            orm.SampleORM,
-            orm.SampleORM.sample_id == orm.TiltSeriesORM.sample_id,
-        )
-        .where(orm.SampleORM.deleted_at.is_(None))
-        .where(orm.TiltSeriesORM.n_tilts.is_not(None))
-    ).one()
-    n_tilts = RangeOut(min=n_tilts_row[0], max=n_tilts_row[1])
-
     return FiltersOptionsOut(
         projects=projects,
         data_sources=data_sources,
@@ -180,8 +153,6 @@ def get_filter_options(session: Session = Depends(get_session)):
         microscopes=microscopes,
         voltages=voltages,
         cameras=cameras,
-        image_formats=image_formats,
         pixel_size=pixel_size,
         voxel_size=voxel_size,
-        n_tilts=n_tilts,
     )

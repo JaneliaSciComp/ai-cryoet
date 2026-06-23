@@ -30,12 +30,20 @@ template and populates it:
     {DEST}/{sample_id}/
         sample.toml
         {acquisition_id}/                 <- acquisition_id == common frame prefix
-            acquisition.toml
-            Alignments/ ...
+            acquisition.toml             <- [[tilt_series]] block authored for the raw series
             Frames/      <- all .eer frames + the (combined) <acq>.mdoc
             Gains/       <- a copy of the shared *.gain
             Reconstructions/ ...
-            TiltSeries/  <- <acq>.mrc (Gouaux only)
+            TiltSeries/                   <- one folder per tilt series
+                raw/                      <- the initial .mrc (Gouaux only);
+                    stack/                   id from --tilt-series-id (default "raw")
+                        <acq>.mrc
+                    alignment/            <- (empty; populated when aligned)
+
+The acquisition.toml's [[tilt_series]] block is filled in to match: a raw,
+unaligned series (id = the --tilt-series-id, derived_from = "Frames",
+is_aligned = false). The template's placeholder TiltSeries/tilt_series_id/
+folder is renamed to that same id so folder and metadata agree.
 
 Placement modes
 ---------------
@@ -117,6 +125,9 @@ SERIALEM_FRAME_RE = re.compile(
 # ─────────────────────────────────────────────────────────────────────────────
 LAB_NAMES = ("gouaux", "rosen", "villa")
 LAB_BY_STYLE = {"tomo5": "gouaux", "serialem": "rosen"}
+# Each lab works on one project; used to fill sample.toml's ``project`` field.
+# Labs absent here leave the <FILL IN> placeholder for the researcher.
+PROJECT_BY_LAB = {"gouaux": "synapse", "rosen": "chromatin"}
 
 
 @dataclass
@@ -358,6 +369,7 @@ def build_combined_mdoc(acq: Acquisition) -> str:
 # Lab confirmation + sample.toml rendering
 # ─────────────────────────────────────────────────────────────────────────────
 LAB_NAME_RE = re.compile(r'^(?P<pre>\s*lab_name\s*=\s*)"[^"]*"')
+PROJECT_RE = re.compile(r'^(?P<pre>\s*project\s*=\s*)"[^"]*"')
 
 
 def confirm_lab(style: str, explicit: str | None) -> str:
@@ -415,26 +427,133 @@ def confirm_lab(style: str, explicit: str | None) -> str:
     return lab
 
 
-def render_sample_toml(template_text: str, lab_name: str) -> str:
-    """Return ``template_text`` with the ``lab_name`` placeholder filled in.
+# A "# ── …" section divider in sample.toml; ``_strip_section`` uses these to
+# delimit the project-specific block it removes.
+_SECTION_DIVIDER_RE = re.compile(r"^#\s*─")
 
-    Only the value is replaced; the trailing enum comment is preserved.
+
+def _strip_section(lines: list[str], keyword: str) -> list[str]:
+    """Drop the divider-delimited section whose header mentions ``keyword``.
+
+    The section runs from its ``# ── <keyword>…`` divider up to (but not
+    including) the next ``# ── …`` divider — taking the live table (e.g.
+    ``[chromatin]``) and its commented fields with it.
     """
-    replaced = False
+    out: list[str] = []
+    skipping = False
+    for line in lines:
+        is_divider = bool(_SECTION_DIVIDER_RE.match(line))
+        if is_divider and keyword.lower() in line.lower():
+            skipping = True
+            continue
+        if skipping:
+            if is_divider:  # next section begins — stop skipping, keep this line
+                skipping = False
+            else:
+                continue
+        out.append(line)
+    return out
+
+
+def render_sample_toml(
+    template_text: str, lab_name: str, project: str | None
+) -> str:
+    """Return ``template_text`` with ``lab_name`` (and ``project``) filled in.
+
+    Only the values are replaced; the trailing enum comments are preserved.
+    ``project`` is derived from the lab (see ``PROJECT_BY_LAB``); when it is
+    None (an unmapped lab) the ``<FILL IN>`` placeholder is left untouched.
+
+    The template ships a live ``[chromatin]`` block; the validator rejects it
+    for non-chromatin projects, so it is stripped unless ``project`` is
+    ``"chromatin"``.
+    """
+    lab_done = False
+    project_done = False
     out: list[str] = []
     for line in template_text.splitlines():
-        m = LAB_NAME_RE.match(line)
-        if m and not replaced:
+        if not lab_done and LAB_NAME_RE.match(line):
             out.append(LAB_NAME_RE.sub(rf'\g<pre>"{lab_name}"', line))
-            replaced = True
+            lab_done = True
+        elif project is not None and not project_done and PROJECT_RE.match(line):
+            out.append(PROJECT_RE.sub(rf'\g<pre>"{project}"', line))
+            project_done = True
         else:
             out.append(line)
-    if not replaced:
+    if project is not None and project != "chromatin":
+        out = _strip_section(out, "chromatin")
+    if not lab_done:
         print(
             "  WARNING: no lab_name field found in sample.toml template; "
             "left as-is.",
             file=sys.stderr,
         )
+    if project is not None and not project_done:
+        print(
+            "  WARNING: no project field found in sample.toml template; "
+            "left as-is.",
+            file=sys.stderr,
+        )
+    return "\n".join(out) + ("\n" if template_text.endswith("\n") else "")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# acquisition.toml authoring — fill in the [[tilt_series]] block for the raw
+# (unaligned) series this script lays down under TiltSeries/{ts_id}/.
+# ─────────────────────────────────────────────────────────────────────────────
+# Name of the template's placeholder tilt-series folder
+# (templates/.../TiltSeries/tilt_series_id/). We rename it to the real id.
+TILT_SERIES_PLACEHOLDER_DIR = "tilt_series_id"
+
+# Matches the template's commented "# [[tilt_series]]" header and its commented
+# "# key = ..." field lines, so we can swap the whole block for a live one.
+_TS_HEADER_RE = re.compile(r"^#\s*\[\[tilt_series\]\]\s*$")
+_TS_FIELD_RE = re.compile(r"^#\s*\w+\s*=")
+
+
+def render_acquisition_toml(template_text: str, tilt_series_id: str) -> str:
+    """Return ``template_text`` with a live ``[[tilt_series]]`` block filled in.
+
+    The template ships the block commented out with ``<FILL IN>`` placeholders.
+    We replace that commented block with an authored one for the initial tilt
+    series (``derived_from = "Frames"``, ``is_aligned = false``). The alignment
+    fields stay commented — the series is raw/unaligned, so the researcher fills
+    them in only when they add an aligned series. If no commented template block
+    is found, the authored block is appended instead.
+    """
+    authored = [
+        "[[tilt_series]]",
+        f'id                  = "{tilt_series_id}"   # text, tilt series id == folder name under TiltSeries/',
+        'derived_from        = "Frames"   # text, raw series reconstructed straight from the frames',
+        "is_aligned          = false   # boolean, the initial tilt series is not yet aligned",
+        '# alignment_software  = "<FILL IN>"   # text, e.g. "IMOD 4.12", "AreTomo3" (fill in for an aligned series)',
+        "# alignment_method    = \"<FILL IN>\"   # text, e.g. fiducial | patch_tracking | feature_tracking (fill in for an aligned series)",
+    ]
+
+    lines = template_text.splitlines()
+    out: list[str] = []
+    i = 0
+    replaced = False
+    while i < len(lines):
+        if not replaced and _TS_HEADER_RE.match(lines[i]):
+            out.extend(authored)
+            i += 1
+            # Drop the commented "# key = ..." field lines that follow.
+            while i < len(lines) and _TS_FIELD_RE.match(lines[i]):
+                i += 1
+            replaced = True
+            continue
+        out.append(lines[i])
+        i += 1
+
+    if not replaced:
+        print(
+            "  WARNING: no commented [[tilt_series]] block found in "
+            "acquisition.toml template; appending an authored block.",
+            file=sys.stderr,
+        )
+        out.extend(["", *authored])
+
     return "\n".join(out) + ("\n" if template_text.endswith("\n") else "")
 
 
@@ -470,6 +589,23 @@ class Runner:
         if not self.dry_run:
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
+
+    def rename_dir(self, src: Path, dest: Path) -> None:
+        """Rename the template's placeholder tilt-series dir to the real id.
+
+        Idempotent across re-runs: if ``dest`` already exists (a prior run, or
+        the .mrc was already placed there), the leftover placeholder is dropped
+        instead of nesting it inside ``dest``.
+        """
+        if src == dest or not (src.is_dir() or src.is_symlink()):
+            return
+        self._say(f"rename    {src}  ->  {dest}")
+        if self.dry_run:
+            return
+        if dest.exists():
+            shutil.rmtree(src)
+        else:
+            shutil.move(str(src), str(dest))
 
     def _place(self, src: Path, dest: Path, mode: str) -> None:
         """Place ``src`` at ``dest`` using ``mode`` (one of PLACEMENT_MODES)."""
@@ -528,11 +664,16 @@ def process(
     template_dir: Path,
     dest_root: Path,
     runner: Runner,
+    tilt_series_id: str = "raw",
 ) -> None:
     template_acq = template_dir / "acquisition_id"
     template_sample_toml = template_dir / "sample.toml"
+    template_acq_toml = template_acq / "acquisition.toml"
     if not template_acq.is_dir():
         raise SystemExit(f"Template acquisition dir not found: {template_acq}")
+    acq_toml_text = (
+        template_acq_toml.read_text() if template_acq_toml.is_file() else None
+    )
 
     gain = find_gain(src)
     acqs = discover(src, style)
@@ -553,15 +694,29 @@ def process(
     # Sample-level template files. sample.toml is rendered (not copied) so the
     # confirmed lab_name is written in.
     if template_sample_toml.is_file():
-        text = render_sample_toml(template_sample_toml.read_text(), lab_name)
-        runner.write_text(
-            sample_dir / "sample.toml", text, f"sample.toml (lab_name = {lab_name})"
-        )
+        project = PROJECT_BY_LAB.get(lab_name)
+        text = render_sample_toml(template_sample_toml.read_text(), lab_name, project)
+        label = f"sample.toml (lab_name = {lab_name}"
+        label += f", project = {project})" if project else ")"
+        runner.write_text(sample_dir / "sample.toml", text, label)
 
     for acq in acqs.values():
         print(f"\n── {acq.acq_id}  ({len(acq.frames)} frames) ──")
         dest_acq = sample_dir / acq.acq_id
         runner.make_skeleton(template_acq, dest_acq)
+
+        # Rename the template's placeholder tilt-series folder to the real id
+        # and author the matching [[tilt_series]] block in acquisition.toml.
+        ts_root = dest_acq / "TiltSeries"
+        runner.rename_dir(
+            ts_root / TILT_SERIES_PLACEHOLDER_DIR, ts_root / tilt_series_id
+        )
+        if acq_toml_text is not None:
+            runner.write_text(
+                dest_acq / "acquisition.toml",
+                render_acquisition_toml(acq_toml_text, tilt_series_id),
+                f"acquisition.toml ([[tilt_series]] id = {tilt_series_id})",
+            )
 
         frames_dir = dest_acq / "Frames"
         # Frames.
@@ -581,7 +736,13 @@ def process(
             if acq.series_mdoc is not None:
                 runner.place_frame(acq.series_mdoc, frames_dir / acq.series_mdoc.name)
             if acq.mrc is not None:
-                runner.place_frame(acq.mrc, dest_acq / "TiltSeries" / acq.mrc.name)
+                # The initial tilt series goes under TiltSeries/{ts_id}/stack/.
+                # ts_id is the tilt-series folder name (default "raw" — the
+                # unaligned series derived from Frames).
+                runner.place_frame(
+                    acq.mrc,
+                    dest_acq / "TiltSeries" / tilt_series_id / "stack" / acq.mrc.name,
+                )
 
         # Gain reference — placed into every acquisition's Gains/ (copied in
         # copy/move mode, linked in symlink/hardlink mode).
@@ -612,6 +773,13 @@ def main(argv: list[str] | None = None) -> None:
         help="Lab to record in sample.toml's lab_name. If omitted, the lab "
         "implied by the acquisition style is offered for interactive "
         "confirmation.",
+    )
+    ap.add_argument(
+        "--tilt-series-id",
+        default="raw",
+        help="Folder name for the initial tilt series under TiltSeries/ "
+        "(Tomo5 .mrc). Default 'raw' — the unaligned series derived from "
+        "Frames. This is also the `id` to record in the [[tilt_series]] block.",
     )
     ap.add_argument(
         "--dest",
@@ -688,6 +856,7 @@ def main(argv: list[str] | None = None) -> None:
         template_dir=args.template,
         dest_root=args.dest,
         runner=runner,
+        tilt_series_id=args.tilt_series_id,
     )
 
     print(

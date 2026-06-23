@@ -47,6 +47,7 @@ _PLACEHOLDER = "<FILL IN>"
 # catalog.discovery.iter_tomograms / iter_annotations.
 _TOMOGRAM_PARENT_DIRS = ("Reconstructions/Tomograms", "SyntheticCryoET")
 _ANNOTATION_PARENT_DIRS = ("Reconstructions/Annotations",)
+_TILT_SERIES_PARENT_DIRS = ("TiltSeries",)
 _FOLDER_SUGGEST_CUTOFF = 80
 
 
@@ -193,9 +194,6 @@ def _format_extras_location(entry: ExtrasEntry) -> str:
     if et == "tilt_series":
         # entity_pk = (sample_id, acq_id, tilt_series_id)
         return f"acquisitions.{pk[1]}.tilt_series[{pk[2]}]"
-    if et == "alignment":
-        # entity_pk = (sample_id, acq_id, alignment_id)
-        return f"acquisitions.{pk[1]}.alignment[{pk[2]}]"
     return et
 
 
@@ -268,6 +266,28 @@ def _check_id_folder_alignment(
         )
         match = process.extractOne(
             ann.annotation_id, ann_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
+        )
+        if match:
+            msg += f" (did you mean '{match[0]}'?)"
+        errors.append(msg)
+
+    ts_candidates = _candidate_folder_names(acq_dir, _TILT_SERIES_PARENT_DIRS)
+    for ts in acq_model.tilt_series:
+        # tilt_series_id may be None on partial / scanner-pending rows; only
+        # the authored folder name is cross-checked against disk.
+        if ts.tilt_series_id is None:
+            continue
+        if _has_matching_folder(
+            acq_dir, _TILT_SERIES_PARENT_DIRS, ts.tilt_series_id
+        ):
+            continue
+        msg = (
+            f"tilt_series[{ts.tilt_series_id}]: id has no matching folder under "
+            f"{_TILT_SERIES_PARENT_DIRS[0]!r}; "
+            f"the id must equal the tilt series' directory name"
+        )
+        match = process.extractOne(
+            ts.tilt_series_id, ts_candidates, score_cutoff=_FOLDER_SUGGEST_CUTOFF
         )
         if match:
             msg += f" (did you mean '{match[0]}'?)"
@@ -359,16 +379,6 @@ def _walk_extras(record: SampleRecord) -> list[ExtrasEntry]:
                     ExtrasEntry(
                         "tilt_series",
                         (sample_id, acq_id, ts.tilt_series_id),
-                        k,
-                        v,
-                    )
-                )
-        for align in acq_file.alignment:
-            for k, v in (align.model_extra or {}).items():
-                out.append(
-                    ExtrasEntry(
-                        "alignment",
-                        (sample_id, acq_id, align.alignment_id),
                         k,
                         v,
                     )

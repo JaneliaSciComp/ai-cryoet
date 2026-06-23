@@ -17,8 +17,6 @@ export type LandingFilterState = {
   microscope?: string
   pixel_size_min?: number
   pixel_size_max?: number
-  n_tilts_min?: number
-  n_tilts_max?: number
   has_tomograms?: boolean
 }
 
@@ -140,14 +138,6 @@ export function LandingFilters(props: LandingFiltersProps) {
         max={value.pixel_size_max}
         onMin={(v) => onChange({ pixel_size_min: v })}
         onMax={(v) => onChange({ pixel_size_max: v })}
-      />
-
-      <MinMaxRow
-        label="Number of tilts"
-        min={value.n_tilts_min}
-        max={value.n_tilts_max}
-        onMin={(v) => onChange({ n_tilts_min: v })}
-        onMax={(v) => onChange({ n_tilts_max: v })}
       />
 
       <FormControlLabel

@@ -164,9 +164,11 @@ export function acquisitionRepTomogramId(a: AcquisitionOut): string | null {
   return a.post_processed_tomograms[0]?.tomogram_id ?? a.raw_tomogram?.tomogram_id ?? null
 }
 
-// Route prefix is /tilt-series (api/main.py); frontend proxies under /api.
-// Returns 422 when the series has no cached tilt_angles (EER-only).
-export function tiltSeriesPolarUrl(s: string, a: string, ts: string): string {
+// Tilt geometry is an acquisition-level property (shared by all the
+// acquisition's tilt series), so the polar plot is keyed on the acquisition.
+// Route prefix is /acquisitions (api/main.py); frontend proxies under /api.
+// Returns 422 when the acquisition has no cached tilt_angles (EER-only).
+export function acquisitionPolarUrl(s: string, a: string): string {
   const enc = (x: string) => x.split('/').map(encodeURIComponent).join('/')
-  return `/api/tilt-series/${enc(s)}/${enc(a)}/${enc(ts)}/polar.png`
+  return `/api/acquisitions/${enc(s)}/${enc(a)}/polar.png`
 }
