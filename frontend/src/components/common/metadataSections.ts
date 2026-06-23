@@ -16,6 +16,24 @@ function numList(value: number[] | null | undefined): string | null {
   return value.join(', ')
 }
 
+// Per-image MDOC arrays (dose / defocus per tilt) are too long to dump into a
+// table cell, so they're surfaced as a "min–max unit" span instead.
+function numRange(
+  value: number[] | null | undefined,
+  unit?: string,
+): string | null {
+  if (!value || value.length === 0) return null
+  const lo = Math.min(...value)
+  const hi = Math.max(...value)
+  const span = lo === hi ? `${lo}` : `${lo} – ${hi}`
+  return unit ? `${span} ${unit}` : span
+}
+
+function bool(value: boolean | null | undefined): string | null {
+  if (value == null) return null
+  return value ? 'Yes' : 'No'
+}
+
 // Sections describing the sample itself (also reused on the acquisition drawer,
 // since every acquisition within a sample shares this metadata).
 export function sampleMetadataSections(
@@ -172,6 +190,8 @@ export function acquisitionMetadataSections(
       { label: 'Acquisition ID', value: acq.acquisition_id },
       { label: 'Facility', value: acq.facility },
       { label: 'Resolution', value: num(acq.resolution, 'Å') },
+      { label: 'Date collected', value: acq.date_collected },
+      { label: 'Frame count', value: num(acq.frame_count) },
     ],
   })
 
@@ -189,29 +209,65 @@ export function acquisitionMetadataSections(
             ? `${acq.acquistion_quality} / 5`
             : null,
       },
+      { label: 'Energy filter', value: acq.energy_filter },
+      {
+        label: 'Energy filter slit width',
+        value: num(acq.energy_filter_slit_width, 'eV'),
+      },
+      { label: 'Phase plate', value: bool(acq.phase_plate) },
     ],
   })
 
+  // Acquisition-level tilt geometry + dose. The MDOC describes the acquisition's
+  // tilt scheme (shared by all its tilt series), so it lives here rather than
+  // per–tilt-series. Tilt range prefers the MDOC tilt_min/tilt_max, falling back
+  // to the bounds of the full per-image angle list. Per-image arrays (dose /
+  // defocus per tilt) are shown as ranges rather than full dumps.
   const angles = acq.tilt_angles
   const hasAngles = !!angles && angles.length > 0
-  const tiltRows: MetadataRow[] = [
-    { label: 'Tilt count', value: hasAngles ? `${angles!.length}` : null },
-    {
-      label: 'Tilt range',
-      value: hasAngles
-        ? `${Math.min(...angles!)}° to ${Math.max(...angles!)}°`
-        : null,
-    },
-  ]
-  acq.tilt_series.forEach((ts) => {
-    tiltRows.push({ label: 'Tilt series ID', value: ts.tilt_series_id })
-    if (ts.is_aligned != null) {
-      tiltRows.push({ label: 'Aligned', value: ts.is_aligned ? 'Yes' : 'No' })
-    }
-    tiltRows.push({ label: 'Alignment software', value: ts.alignment_software })
-    tiltRows.push({ label: 'Alignment method', value: ts.alignment_method })
+  const tiltMin = acq.tilt_min ?? (hasAngles ? Math.min(...angles!) : null)
+  const tiltMax = acq.tilt_max ?? (hasAngles ? Math.max(...angles!) : null)
+  sections.push({
+    title: 'Tilt Geometry & Dose',
+    rows: [
+      { label: 'Tilt count', value: hasAngles ? `${angles!.length}` : null },
+      {
+        label: 'Tilt range',
+        value:
+          tiltMin != null && tiltMax != null
+            ? `${tiltMin}° to ${tiltMax}°`
+            : null,
+      },
+      { label: 'Tilt spacing', value: num(acq.tilt_spacing, '°') },
+      { label: 'Tilt axis', value: num(acq.tilt_axis, '°') },
+      { label: 'Total dose', value: num(acq.total_dose, 'e/Å²') },
+      { label: 'Dose per tilt', value: numRange(acq.dose_per_tilt, 'e/Å²') },
+      { label: 'Defocus range (target)', value: acq.defocus_range },
+      {
+        label: 'Defocus per image',
+        value: numRange(acq.defocus_per_image, 'µm'),
+      },
+    ],
   })
-  sections.push({ title: 'Tilt Series', rows: tiltRows })
+
+  // One accordion per tilt series, titled "Tilt series: {id}" (mirrors the
+  // sample drawer's per-label sections). Acquisition-level tilt geometry lives
+  // in the section above; these list each authored series' alignment provenance.
+  // When none are recorded, still show an empty "Tilt series" section so the
+  // field set stays visible.
+  const tiltSeriesList = acq.tilt_series.length > 0 ? acq.tilt_series : [null]
+  tiltSeriesList.forEach((ts) => {
+    sections.push({
+      title: ts ? `Tilt series: ${ts.tilt_series_id}` : 'Tilt series',
+      rows: [
+        { label: 'Tilt series ID', value: ts?.tilt_series_id },
+        { label: 'Derived from', value: ts?.derived_from },
+        { label: 'Aligned', value: bool(ts?.is_aligned) },
+        { label: 'Alignment software', value: ts?.alignment_software },
+        { label: 'Alignment method', value: ts?.alignment_method },
+      ],
+    })
+  })
 
   const tomoRows: MetadataRow[] = []
   const totalTomos =
