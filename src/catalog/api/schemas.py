@@ -159,13 +159,28 @@ class MdSourceOut(BaseModel):
 
 class AcquisitionOut(BaseModel):
     acquisition_id: str
+    # acquisition.toml ([acquisition]) — researcher authored
     resolution: float | None = None
+    tilt_spacing: float | None = None
+    defocus_range: str | None = None
+    energy_filter: str | None = None
+    phase_plate: bool | None = None
     microscope: str | None = None
     facility: str | None = None
     acquistion_quality: int | None = None
-    tilt_angles: list[float] | None = None
+    # MDOC / frame-extension derived
     pixel_size: float | None = None
+    dose_per_tilt: list[float] | None = None
+    total_dose: float | None = None
+    tilt_min: float | None = None
+    tilt_max: float | None = None
+    tilt_axis: float | None = None
+    tilt_angles: list[float] | None = None
+    defocus_per_image: list[float] | None = None
+    date_collected: _dt.date | None = None
     voltage: float | None = None
+    energy_filter_slit_width: float | None = None
+    frame_count: int | None = None
     camera: str | None = None
     path: str | None = None
     md_source: MdSourceOut | None = None
@@ -192,6 +207,11 @@ class SampleDetail(BaseModel):
     label: list[LabelOut] = []
     md_run: list[MdRunOut] = []
     acquisitions: list[AcquisitionOut] = []
+    # Representative cached-thumbnail relpath ({sample}/{acq}.png): the first
+    # acquisition (by id) that produced a thumbnail. Lets the detail-page hero
+    # fall back to a cached image even when no acquisition declares a tilt
+    # series (the thumbnail is rendered from raw Frames/). None if none exists.
+    thumbnail_path: str | None = None
 
 
 # ── Filters / stats / viewers ────────────────────────────────────────────

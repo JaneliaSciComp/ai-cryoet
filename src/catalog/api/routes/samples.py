@@ -308,6 +308,20 @@ def _row_to_out(row, out_cls: type):
     return out_cls(**{name: getattr(row, name, None) for name in field_names})
 
 
+# AcquisitionOut fields that are nested child entities rather than scalar
+# columns on AcquisitionORM — populated separately below, so excluded when
+# bulk-copying the acquisition's own columns.
+_ACQ_CHILD_FIELDS = frozenset(
+    {
+        "md_source",
+        "raw_tomogram",
+        "post_processed_tomograms",
+        "annotations",
+        "tilt_series",
+    }
+)
+
+
 @router.get("/{sample_id}", response_model=SampleDetail)
 def get_sample(sample_id: str, session: Session = Depends(get_session)):
     """Full sample record with typed sub-entities, acquisitions, tomograms,
@@ -406,18 +420,17 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
             orm.MdSourceORM, (sample_id, a.acquisition_id)
         )
 
+        # Copy every scalar column AcquisitionOut declares straight off the ORM
+        # row (researcher-authored + MDOC/frame-derived), then attach the nested
+        # child entities below. New scalar fields flow through automatically.
+        acq_scalars = {
+            name: getattr(a, name, None)
+            for name in AcquisitionOut.model_fields
+            if name not in _ACQ_CHILD_FIELDS
+        }
         acq_out.append(
             AcquisitionOut(
-                acquisition_id=a.acquisition_id,
-                resolution=a.resolution,
-                microscope=a.microscope,
-                facility=a.facility,
-                acquistion_quality=a.acquistion_quality,
-                tilt_angles=a.tilt_angles,
-                pixel_size=a.pixel_size,
-                voltage=a.voltage,
-                camera=a.camera,
-                path=a.path,
+                **acq_scalars,
                 md_source=_build_sub_entity(md_source_row, MdSourceOut),
                 raw_tomogram=_row_to_out(raw_row, RawTomogramOut) if raw_row else None,
                 post_processed_tomograms=[
@@ -453,4 +466,5 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
         label=labels,
         md_run=md_runs,
         acquisitions=acq_out,
+        thumbnail_path=sample.thumbnail_path,
     )
