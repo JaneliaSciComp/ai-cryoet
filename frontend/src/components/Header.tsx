@@ -13,7 +13,7 @@ const StyledCustomLink = styled(CustomLink)(
 // it a link for affordance + keyboard access.
 const BrandLink = styled(CustomLink)(
   ({ theme }) => css`
-    color: ${theme.palette.common.white};
+    color: ${theme.palette.secondary.main};
     text-decoration: none;
     font-weight: 700;
   `,
