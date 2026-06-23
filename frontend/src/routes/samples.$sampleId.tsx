@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   Box,
@@ -13,6 +14,10 @@ import type { SampleDetail } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
 import { PreviewThumbnail, tomogramThumbnailUrl, acquisitionRepTomogramId } from '~/components/common/Thumbnail'
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
+import { MetadataDrawer } from '~/components/common/MetadataDrawer'
+import { ViewAllMetadataButton } from '~/components/common/ViewAllMetadataButton'
+import { MetadataSection } from '~/components/common/MetadataSection'
+import { sampleMetadataSections } from '~/components/common/metadataSections'
 import { SampleAcquisitionsTable } from '~/components/samples/SampleAcquisitionsTable'
 import {
   sampleDetailQueryOptions,
@@ -88,6 +93,7 @@ function SampleDetailRoute() {
   const { sampleId } = Route.useParams()
   const { data: sample } = useSampleDetailQuery(sampleId)
   const { data: warnings } = useSampleWarningsQuery(sampleId)
+  const [metadataOpen, setMetadataOpen] = useState(false)
 
   const samplePath = sample.path ?? deriveSamplePath(sample)
 
@@ -105,9 +111,22 @@ function SampleDetailRoute() {
 
       {/* ── Title section ──────────────────────────────────────────── */}
       <Box>
-        <Typography variant="h5" component="h1" gutterBottom>
-          {sampleId}
-        </Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 2,
+          }}
+        >
+          <Typography variant="h5" component="h1" gutterBottom>
+            {sampleId}
+          </Typography>
+          <ViewAllMetadataButton
+            placement="title"
+            onClick={() => setMetadataOpen(true)}
+          />
+        </Box>
 
         {warnings.length > 0 ? (
           // /manage isn't built yet; plain link for now (filters to this
@@ -130,6 +149,11 @@ function SampleDetailRoute() {
             {sample.description}
           </Typography>
         ) : null}
+
+        <ViewAllMetadataButton
+          placement="below"
+          onClick={() => setMetadataOpen(true)}
+        />
       </Box>
 
       <Divider />
@@ -197,6 +221,17 @@ function SampleDetailRoute() {
           acquisitions={sample.acquisitions}
         />
       </Box>
+
+      <MetadataDrawer
+        open={metadataOpen}
+        onClose={() => setMetadataOpen(false)}
+        eyebrow="Sample details"
+        title={sampleId}
+      >
+        {sampleMetadataSections(sample).map((section) => (
+          <MetadataSection key={section.title} {...section} />
+        ))}
+      </MetadataDrawer>
     </Stack>
   )
 }
