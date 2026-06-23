@@ -156,8 +156,8 @@ name of the folder under `TiltSeries/`. These rows are **researcher-authored**
 as `[[tilt_series]]` blocks in `acquisition.toml` (one block per `TiltSeries/{tilt_series_id}/`
 folder — there is no per-folder `tiltseries.toml`); the catalog scanner enriches
 each authored row with filesystem-derived paths and timestamps. **Multiple tilt
-series per acquisition are expected** — e.g. one raw/unaligned series plus one
-aligned series derived from it.
+series per acquisition are expected** — a raw/unaligned series (not required), an
+aligned series derived from either the frames or the raw tilt series, another alignment derived from the first alignment, etc.
 
 Each `TiltSeries/{tilt_series_id}/` folder holds a `stack/` subdirectory (the
 `.mrc` projection stack, plus optional `.zarr` / `.rawtlt`; may be empty) and an
