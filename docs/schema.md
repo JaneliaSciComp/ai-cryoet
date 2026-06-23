@@ -132,7 +132,7 @@ One row per imaging position. Primary key: `(sample_id, acquisition_id)`.
 | `phase_plate` | boolean | `acquisition.toml` (`[acquisition]`) | researcher authored | |
 | `microscope` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Model name. |
 | `facility` | text | `acquisition.toml` (`[acquisition]`) | researcher authored | Imaging facility, e.g. `Janelia`. |
-| `raw_tilt_series_quality` | integer | `acquisition.toml` (`[acquisition]`) | researcher authored | 1–5 rubric, the author's estimate of the RAW tilt series (alignability + projection-image survival): **5** Excellent (reconstructions could be publication-ready), **4** Good (useful for analysis — subtomogram avg, segmentation), **3** Medium (minor projection images discarded before reconstruction), **2** Marginal (major projection images discarded; usable only after heavy manual work), **1** Low (not alignable / not useful for analysis). |
+| `acquistion_quality` | integer | `acquisition.toml` (`[acquisition]`) | researcher authored | 1–5 rubric, the author's estimate of the acquistion quality (alignability + projection-image survival): **5** Excellent (reconstructions could be publication-ready), **4** Good (useful for analysis — subtomogram avg, segmentation), **3** Medium (minor projection images discarded before reconstruction), **2** Marginal (major projection images discarded; usable only after heavy manual work), **1** Low (not alignable / not useful for analysis). |
 | `pixel_size` | float | `MDOC` | derived | Angstrom. |
 | `dose_per_tilt` | list[float] | `MDOC` | derived | e/Å² per tilt. |
 | `total_dose` | float | `MDOC` (summed) | derived | e/Å². |

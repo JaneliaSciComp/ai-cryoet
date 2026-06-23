@@ -162,7 +162,7 @@ class AcquisitionOut(BaseModel):
     resolution: float | None = None
     microscope: str | None = None
     facility: str | None = None
-    raw_tilt_series_quality: int | None = None
+    acquistion_quality: int | None = None
     tilt_angles: list[float] | None = None
     pixel_size: float | None = None
     voltage: float | None = None

@@ -136,13 +136,13 @@ class DatasetType(str, Enum):
     slab = "slab"
 
 
-# Raw tilt-series quality: a constrained 1-5 integer (5 Excellent … 1 Low).
-# Characterizes the RAW tilt series of an acquisition (alignability +
+# Acquistion quality: a constrained 1-5 integer (5 Excellent … 1 Low).
+# Characterizes the quality an acquisition (alignability +
 # projection-image survival). The 5->1 rubric is documentation-only (template
 # comment + docs/schema.md); the schema enforces only the integer range. A
 # constrained int (not an IntEnum) so the ORM maps it to Integer (see
 # tests/catalog/test_orm_drift.py).
-TiltQuality = Annotated[int, Field(ge=1, le=5)]
+AcquistionQuality = Annotated[int, Field(ge=1, le=5)]
 
 
 class Sample(_Base):
@@ -249,9 +249,7 @@ class Acquisition(_Base):
     phase_plate: bool | None = None
     microscope: str | None = None
     facility: str | None = None              # imaging facility, e.g. "Janelia"
-    # 1-5 author estimate of the RAW tilt series (alignability + projection-
-    # image survival): 5 Excellent, 4 Good, 3 Medium, 2 Marginal, 1 Low.
-    raw_tilt_series_quality: TiltQuality | None = None
+    acquistion_quality: AcquistionQuality | None = None
     # MDOC
     pixel_size: float | None = None          # angstrom
     dose_per_tilt: list[float] | None = None # e/Å² per tilt

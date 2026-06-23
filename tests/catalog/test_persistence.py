@@ -408,13 +408,13 @@ def test_md_run_and_md_source_round_trip(session):
 
 
 def test_upsert_acquisition_facility_and_tilt_quality(session):
-    """New Acquisition columns ``facility`` and ``raw_tilt_series_quality``
+    """New Acquisition columns ``facility`` and ``acquistion_quality``
     flow through to the DB; the removed ``quality`` column is simply absent."""
     acq_file = AcquisitionFile(
         acquisition=Acquisition(
             acquisition_id="acq1",
             facility="Janelia",
-            raw_tilt_series_quality=4,
+            acquistion_quality=4,
         ),
     )
     r = SampleRecord(
@@ -433,7 +433,7 @@ def test_upsert_acquisition_facility_and_tilt_quality(session):
     row = session.get(orm.AcquisitionORM, ("s1", "acq1"))
     assert row is not None
     assert row.facility == "Janelia"
-    assert row.raw_tilt_series_quality == 4
+    assert row.acquistion_quality == 4
     # The dropped ``quality`` column no longer exists on the ORM.
     assert not hasattr(row, "quality")
 

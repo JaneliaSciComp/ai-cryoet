@@ -144,7 +144,7 @@ export type AcquisitionOut = {
   resolution: number | null
   microscope: string | null
   facility: string | null
-  raw_tilt_series_quality: number | null
+  acquistion_quality: number | null
   tilt_angles: number[] | null
   pixel_size: number | null
   voltage: number | null

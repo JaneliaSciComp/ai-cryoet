@@ -35,8 +35,8 @@
           "title": "Facility",
           "type": "string"
         },
-        "raw_tilt_series_quality": {
-          "title": "Raw Tilt Series Quality",
+        "acquistion_quality": {
+          "title": "Acquistion Quality",
           "maximum": 5,
           "minimum": 1,
           "type": "integer"
