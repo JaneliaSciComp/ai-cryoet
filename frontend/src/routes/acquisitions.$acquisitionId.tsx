@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import {
   Box,
@@ -13,6 +14,13 @@ import type { AcquisitionOut, WarningOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
 import { PreviewThumbnail, ThumbnailPlaceholder, acquisitionPolarUrl } from '~/components/common/Thumbnail'
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
+import { MetadataDrawer } from '~/components/common/MetadataDrawer'
+import { ViewAllMetadataButton } from '~/components/common/ViewAllMetadataButton'
+import { MetadataSection } from '~/components/common/MetadataSection'
+import {
+  acquisitionMetadataSections,
+  sampleMetadataSections,
+} from '~/components/common/metadataSections'
 import { TomogramsAnnotationsTable } from '~/components/acquisitions/TomogramsAnnotationsTable'
 import {
   sampleDetailQueryOptions,
@@ -62,6 +70,7 @@ function AcquisitionDetailRoute() {
   const { sampleId } = Route.useSearch()
   const { data: sample } = useSampleDetailQuery(sampleId)
   const { data: warnings } = useSampleWarningsQuery(sampleId)
+  const [metadataOpen, setMetadataOpen] = useState(false)
 
   // Guaranteed present — the loader throws notFound otherwise.
   const acquisition = sample.acquisitions.find(
@@ -91,9 +100,22 @@ function AcquisitionDetailRoute() {
 
       {/* ── Title section ──────────────────────────────────────────── */}
       <Box>
-        <Typography variant="h5" component="h1" gutterBottom>
-          {acquisitionId}
-        </Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 2,
+          }}
+        >
+          <Typography variant="h5" component="h1" gutterBottom>
+            {acquisitionId}
+          </Typography>
+          <ViewAllMetadataButton
+            placement="title"
+            onClick={() => setMetadataOpen(true)}
+          />
+        </Box>
 
         {acqWarnings.length > 0 ? (
           // /manage isn't built yet; plain link for now (filters to this
@@ -108,6 +130,11 @@ function AcquisitionDetailRoute() {
             *There are warnings for this acquisition's metadata. Click to view
           </Link>
         ) : null}
+
+        <ViewAllMetadataButton
+          placement="below"
+          onClick={() => setMetadataOpen(true)}
+        />
       </Box>
 
       <Divider />
@@ -171,6 +198,29 @@ function AcquisitionDetailRoute() {
           acquisition={acquisition}
         />
       </Box>
+
+      <MetadataDrawer
+        open={metadataOpen}
+        onClose={() => setMetadataOpen(false)}
+        eyebrow="Acquisition details"
+        title={acquisitionId}
+        tabs={[
+          // Acquisition tab is focused first; the Sample tab mirrors the
+          // drawer shown on this acquisition's sample page.
+          {
+            label: 'Acquisition',
+            content: acquisitionMetadataSections(acquisition).map((section) => (
+              <MetadataSection key={section.title} {...section} />
+            )),
+          },
+          {
+            label: 'Sample',
+            content: sampleMetadataSections(sample).map((section) => (
+              <MetadataSection key={section.title} {...section} />
+            )),
+          },
+        ]}
+      />
     </Stack>
   )
 }

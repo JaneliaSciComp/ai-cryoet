@@ -52,12 +52,12 @@ export function FileglancerPathSection(props: FileglancerPathSectionProps) {
       {metadataLink ? (
         <Box>
           <Button
-            variant="contained"
+            variant="outlined"
             href={metadataLink}
             target="_blank"
             rel="noopener noreferrer"
           >
-            View metadata in Fileglancer
+            View metadata file in Fileglancer
           </Button>
         </Box>
       ) : null}
