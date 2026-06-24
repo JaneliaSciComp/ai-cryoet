@@ -55,6 +55,21 @@ def _center_xy_slice(mrc_path: Path) -> np.ndarray:
     return np.asarray(slice_2d, dtype=np.float32)
 
 
+def read_mrc_middle_slice(mrc_path: Path | str) -> np.ndarray:
+    """Return the middle slice along axis 0 of an MRC stack as a 2D float32 array.
+
+    Memory-maps the file and materializes only that one plane, so peak memory is
+    a single 2D image rather than the whole (often multi-GB) stack that
+    ``read_mrc_volume`` reads-and-copies. For ``.st``/``.mrc`` tilt stacks axis 0
+    is the tilt index, so this is the median-tilt projection — all the thumbnail
+    / preview renderers need.
+    """
+    with mrcfile.mmap(str(mrc_path), mode="r", permissive=True) as mrc:
+        median_idx = mrc.data.shape[0] // 2
+        # np.array (not asarray) forces a copy so the result outlives the mmap.
+        return np.array(mrc.data[median_idx], dtype=np.float32)
+
+
 def _array_to_png_bytes(
     arr: np.ndarray,
     *,

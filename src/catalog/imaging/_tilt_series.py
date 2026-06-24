@@ -41,13 +41,11 @@ def render_zarr_median_png(zarr_path: str, *, width: int = TILT_PREVIEW_WIDTH) -
 
 def render_st_median_png(st_path: str, *, width: int = TILT_PREVIEW_WIDTH) -> bytes:
     """Render the middle projection of an ``.st``/``.mrc`` tilt stack to PNG."""
-    import numpy as np
+    from catalog.imaging._mrc import _array_to_png_bytes, read_mrc_middle_slice
 
-    from catalog.imaging._mrc import _array_to_png_bytes, read_mrc_volume
-
-    vol, _spacing, _axes = read_mrc_volume(st_path)
-    median_idx = vol.shape[0] // 2
-    img = np.array(vol[median_idx], dtype=np.float32)
+    # Memmap + slice: never materializes the full (multi-GB) stack, only the
+    # one median-tilt plane we render. See read_mrc_middle_slice.
+    img = read_mrc_middle_slice(st_path)
     return _array_to_png_bytes(img, percentile=(5, 95), width=width)
 
 
