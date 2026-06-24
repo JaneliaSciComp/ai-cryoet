@@ -263,7 +263,7 @@ function AcquisitionDetailRoute() {
           )
         })()}
         details={
-          <Stack spacing={3}>
+          <FileglancerPathSection path={acquisition.path}>
             <AcquisitionSummary
               acquisition={acquisition}
               tiltSeriesPlot={(() => {
@@ -285,8 +285,7 @@ function AcquisitionDetailRoute() {
                 )
               })()}
             />
-            <FileglancerPathSection path={acquisition.path} />
-          </Stack>
+          </FileglancerPathSection>
         }
       />
 
