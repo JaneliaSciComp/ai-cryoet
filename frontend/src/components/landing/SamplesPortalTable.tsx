@@ -6,7 +6,11 @@ import {
 } from 'material-react-table'
 import type { SampleSummary } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
-import { PreviewThumbnail, thumbnailUrl } from '~/components/common/Thumbnail'
+import {
+  PreviewThumbnail,
+  thumbnailUrl,
+  mdPreviewBySampleUrl,
+} from '~/components/common/Thumbnail'
 import { AcquisitionsSubTable } from './AcquisitionsSubTable'
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
@@ -25,10 +29,20 @@ export function SamplesPortalTable(props: {
         columnDefType: 'display',
         size: 80,
         Cell: ({ row }) => {
-          const alt = `Middle tilt-series image for ${row.original.sample_id}`
+          const s = row.original
+          // Simulation rows show the trajectory-level OVITO preview (the
+          // sample-level image, matching the sample-detail hero); experimental
+          // rows show the cached tilt-series thumbnail.
+          const showMd = s.data_source === 'simulation'
+          const src = showMd
+            ? mdPreviewBySampleUrl(s.sample_id, s.path)
+            : thumbnailUrl(s.thumbnail_path)
+          const alt = showMd
+            ? `OVITO preview for ${s.sample_id}`
+            : `Middle tilt-series image for ${s.sample_id}`
           return (
             <PreviewThumbnail
-              src={thumbnailUrl(row.original.thumbnail_path)}
+              src={src}
               alt={alt}
               tooltipTitle={alt}
               clickable

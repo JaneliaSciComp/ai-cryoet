@@ -138,30 +138,38 @@ function SampleDetailRoute() {
             (a) => acquisitionRepTiltSeriesId(a) !== null,
           )
           const tsId = firstWithTs ? acquisitionRepTiltSeriesId(firstWithTs) : null
-          // MD simulation samples have no tilt series; show the cached OVITO
-          // preview from the portal cache instead (resolved by sample prefix).
+          // Simulation samples show the trajectory-level OVITO preview from the
+          // portal cache (resolved by sample prefix) at the sample hero — the
+          // per-acquisition tilt-series slice belongs on the acquisition page.
+          // Now that synthetic acquisitions carry real tilt series, this keeps
+          // the two levels visually distinct.
           const mdPreview =
             sample.data_source === 'simulation'
               ? mdPreviewBySampleUrl(sample.sample_id, sample.path)
               : null
-          // Prefer the acquisition with a tilt series: its cached 512px
-          // thumbnail displays, and the sharper on-demand render is fetched
-          // only when the lightbox opens. When no acquisition declares a
-          // tilt series we still show the sample's representative cached
-          // thumbnail (rendered from raw Frames/); the lightbox then just
-          // enlarges that thumbnail, since the sharper render needs a
-          // tilt_series_id. Simulation samples fall back to the MD preview.
+          // Simulation → OVITO preview. Otherwise prefer the acquisition with a
+          // tilt series: its cached 512px thumbnail displays, and the sharper
+          // on-demand render is fetched only when the lightbox opens. When no
+          // acquisition declares a tilt series we still show the sample's
+          // representative cached thumbnail (rendered from raw Frames/); the
+          // lightbox then just enlarges that thumbnail, since the sharper render
+          // needs a tilt_series_id.
+          const showMd = mdPreview !== null
           const src =
-            firstWithTs
-              ? acquisitionThumbnailUrl(
-                  sample.sample_id,
-                  firstWithTs.acquisition_id,
-                )
-              : (thumbnailUrl(sample.thumbnail_path) ?? mdPreview)
-          const lightboxSrc = firstWithTs && tsId
+            showMd
+              ? mdPreview
+              : firstWithTs
+                ? acquisitionThumbnailUrl(
+                    sample.sample_id,
+                    firstWithTs.acquisition_id,
+                  )
+                : thumbnailUrl(sample.thumbnail_path)
+          // The sharper on-demand render only applies to the tilt-series
+          // thumbnail; the OVITO preview just enlarges itself in the lightbox.
+          const lightboxSrc = !showMd && firstWithTs && tsId
             ? tiltSeriesPreviewUrl(sample.sample_id, firstWithTs.acquisition_id, tsId)
             : null
-          const caption = mdPreview && !firstWithTs
+          const caption = showMd
             ? 'OVITO preview of the MD simulation'
             : 'Middle image of the representative tilt series'
           return (
@@ -170,7 +178,7 @@ function SampleDetailRoute() {
                 src={src}
                 lightboxSrc={lightboxSrc}
                 alt={
-                  mdPreview && !firstWithTs
+                  showMd
                     ? `OVITO preview for ${sample.sample_id}`
                     : `Middle tilt-series image for ${sample.sample_id}`
                 }
