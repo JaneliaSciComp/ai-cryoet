@@ -153,15 +153,13 @@ export function sampleMetadataSections(
       rows: [{ label: 'Dataset type', value: sample.simulation?.dataset_type }],
     })
 
-    // One section per MD run; when none are recorded, still show an empty
-    // "MD Run" section so the field set is visible.
+    // One section (table) per MD run; when none are recorded, still show an
+    // empty "MD run" section so the field set is visible.
     const runs = sample.md_run.length > 0 ? sample.md_run : [null]
     runs.forEach((r) => {
       sections.push({
-        title:
-          runs.length > 1 && r ? `MD Run — ${r.md_run_id}` : 'MD Run',
+        title: r ? `MD run: ${r.md_run_id}` : 'MD run',
         rows: [
-          { label: 'Run ID', value: r?.md_run_id },
           { label: 'Seed', value: num(r?.seed) },
           { label: 'Computer', value: r?.computer },
           { label: 'Sample time', value: num(r?.sample_time) },

@@ -49,6 +49,12 @@ CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails pixi r
 ```
 Serves `http://localhost:8000`. Swagger UI at `/docs`.
 
+To serve cached OVITO/MD preview images for simulation samples (rendered upstream by [aicryoet-tools](https://github.com/schneidermc/aicryoet-tools) into a `.portal_cache` directory), set `CATALOG_MD_PREVIEW_DIR` to that directory. It is **optional** — if unset it defaults to `/groups/cryoet/cryoet/data/collepardolab/.portal_cache`, and if the directory is missing the `/api/md-previews` route is simply disabled (it does not block API startup, unlike `CATALOG_THUMBNAIL_DIR`).
+```
+CATALOG_DATA_ROOT=/path/to/data CATALOG_THUMBNAIL_DIR=/path/to/thumbnails \
+  CATALOG_MD_PREVIEW_DIR=/path/to/.portal_cache pixi run api
+```
+
 > **No hot-reload.** The API runs with `--no-reload` (single worker). Neuroglancer's in-process HTTP server is incompatible with uvicorn's `--reload` mode, which tries to bind a second HTTP server on the same port.
 
 **Terminal 2 — Frontend:**

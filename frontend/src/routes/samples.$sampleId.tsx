@@ -9,6 +9,7 @@ import {
   thumbnailUrl,
   tiltSeriesPreviewUrl,
   acquisitionRepTiltSeriesId,
+  mdPreviewBySampleUrl,
 } from '~/components/common/Thumbnail'
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
 import { DetailHero } from '~/components/common/DetailHero'
@@ -137,29 +138,42 @@ function SampleDetailRoute() {
             (a) => acquisitionRepTiltSeriesId(a) !== null,
           )
           const tsId = firstWithTs ? acquisitionRepTiltSeriesId(firstWithTs) : null
+          // MD simulation samples have no tilt series; show the cached OVITO
+          // preview from the portal cache instead (resolved by sample prefix).
+          const mdPreview =
+            sample.data_source === 'simulation'
+              ? mdPreviewBySampleUrl(sample.sample_id, sample.path)
+              : null
           // Prefer the acquisition with a tilt series: its cached 512px
           // thumbnail displays, and the sharper on-demand render is fetched
           // only when the lightbox opens. When no acquisition declares a
           // tilt series we still show the sample's representative cached
           // thumbnail (rendered from raw Frames/); the lightbox then just
           // enlarges that thumbnail, since the sharper render needs a
-          // tilt_series_id.
+          // tilt_series_id. Simulation samples fall back to the MD preview.
           const src =
             firstWithTs
               ? acquisitionThumbnailUrl(
                   sample.sample_id,
                   firstWithTs.acquisition_id,
                 )
-              : thumbnailUrl(sample.thumbnail_path)
+              : (thumbnailUrl(sample.thumbnail_path) ?? mdPreview)
           const lightboxSrc = firstWithTs && tsId
             ? tiltSeriesPreviewUrl(sample.sample_id, firstWithTs.acquisition_id, tsId)
             : null
+          const caption = mdPreview && !firstWithTs
+            ? 'OVITO preview of the MD simulation'
+            : 'Middle image of the representative tilt series'
           return (
             <Box>
               <PreviewThumbnail
                 src={src}
                 lightboxSrc={lightboxSrc}
-                alt={`Middle tilt-series image for ${sample.sample_id}`}
+                alt={
+                  mdPreview && !firstWithTs
+                    ? `OVITO preview for ${sample.sample_id}`
+                    : `Middle tilt-series image for ${sample.sample_id}`
+                }
                 width="100%"
                 aspectRatio={1}
                 objectFit="contain"
@@ -167,7 +181,7 @@ function SampleDetailRoute() {
                 clickable
               />
               <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
-                Middle image of the representative tilt series
+                {caption}
               </Typography>
             </Box>
           )
