@@ -233,6 +233,29 @@ export function thumbnailUrl(relpath?: string | null): string | null {
     : null
 }
 
+// Cached OVITO/MD preview PNG served from the aicryoet-tools .portal_cache.
+// Pass the full cached filename, e.g. "Bulk_25_dna_wrap_preview.png". For now
+// this only serves the cache; generation/scanning lands later.
+export function mdPreviewUrl(filename: string): string {
+  return `/api/md-previews/${enc(filename)}`
+}
+
+// Resolve an MD preview from a simulation sample without knowing the exact
+// cached filename. The portal-cache name starts with {data_type}_{sampleId}
+// (e.g. "Slab_12mer_25_0.073") — data_type is the parent dir of the sample
+// path (".../MdSimulation/Slab/12mer_25_0.073" → "Slab"). The backend globs
+// the unpredictable suffix. Returns null if the path can't yield a prefix.
+export function mdPreviewBySampleUrl(
+  sampleId: string,
+  path?: string | null,
+): string | null {
+  if (!path) return null
+  const segs = path.split('/').filter(Boolean)
+  const dataType = segs[segs.length - 2]
+  if (!dataType) return null
+  return `/api/md-previews/by-prefix/${encodeURIComponent(`${dataType}_${sampleId}`)}`
+}
+
 // On-demand median/middle tilt-series image (rendered fresh at higher
 // resolution from the zarr/.st/Frames stack). Used on the acquisition-detail
 // hero, where the click-to-enlarge lightbox benefits from the sharper render.
