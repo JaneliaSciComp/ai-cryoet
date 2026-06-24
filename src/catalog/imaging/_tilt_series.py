@@ -46,17 +46,22 @@ def render_st_median_png(st_path: str, *, width: int = TILT_PREVIEW_WIDTH) -> by
     # Memmap + slice: never materializes the full (multi-GB) stack, only the
     # one median-tilt plane we render. See read_mrc_middle_slice.
     img = read_mrc_middle_slice(st_path)
-    return _array_to_png_bytes(img, percentile=(5, 95), width=width)
+    return _array_to_png_bytes(img, percentile=(2, 98), width=width)
 
 
 def render_frames_median_png(frames_dir: str, *, width: int = TILT_PREVIEW_WIDTH) -> bytes:
     """Find the median-angle TIFF/MRC tilt in ``frames_dir`` and render it."""
     import numpy as np
 
+    from loguru import logger
+
     from catalog.imaging._mrc import _array_to_png_bytes
     from catalog.imaging._tilt_image import (
+        apply_gain_correction,
         find_eer_tilt_images,
+        find_gain_reference,
         find_viewable_tilt_images,
+        load_gain_reference,
         load_tilt_image,
     )
 
@@ -69,8 +74,29 @@ def render_frames_median_png(frames_dir: str, *, width: int = TILT_PREVIEW_WIDTH
     angles = [a for a, _ in tilt_images]
     median_angle = float(np.median(angles))
     _, center_path = min(tilt_images, key=lambda x: abs(x[0] - median_angle))
-    img = load_tilt_image(center_path, gain=None, preview=True)
-    return _array_to_png_bytes(img.astype(np.float32), percentile=(5, 95), width=width)
+
+    img = load_tilt_image(center_path, gain=None, preview=True).astype(np.float32)
+
+    # EER frames are raw detector frames, so gain-correct them with the
+    # acquisition's sibling Gains/ reference. .st/.mrc/zarr stacks are already
+    # corrected upstream and TIFF/MRC frames are left as-is. The preview is
+    # cosmetic, so a missing/unreadable/shape-mismatched gain (e.g. an 8K/16K
+    # reference against the 4K EER render) must never 500 the endpoint — on any
+    # failure we log and fall back to the uncorrected image rather than raising.
+    if center_path.suffix.lower() == ".eer":
+        try:
+            gain_path = find_gain_reference(Path(frames_dir))
+            if gain_path is not None:
+                gain = load_gain_reference(gain_path)
+                img = apply_gain_correction(img, gain).astype(np.float32)
+        except Exception as exc:  # noqa: BLE001 — cosmetic preview, degrade gracefully
+            logger.warning(
+                "EER gain correction failed for {}; rendering preview without gain: {}",
+                center_path,
+                exc,
+            )
+
+    return _array_to_png_bytes(img, percentile=(2, 98), width=width)
 
 
 def render_tilt_series_median_png(
