@@ -54,12 +54,22 @@ def get_eer_superres_level(eer_path: Path) -> int:
 
 
 def render_eer(eer_path: Path, superres: int | None = None) -> np.ndarray:
-    """Render an EER as a summed 2D image, auto-detecting super-resolution."""
+    """Render an EER as a summed 2D image, auto-detecting super-resolution.
+
+    Sums the dose-fractionation frames one at a time into a single 2D
+    accumulator rather than materializing the whole ``(n_frames, H, W)`` stack
+    via ``asarray()``. An EER routinely holds 500+ frames at 8K, so the full
+    stack is tens of GB (OOM); the incremental sum peaks at one frame plus the
+    accumulator (a few hundred MB) and yields a bit-identical result.
+    """
     if superres is None:
         superres = get_eer_superres_level(eer_path)
     with tifffile.TiffFile(eer_path, superres=superres) as tiff:
-        frames = tiff.asarray()
-    return frames.sum(axis=0, dtype=np.uint32)
+        series = tiff.series[0]
+        acc = np.zeros(series.shape[1:], dtype=np.uint32)
+        for page in series.pages:
+            acc += page.asarray()
+    return acc
 
 
 def load_gain_reference(gain_path: Path) -> np.ndarray:
@@ -102,7 +112,11 @@ def load_tilt_image(
     suffix = path.suffix.lower()
     match suffix:
         case ".eer":
-            image = render_eer(path)
+            # Previews/thumbnails don't need super-resolution: force the 4K
+            # (superres=0) render, a quarter the pixels of the auto-detected
+            # 8K/16K levels, so the downstream percentile + matplotlib pass
+            # stays well within the scanner's memory limit.
+            image = render_eer(path, superres=0 if preview else None)
         case ".tif" | ".tiff":
             if preview:
                 image = tifffile.imread(path, key=0)
