@@ -197,7 +197,10 @@ function AcquisitionDetailRoute() {
         <CustomLink to="/" color="inherit">
           Home
         </CustomLink>
-        <CustomLink to="/experimental" color="inherit">
+        <CustomLink
+          to={sample.data_source === 'simulation' ? '/md-simulation' : '/experimental'}
+          color="inherit"
+        >
           Browse
         </CustomLink>
         <CustomLink
