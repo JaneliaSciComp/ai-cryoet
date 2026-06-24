@@ -5,9 +5,15 @@ import type { ViewerLaunchOut } from '../../types'
 import { apiFetch } from '../../utils/api'
 
 export type NeuroglancerSource =
-  | { kind: 'launch'; entity: 'tomogram' | 'tilt-series'; sampleId: string; acquisitionId: string; entityId: string }
+  | { kind: 'launch'; entity: 'tomogram' | 'tilt-series' | 'annotation'; sampleId: string; acquisitionId: string; entityId: string }
   | { kind: 'zarr-link'; url: string }
   | null
+
+const LAUNCH_SEGMENT: Record<Extract<NeuroglancerSource, { kind: 'launch' }>['entity'], string> = {
+  tomogram: 'tomograms',
+  'tilt-series': 'tilt-series',
+  annotation: 'annotations',
+}
 
 interface NeuroglancerButtonProps {
   source: NeuroglancerSource
@@ -15,7 +21,7 @@ interface NeuroglancerButtonProps {
 }
 
 function launchNeuroglancer(source: Extract<NeuroglancerSource, { kind: 'launch' }>): Promise<ViewerLaunchOut> {
-  const segment = source.entity === 'tomogram' ? 'tomograms' : 'tilt-series'
+  const segment = LAUNCH_SEGMENT[source.entity]
   return apiFetch<ViewerLaunchOut>(
     `/${segment}/${source.sampleId}/${source.acquisitionId}/${source.entityId}/neuroglancer`,
     { method: 'POST' },
