@@ -27,6 +27,11 @@ from catalog.api.deps import get_session
 from catalog.api.path_validation import validate_under_data_root
 from catalog.api.routes.tomograms import launch_viewer_in_registry
 from catalog.api.schemas import ViewerLaunchOut
+from catalog.imaging._tilt_series import (
+    render_frames_median_png,
+    render_st_median_png,
+    render_zarr_median_png,
+)
 
 router = APIRouter()
 
@@ -62,63 +67,6 @@ def _resolve_acq_frames_dir(
     return resolved if resolved.is_dir() else None
 
 
-# ── Render helpers ──────────────────────────────────────────────────────────
-
-
-def _render_zarr_median_png(zarr_path: str) -> bytes:
-    """Read median-tilt from a zarr store and render to PNG bytes."""
-    import numpy as np
-    import zarr
-
-    from catalog.imaging._mrc import _array_to_png_bytes
-
-    root = zarr.open_group(zarr_path, mode="r")
-    ds = root["tilt_series"]
-    tilt_angles = list(root.attrs.get("tilt_angles", []))
-    if tilt_angles:
-        median_angle = float(np.median(tilt_angles))
-        median_idx = min(
-            range(len(tilt_angles)),
-            key=lambda i: abs(tilt_angles[i] - median_angle),
-        )
-    else:
-        median_idx = ds.shape[0] // 2
-    img = np.array(ds[median_idx], dtype=np.float32)
-    return _array_to_png_bytes(img, percentile=(5, 95), width=800)
-
-
-def _render_st_median_png(st_path: str) -> bytes:
-    """Render the median projection of an ``.st``/``.mrc`` tilt stack to PNG."""
-    import numpy as np
-
-    from catalog.imaging._mrc import _array_to_png_bytes, read_mrc_volume
-
-    vol, _spacing, _axes = read_mrc_volume(st_path)
-    median_idx = vol.shape[0] // 2
-    img = np.array(vol[median_idx], dtype=np.float32)
-    return _array_to_png_bytes(img, percentile=(5, 95), width=800)
-
-
-def _render_frames_median_png(frames_dir: str) -> bytes:
-    """Find the median-angle TIFF/MRC tilt in ``frames_dir`` and render it."""
-    import numpy as np
-
-    from catalog.imaging._mrc import _array_to_png_bytes
-    from catalog.imaging._tilt_image import (
-        find_viewable_tilt_images,
-        load_tilt_image,
-    )
-
-    tilt_images = find_viewable_tilt_images(Path(frames_dir))
-    if not tilt_images:
-        raise FileNotFoundError("no viewable tilt images")
-    angles = [a for a, _ in tilt_images]
-    median_angle = float(np.median(angles))
-    _, center_path = min(tilt_images, key=lambda x: abs(x[0] - median_angle))
-    img = load_tilt_image(center_path, gain=None, preview=True)
-    return _array_to_png_bytes(img.astype(np.float32), percentile=(5, 95), width=800)
-
-
 # ── Preview ───────────────────────────────────────────────────────────────
 
 
@@ -141,12 +89,12 @@ async def tilt_series_preview(
         resolved = validate_under_data_root(request, row.zarr_path)
         if not resolved.exists():
             raise HTTPException(status_code=422, detail="zarr path missing on disk")
-        png_bytes = await run_in_threadpool(_render_zarr_median_png, str(resolved))
+        png_bytes = await run_in_threadpool(render_zarr_median_png, str(resolved))
     elif row.st_path:
         resolved = validate_under_data_root(request, row.st_path)
         if not resolved.exists():
             raise HTTPException(status_code=422, detail="stack path missing on disk")
-        png_bytes = await run_in_threadpool(_render_st_median_png, str(resolved))
+        png_bytes = await run_in_threadpool(render_st_median_png, str(resolved))
     else:
         frames_dir = _resolve_acq_frames_dir(
             session, request, sample_id, acquisition_id
@@ -158,7 +106,7 @@ async def tilt_series_preview(
             )
         try:
             png_bytes = await run_in_threadpool(
-                _render_frames_median_png, str(frames_dir)
+                render_frames_median_png, str(frames_dir)
             )
         except FileNotFoundError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e

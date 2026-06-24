@@ -19,7 +19,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
 
-POLAR_RENDER_VERSION = 1
+POLAR_RENDER_VERSION = 3
 
 
 def render_polar_png(angles: list[float]) -> bytes:
@@ -57,8 +57,8 @@ def render_polar_png(angles: list[float]) -> bytes:
     ax.set_xticklabels(tick_labels, fontsize=7)
     ax.set_ylim(0, 1.05)
     ax.set_yticks([])
-    ax.set_title(f"Tilt Angles ({n} images)", fontsize=10, pad=10)
 
+    # Colorbar legend maps line color → acquisition order (image #).
     sm = cm.ScalarMappable(cmap=cmap, norm=Normalize(1, n))
     cbar = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.08, aspect=15)
     cbar.set_label("Image #", fontsize=8)

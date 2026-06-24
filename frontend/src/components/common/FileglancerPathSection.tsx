@@ -1,30 +1,24 @@
 import type { ReactNode } from 'react'
-import { Box, Button, Stack, Typography } from '@mui/material'
-import LinkIcon from '@mui/icons-material/Link'
+import { IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { CopyIconButton } from '~/components/common/CopyIconButton'
 import { toFileglancerUrl } from '~/utils/fileglancer'
 
 interface FileglancerPathSectionProps {
   // Absolute on-disk path of the entity's directory (sample or acquisition).
   path: string | null
-  // Metadata file that lives in that directory — `sample.toml` for samples,
-  // `acquisition.toml` for acquisitions. Linked by the "View metadata" button.
-  metadataFilename: string
-  // Optional content rendered between the path row and the metadata button
-  // (e.g. the sample-contents card on the sample-detail view).
+  // Optional content rendered below the path row (e.g. the summary card on the
+  // detail views).
   children?: ReactNode
 }
 
-// Shared path display used by the sample- and acquisition-detail views: a
-// monospace path with copy-link / copy-path buttons, optional inset content,
-// and a button-styled link that opens the entity's metadata in Fileglancer.
+// Shared path display used by the sample- and acquisition-detail views: the
+// on-disk path with a copy-path button, a link out to Fileglancer, and
+// optional inset content.
 export function FileglancerPathSection(props: FileglancerPathSectionProps) {
-  const { path, metadataFilename, children } = props
+  const { path, children } = props
 
   const fileglancerLink = path ? toFileglancerUrl(path) : null
-  const metadataLink = path
-    ? toFileglancerUrl(`${path}/${metadataFilename}`)
-    : null
 
   return (
     <Stack spacing={2}>
@@ -32,35 +26,33 @@ export function FileglancerPathSection(props: FileglancerPathSectionProps) {
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Typography
             variant="body2"
-            sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '0.8125rem',
+              wordBreak: 'break-all',
+            }}
           >
             {path}
           </Typography>
-          {fileglancerLink ? (
-            <CopyIconButton
-              text={fileglancerLink}
-              tooltip="Copy Fileglancer link"
-              icon={<LinkIcon fontSize="small" />}
-            />
-          ) : null}
           <CopyIconButton text={path} tooltip="Copy path" />
+          {fileglancerLink ? (
+            <Tooltip title="View data in Fileglancer">
+              <IconButton
+                aria-label="View data in Fileglancer"
+                size="small"
+                component="a"
+                href={fileglancerLink}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <OpenInNewIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null}
         </Stack>
       ) : null}
 
       {children}
-
-      {metadataLink ? (
-        <Box>
-          <Button
-            variant="outlined"
-            href={metadataLink}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View metadata file in Fileglancer
-          </Button>
-        </Box>
-      ) : null}
     </Stack>
   )
 }

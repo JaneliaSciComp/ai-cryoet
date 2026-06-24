@@ -9,6 +9,7 @@ import {
 import { sampleDetailQueryOptions } from '~/utils/queryOptions'
 import type { AcquisitionOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
+import { QualityBadge } from '~/components/common/QualityBadge'
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
 
@@ -56,6 +57,13 @@ export function AcquisitionsSubTable({ sampleId }: { sampleId: string }) {
         accessorKey: 'resolution',
         header: 'Resolution',
         Cell: ({ cell }) => dash(cell.getValue()),
+      },
+      {
+        accessorKey: 'acquisition_quality',
+        header: 'Quality',
+        Cell: ({ row }) => (
+          <QualityBadge quality={row.original.acquisition_quality} />
+        ),
       },
       {
         id: 'n_tilt_series',

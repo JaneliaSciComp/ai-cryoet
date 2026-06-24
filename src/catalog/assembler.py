@@ -51,6 +51,8 @@ ScanWarningCategory = Literal[
     "undeclared_tomogram_folder",
     "undeclared_annotation_folder",
     "undeclared_tilt_series_folder",
+    "acquisition_without_tilt_series",
+    "declared_id_without_folder",
     "tilt_series_alignment_mismatch",
     "annotation_without_target_tomogram",
     "deprecated_md_run_block",
@@ -101,6 +103,9 @@ def _categorize_loader_warning(s: str) -> ScanWarning:
       -> category ``extra_field``; location parsed out of the message.
     - ``"<dotted.path>: unfilled <FILL IN> placeholder"``
       -> category ``unfilled_placeholder``; location is the dotted path.
+    - ``"acquisitions.<acq>.<kind>[<id>]: id has no matching folder …"``
+      -> category ``declared_id_without_folder``; location is the prefix
+      before the first ``":"`` (the acquisition-qualified entity ref).
 
     Anything else falls through to ``extra_field`` with ``<unknown>`` location.
     """
@@ -123,6 +128,14 @@ def _categorize_loader_warning(s: str) -> ScanWarning:
         m = _EXTRA_AT_RE.search(s)
         location = m.group(1) if m else "<unknown>"
         return ScanWarning(category="extra_field", location=location, message=s)
+    if "no matching folder" in s:
+        # Format: "acquisitions.<acq>.<kind>[<id>]: id has no matching folder …"
+        # — the loader prefixes the acquisition path so the location is unique.
+        head, sep, _ = s.partition(":")
+        location = head if sep else "<unknown>"
+        return ScanWarning(
+            category="declared_id_without_folder", location=location, message=s
+        )
     if "unfilled <FILL IN> placeholder" in s:
         # Format: "<path>: unfilled <FILL IN> placeholder"
         head, sep, _ = s.partition(": unfilled <FILL IN> placeholder")
@@ -364,6 +377,27 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
         for ts in acq_file.tilt_series:
             ts.sample_id = acq_loc.sample_id
             ts.acquisition_id = acq_loc.acquisition_id
+
+        # An acquisition with raw imaging data (Frames/) but no declared tilt
+        # series is half-ingested: a thumbnail still renders from Frames/, but
+        # the detail pages have no tilt_series_id to key the preview/lightbox
+        # on, so the hero image silently disappears (tables, which build the
+        # cached-thumbnail URL directly, still show one). Surface it so these
+        # (typically SerialEM raw-collection) acquisitions are visible on the
+        # /manage view instead of only manifesting as a missing image.
+        if acq_loc.frames_dir is not None and not acq_file.tilt_series:
+            result.warnings.append(
+                ScanWarning(
+                    category="acquisition_without_tilt_series",
+                    location=f"acquisitions.{acq_loc.acquisition_id}",
+                    message=(
+                        f"acquisition '{acq_loc.acquisition_id}' has a Frames/ "
+                        "directory but no declared tilt series — add a "
+                        "[[tilt_series]] block to acquisition.toml so its "
+                        "tilt-series preview image is available"
+                    ),
+                )
+            )
 
         # Step 3: tomograms (raw + post share one id namespace) -------------
         existing_tomos: dict[str, RawTomogram | PostProcessedTomogram] = {}

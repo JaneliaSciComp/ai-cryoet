@@ -80,12 +80,12 @@ def test_dataset_type_enum_in_sample_schema(tmp_path):
     }
 
 
-def test_acquistion_quality_range_in_acquisition_schema(tmp_path):
-    """acquistion_quality is a constrained int 1-5 in the schema."""
+def test_acquisition_quality_range_in_acquisition_schema(tmp_path):
+    """acquisition_quality is a constrained int 1-5 in the schema."""
     out = tmp_path / "schema.json"
     main([str(out)])
     schema = json.loads((tmp_path / _ACQUISITION_FILENAME).read_text())
-    score = schema["$defs"]["Acquisition"]["properties"]["acquistion_quality"]
+    score = schema["$defs"]["Acquisition"]["properties"]["acquisition_quality"]
     assert score["minimum"] == 1
     assert score["maximum"] == 5
     assert score["type"] == "integer"

@@ -140,3 +140,19 @@ def find_viewable_tilt_images(frames_dir: Path) -> list[tuple[float, Path]]:
                 out.append((angle, img_path))
     out.sort(key=lambda x: x[0])
     return out
+
+
+def find_eer_tilt_images(frames_dir: Path) -> list[tuple[float, Path]]:
+    """Find EER tilt images in a frames dir, sorted by angle.
+
+    EER summation is slow, so callers should prefer
+    :func:`find_viewable_tilt_images` and fall back to this only when no
+    TIFF/MRC siblings exist (i.e. an EER-only acquisition).
+    """
+    out: list[tuple[float, Path]] = []
+    for img_path in frames_dir.glob("*.eer"):
+        angle = extract_tilt_angle_from_filename(img_path.name)
+        if angle is not None:
+            out.append((angle, img_path))
+    out.sort(key=lambda x: x[0])
+    return out

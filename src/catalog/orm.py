@@ -221,7 +221,7 @@ class AcquisitionORM(Base):
     phase_plate: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     microscope: Mapped[str | None] = mapped_column(String, nullable=True)
     facility: Mapped[str | None] = mapped_column(String, nullable=True)
-    acquistion_quality: Mapped[int | None] = mapped_column(
+    acquisition_quality: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )
     pixel_size: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -73,6 +73,12 @@ mrcfile = ">=1.5"
 alembic = ">=1.13"
 numpy = ">=1.26"
 matplotlib-base = ">=3.8"
+loguru = ">=0.7"
+zarr = ">=2.16"
+tifffile = ">=2024.1"
+
+[tool.pixi.feature.catalog.pypi-dependencies]
+eerfile = "*"
 
 [tool.pixi.feature.catalog.tasks]
 migrate = "alembic -c src/catalog/migrations/alembic.ini upgrade head"

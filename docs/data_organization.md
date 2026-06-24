@@ -254,7 +254,7 @@ One file per sample, placed at the root of the sample directory. Contains only w
 One file per acquisition, placed at the root of each acquisition directory. It contains:
 
 1. Researcher-authored imaging parameters not available from MDOC files (nominal resolution, nominal tilt spacing, target defocus range, energy filter model, phase plate, microscope model, imaging `facility`).
-2. An **acquistion quality score** (`acquistion_quality`): an integer on a 1–5 rubric, the author's estimate of the acquistion quality (alignability + projection-image survival) — **5** Excellent (reconstructions could be publication-ready), **4** Good (useful for analysis such as subtomogram averaging or segmentation), **3** Medium (minor projection images discarded before reconstruction), **2** Marginal (major projection images discarded; usable only after heavy manual work), **1** Low (not alignable / not useful for analysis).
+2. An **acquistion quality score** (`acquisition_quality`): an integer on a 1–5 rubric, the author's estimate of the acquistion quality (alignability + projection-image survival) — **5** Excellent (reconstructions could be publication-ready), **4** Good (useful for analysis such as subtomogram averaging or segmentation), **3** Medium (minor projection images discarded before reconstruction), **2** Marginal (major projection images discarded; usable only after heavy manual work), **1** Low (not alignable / not useful for analysis).
 3. A **processing log**: a `[raw_tomogram]` table plus `[[post_processed_tomogram]]` and `[[annotation]]` entries appended over time as processing produces new outputs.
 
 The acquisition directory name *is* the acquisition's identity, so `acquisition.id` is omitted from the file.

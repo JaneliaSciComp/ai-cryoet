@@ -141,13 +141,28 @@ export type MdSourceOut = {
 
 export type AcquisitionOut = {
   acquisition_id: string
+  // acquisition.toml ([acquisition]) — researcher authored
   resolution: number | null
+  tilt_spacing: number | null
+  defocus_range: string | null
+  energy_filter: string | null
+  phase_plate: boolean | null
   microscope: string | null
   facility: string | null
-  acquistion_quality: number | null
-  tilt_angles: number[] | null
+  acquisition_quality: number | null
+  // MDOC / frame-extension derived
   pixel_size: number | null
+  dose_per_tilt: number[] | null
+  total_dose: number | null
+  tilt_min: number | null
+  tilt_max: number | null
+  tilt_axis: number | null
+  tilt_angles: number[] | null
+  defocus_per_image: number[] | null
+  date_collected: string | null
   voltage: number | null
+  energy_filter_slit_width: number | null
+  frame_count: number | null
   camera: string | null
   path: string | null
   md_source: MdSourceOut | null
@@ -174,6 +189,7 @@ export type SampleDetail = {
   label: LabelOut[]
   md_run: MdRunOut[]
   acquisitions: AcquisitionOut[]
+  thumbnail_path: string | null
 }
 
 // ── Filters / stats / viewers ────────────────────────────────────────────

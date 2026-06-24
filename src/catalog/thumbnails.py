@@ -1,21 +1,37 @@
-"""Pre-generate tomogram center-slice thumbnails into a filesystem cache."""
+"""Pre-generate per-acquisition tilt-series thumbnails into a filesystem cache.
+
+One thumbnail per acquisition — the median/middle tilt-series image (the same
+image the detail pages show), rendered from the acquisition's first available
+tilt-series source (zarr → ``.st``/``.mrc`` → raw ``Frames/``). The
+representative thumbnail for a sample is the first acquisition (by id) that
+produced one.
+"""
 from __future__ import annotations
 
-import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
+# Cache thumbnails smaller than the on-demand preview (800px); they only ever
+# render in table rows and detail-page heroes.
 THUMBNAIL_WIDTH = 512
 
 
 @dataclass(frozen=True)
-class TomoRef:
+class AcqRef:
+    """A single acquisition's tilt-series image sources for thumbnailing.
+
+    ``zarr_path``/``st_path`` come from the acquisition's first tilt series
+    that has them; ``frames_dir`` is the acquisition's raw ``Frames/`` dir
+    (the shared fallback). Any may be ``None`` — rendering tries them in order.
+    """
+
     acquisition_id: str
-    kind: str  # "post" or "raw"
-    tomogram_id: str
-    mrc_path: str | None
+    zarr_path: str | None
+    st_path: str | None
+    frames_dir: str | None
 
 
 def _safe_segment(value: str) -> str:
@@ -24,81 +40,110 @@ def _safe_segment(value: str) -> str:
     return value
 
 
-def _relpath(sample_id: str, acquisition_id: str, tomogram_id: str) -> str:
+def _relpath(sample_id: str, acquisition_id: str) -> str:
     return "/".join((
         _safe_segment(sample_id),
-        _safe_segment(acquisition_id),
-        _safe_segment(tomogram_id) + ".png",
+        _safe_segment(acquisition_id) + ".png",
     ))
 
 
-def _render_one(mrc_path: str, dest: Path) -> bool:
-    from catalog.imaging._mrc import render_center_xy_slice_png
+def _render_one(ref: AcqRef, dest: Path) -> bool:
+    from catalog.imaging._tilt_series import render_tilt_series_median_png
 
+    source = (
+        "zarr" if ref.zarr_path else "st" if ref.st_path else "frames"
+    )
+    logger.debug(
+        "    rendering thumbnail for {} (source={})", ref.acquisition_id, source
+    )
+    started = time.perf_counter()
     try:
-        png = render_center_xy_slice_png(mrc_path, width=THUMBNAIL_WIDTH)
+        png = render_tilt_series_median_png(
+            zarr_path=ref.zarr_path,
+            st_path=ref.st_path,
+            frames_dir=ref.frames_dir,
+            width=THUMBNAIL_WIDTH,
+        )
     except Exception as e:
-        logger.warning("thumbnail render failed for %s: %s", mrc_path, e)
+        logger.warning(
+            "thumbnail render failed for acquisition {} (source={}): {}",
+            ref.acquisition_id,
+            source,
+            e,
+        )
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".png.tmp")
     tmp.write_bytes(png)
     tmp.replace(dest)
+    logger.debug(
+        "    rendered {} in {:.1f}s ({} bytes)",
+        ref.acquisition_id,
+        time.perf_counter() - started,
+        len(png),
+    )
     return True
 
 
 def generate_thumbnails(
     sample_id: str,
-    tomos: list[TomoRef],
+    acqs: list[AcqRef],
     thumbnail_root: Path,
     *,
     skip_existing: bool = False,
 ) -> str | None:
-    generated: dict[tuple[str, str], str] = {}
-    for ref in sorted(tomos, key=lambda r: (r.acquisition_id, r.kind != "post", r.tomogram_id)):
-        if not ref.mrc_path:
+    generated: list[str] = []
+    for ref in sorted(acqs, key=lambda r: r.acquisition_id):
+        if not (ref.zarr_path or ref.st_path or ref.frames_dir):
             continue
-        rel = _relpath(sample_id, ref.acquisition_id, ref.tomogram_id)
+        rel = _relpath(sample_id, ref.acquisition_id)
         dest = thumbnail_root / rel
-        ok = True if (skip_existing and dest.is_file()) else _render_one(ref.mrc_path, dest)
+        ok = True if (skip_existing and dest.is_file()) else _render_one(ref, dest)
         if ok:
-            generated.setdefault((ref.acquisition_id, ref.kind), rel)
+            generated.append(rel)
 
     return representative_relpath(generated)
 
 
-def representative_relpath(generated: dict[tuple[str, str], str]) -> str | None:
-    for acq_id in sorted({a for a, _ in generated}):
-        rel = generated.get((acq_id, "post")) or generated.get((acq_id, "raw"))
-        if rel:
-            return rel
-    return None
+def representative_relpath(generated: list[str]) -> str | None:
+    """The sample's representative thumbnail: first acquisition (by id) with one.
+
+    ``generated`` is the relpath list in acquisition-id order, so the first
+    entry is the representative.
+    """
+    return generated[0] if generated else None
 
 
-def refs_from_record(record) -> list[TomoRef]:
-    refs: list[TomoRef] = []
-    for acq_id, acq in record.acquisitions.items():
-        for t in acq.post_processed_tomogram:
-            refs.append(TomoRef(acq_id, "post", t.tomogram_id, t.mrc_path))
-        if acq.raw_tomogram is not None:
-            r = acq.raw_tomogram
-            refs.append(TomoRef(acq_id, "raw", r.tomogram_id, r.mrc_path))
-    return refs
+def _acq_ref(acquisition_id: str, path: str | None, tilt_series) -> AcqRef:
+    """Build an :class:`AcqRef` from an acquisition's path + tilt-series rows."""
+    zarr_path = next((ts.zarr_path for ts in tilt_series if ts.zarr_path), None)
+    st_path = next((ts.st_path for ts in tilt_series if ts.st_path), None)
+    frames_dir = str(Path(path) / "Frames") if path else None
+    return AcqRef(acquisition_id, zarr_path, st_path, frames_dir)
 
 
-def refs_from_db(session, sample_id: str) -> list[TomoRef]:
+def refs_from_record(record) -> list[AcqRef]:
+    return [
+        _acq_ref(acq_id, acq.acquisition.path, acq.tilt_series)
+        for acq_id, acq in record.acquisitions.items()
+    ]
+
+
+def refs_from_db(session, sample_id: str) -> list[AcqRef]:
     from catalog import orm
     from sqlalchemy import select
 
-    refs: list[TomoRef] = []
-    for r in session.execute(
-        select(orm.PostProcessedTomogramORM).where(
-            orm.PostProcessedTomogramORM.sample_id == sample_id)
+    ts_by_acq: dict[str, list] = {}
+    for ts in session.execute(
+        select(orm.TiltSeriesORM).where(orm.TiltSeriesORM.sample_id == sample_id)
     ).scalars():
-        refs.append(TomoRef(r.acquisition_id, "post", r.tomogram_id, r.mrc_path))
-    for r in session.execute(
-        select(orm.RawTomogramORM).where(
-            orm.RawTomogramORM.sample_id == sample_id)
+        ts_by_acq.setdefault(ts.acquisition_id, []).append(ts)
+
+    refs: list[AcqRef] = []
+    for acq in session.execute(
+        select(orm.AcquisitionORM).where(orm.AcquisitionORM.sample_id == sample_id)
     ).scalars():
-        refs.append(TomoRef(r.acquisition_id, "raw", r.tomogram_id, r.mrc_path))
+        refs.append(
+            _acq_ref(acq.acquisition_id, acq.path, ts_by_acq.get(acq.acquisition_id, []))
+        )
     return refs

@@ -1,21 +1,20 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  Box,
-  Breadcrumbs,
-  Divider,
-  Grid,
-  Link,
-  Paper,
-  Stack,
-  Typography,
-} from '@mui/material'
+import { Box, Breadcrumbs, Divider, Paper, Stack, Typography } from '@mui/material'
 import type { SampleDetail } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
-import { PreviewThumbnail, tomogramThumbnailUrl, acquisitionRepTomogramId } from '~/components/common/Thumbnail'
+import {
+  PreviewThumbnail,
+  acquisitionThumbnailUrl,
+  thumbnailUrl,
+  tiltSeriesPreviewUrl,
+  acquisitionRepTiltSeriesId,
+} from '~/components/common/Thumbnail'
 import { FileglancerPathSection } from '~/components/common/FileglancerPathSection'
+import { DetailHero } from '~/components/common/DetailHero'
+import { DetailPageHeader } from '~/components/common/DetailPageHeader'
+import { SectionHeading } from '~/components/common/SectionHeading'
 import { MetadataDrawer } from '~/components/common/MetadataDrawer'
-import { ViewAllMetadataButton } from '~/components/common/ViewAllMetadataButton'
 import { MetadataSection } from '~/components/common/MetadataSection'
 import { sampleMetadataSections } from '~/components/common/metadataSections'
 import { SampleAcquisitionsTable } from '~/components/samples/SampleAcquisitionsTable'
@@ -66,8 +65,8 @@ function SampleContentsCard(props: { sample: SampleDetail }) {
   ]
   return (
     <Paper
-      variant="outlined"
-      sx={{ px: 2.5, py: 2, borderRadius: 2, maxWidth: 320 }}
+      elevation={0}
+      sx={{ px: 2.5, py: 2, borderRadius: 2, maxWidth: 320, bgcolor: 'grey.100' }}
     >
       <Typography variant="subtitle2" gutterBottom>
         Sample contents
@@ -110,112 +109,83 @@ function SampleDetailRoute() {
       </Breadcrumbs>
 
       {/* ── Title section ──────────────────────────────────────────── */}
-      <Box>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 2,
-          }}
-        >
-          <Typography variant="h5" component="h1" gutterBottom>
-            {sampleId}
-          </Typography>
-          <ViewAllMetadataButton
-            placement="title"
-            onClick={() => setMetadataOpen(true)}
-          />
-        </Box>
-
-        {warnings.length > 0 ? (
-          // /manage isn't built yet; plain link for now (filters to this
-          // sample's warnings once that route exists).
-          <Link
-            href={`/manage?sample=${encodeURIComponent(sampleId)}`}
-            variant="body2"
-            fontWeight={700}
-          >
-            *There are warnings for this sample's metadata. Click to view
-          </Link>
-        ) : null}
-
-        {sample.description ? (
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            sx={{ mt: warnings.length > 0 ? 1 : 0 }}
-          >
-            {sample.description}
-          </Typography>
-        ) : null}
-
-        <ViewAllMetadataButton
-          placement="below"
-          onClick={() => setMetadataOpen(true)}
-        />
-      </Box>
+      <DetailPageHeader
+        title={sampleId}
+        onViewMetadata={() => setMetadataOpen(true)}
+        warning={
+          warnings.length > 0
+            ? {
+                // /manage isn't built yet; plain link for now (filters to this
+                // sample's warnings once that route exists).
+                href: `/manage?sample=${encodeURIComponent(sampleId)}`,
+                text: "*There are warnings for this sample's metadata. Click to view",
+              }
+            : null
+        }
+        description={sample.description}
+      />
 
       <Divider />
 
       {/* ── Details summary ────────────────────────────────────────── */}
-      <Grid container spacing={4}>
-        <Grid item xs={12} md={4}>
-          {(() => {
-            const sorted = [...sample.acquisitions].sort((a, b) =>
-              a.acquisition_id.localeCompare(b.acquisition_id),
-            )
-            const firstWithRep = sorted.find(
-              (a) => acquisitionRepTomogramId(a) !== null,
-            )
-            const repId = firstWithRep ? acquisitionRepTomogramId(firstWithRep) : null
-            const src = firstWithRep && repId
-              ? tomogramThumbnailUrl(sample.sample_id, firstWithRep.acquisition_id, repId)
-              : null
-            return (
-              <Box>
-                <PreviewThumbnail
-                  src={src}
-                  alt={`Center XY slice of the representative tomogram for ${sample.sample_id}`}
-                  width="100%"
-                  height={220}
-                  clickable
-                />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
-                  Center XY slice rendered from the representative tomogram MRC file
-                </Typography>
-              </Box>
-            )
-          })()}
-        </Grid>
-
-        <Grid item xs={12} md={8}>
-          <FileglancerPathSection
-            path={samplePath}
-            metadataFilename="sample.toml"
-          >
+      <DetailHero
+        thumbnail={(() => {
+          const sorted = [...sample.acquisitions].sort((a, b) =>
+            a.acquisition_id.localeCompare(b.acquisition_id),
+          )
+          const firstWithTs = sorted.find(
+            (a) => acquisitionRepTiltSeriesId(a) !== null,
+          )
+          const tsId = firstWithTs ? acquisitionRepTiltSeriesId(firstWithTs) : null
+          // Prefer the acquisition with a tilt series: its cached 512px
+          // thumbnail displays, and the sharper on-demand render is fetched
+          // only when the lightbox opens. When no acquisition declares a
+          // tilt series we still show the sample's representative cached
+          // thumbnail (rendered from raw Frames/); the lightbox then just
+          // enlarges that thumbnail, since the sharper render needs a
+          // tilt_series_id.
+          const src =
+            firstWithTs
+              ? acquisitionThumbnailUrl(
+                  sample.sample_id,
+                  firstWithTs.acquisition_id,
+                )
+              : thumbnailUrl(sample.thumbnail_path)
+          const lightboxSrc = firstWithTs && tsId
+            ? tiltSeriesPreviewUrl(sample.sample_id, firstWithTs.acquisition_id, tsId)
+            : null
+          return (
+            <Box>
+              <PreviewThumbnail
+                src={src}
+                lightboxSrc={lightboxSrc}
+                alt={`Middle tilt-series image for ${sample.sample_id}`}
+                width="100%"
+                aspectRatio={1}
+                objectFit="contain"
+                elevated={false}
+                clickable
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: 'block' }}>
+                Middle image of the representative tilt series
+              </Typography>
+            </Box>
+          )
+        })()}
+        details={
+          <FileglancerPathSection path={samplePath}>
             <SampleContentsCard sample={sample} />
           </FileglancerPathSection>
-        </Grid>
-      </Grid>
+        }
+      />
 
       <Divider />
 
       {/* ── Acquisitions ───────────────────────────────────────────── */}
       <Box>
-        <Box
-          sx={{
-            bgcolor: 'action.hover',
-            borderRadius: 2,
-            px: 2,
-            py: 1.25,
-            mb: 2,
-          }}
-        >
-          <Typography variant="h6" component="h2">
-            Acquisitions ({sample.acquisitions.length.toLocaleString()})
-          </Typography>
-        </Box>
+        <SectionHeading>
+          Acquisitions ({sample.acquisitions.length.toLocaleString()})
+        </SectionHeading>
         <SampleAcquisitionsTable
           sampleId={sampleId}
           acquisitions={sample.acquisitions}
