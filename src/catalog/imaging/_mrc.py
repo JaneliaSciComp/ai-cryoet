@@ -70,6 +70,26 @@ def read_mrc_middle_slice(mrc_path: Path | str) -> np.ndarray:
         return np.array(mrc.data[median_idx], dtype=np.float32)
 
 
+def _downscale_local_mean(arr: np.ndarray, target_width: int) -> np.ndarray:
+    """Area-average ``arr`` down to roughly ``target_width`` px wide.
+
+    A raw tilt projection is ~4k px wide but previews render at 512-800 px.
+    Nearest-neighbour subsampling at that ratio keeps every surviving pixel's
+    full shot noise (the "snow" previews), so instead we average each
+    ``factor x factor`` block — cutting noise by ~``sqrt(block area)`` while
+    preserving real structure. No-op when the source already fits the target.
+    """
+    if arr.ndim != 2:
+        return arr
+    factor = arr.shape[1] // target_width
+    if factor <= 1:
+        return arr
+    h = (arr.shape[0] // factor) * factor
+    w = (arr.shape[1] // factor) * factor
+    binned = arr[:h, :w].reshape(h // factor, factor, w // factor, factor)
+    return binned.mean(axis=(1, 3))
+
+
 def _array_to_png_bytes(
     arr: np.ndarray,
     *,
@@ -79,10 +99,15 @@ def _array_to_png_bytes(
 ) -> bytes:
     """Render a 2D array as a PNG with percentile contrast clipping.
 
+    The array is first area-averaged down to the output ``width`` (see
+    ``_downscale_local_mean``) so large, noisy projections don't render as
+    snow; the percentile window is then computed on those displayed pixels.
+
     Uses the matplotlib OO API (``Figure() + FigureCanvasAgg``); no
     ``pyplot`` global state so concurrent renders on the threadpool are
     safe.
     """
+    arr = _downscale_local_mean(arr, width)
     vmin, vmax = np.percentile(arr, percentile)
     aspect = arr.shape[0] / arr.shape[1] if arr.shape[1] else 1.0
     dpi = 100
@@ -92,7 +117,7 @@ def _array_to_png_bytes(
     fig = Figure(figsize=(fig_w, fig_h), dpi=dpi)
     canvas = FigureCanvasAgg(fig)
     ax = fig.add_subplot(111)
-    ax.imshow(arr, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+    ax.imshow(arr, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="antialiased")
     ax.set_axis_off()
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 

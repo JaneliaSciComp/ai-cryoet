@@ -9,6 +9,7 @@ intentionally dropped — the API works directly off DB-recorded paths and
 Public surface:
     - ``load_tilt_image(path, gain=None, preview=False)`` — single 2D image
     - ``load_gain_reference(path)``
+    - ``find_gain_reference(frames_dir)`` — sibling ``Gains/`` reference or None
     - ``apply_gain_correction(image, gain)``
     - ``render_eer(path, superres=None)``
     - ``find_viewable_tilt_images(frames_dir)`` — sorted ``(angle, path)``
@@ -70,6 +71,24 @@ def render_eer(eer_path: Path, superres: int | None = None) -> np.ndarray:
         for page in series.pages:
             acc += page.asarray()
     return acc
+
+
+def find_gain_reference(frames_dir: Path) -> Path | None:
+    """Find a gain reference in the acquisition's sibling ``Gains/`` dir.
+
+    ``Frames/`` and ``Gains/`` sit side by side under the acquisition dir (see
+    the experimental starter skeleton). Returns the first recognized reference
+    (``.gain``/``.tif``/``.tiff``/``.mrc``), or ``None`` when there is no
+    ``Gains/`` dir or it holds nothing usable.
+    """
+    gains_dir = frames_dir.parent / "Gains"
+    if not gains_dir.is_dir():
+        return None
+    for ext in ("*.gain", "*.tif", "*.tiff", "*.mrc"):
+        matches = sorted(gains_dir.glob(ext))
+        if matches:
+            return matches[0]
+    return None
 
 
 def load_gain_reference(gain_path: Path) -> np.ndarray:
