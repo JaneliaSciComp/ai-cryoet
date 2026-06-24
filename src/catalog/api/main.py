@@ -8,6 +8,9 @@ Configuration via environment:
                                Required at startup; the API refuses to start without it.
   CATALOG_THUMBNAIL_DIR      — directory containing pre-generated thumbnail PNGs.
                                Required at startup; the API refuses to start without it.
+  CATALOG_MD_PREVIEW_DIR     — directory of cached OVITO/MD preview PNGs
+                               (aicryoet-tools .portal_cache). Optional; a missing
+                               dir just disables the /md-previews route.
   NEUROGLANCER_MAX_VIEWERS   — bounded LRU size for active viewers (default 8).
 """
 from __future__ import annotations
@@ -37,6 +40,7 @@ from catalog.api.routes import (
     acquisitions as acquisitions_routes,
     extras,
     filters,
+    md_previews as md_previews_routes,
     samples,
     scans,
     stats,
@@ -164,6 +168,25 @@ async def _lifespan(app: FastAPI):
             raise RuntimeError(f"CATALOG_THUMBNAIL_DIR={raw_thumb!r} is not a directory")
         app.state.thumbnail_root = resolved_thumb
 
+    # CATALOG_MD_PREVIEW_DIR — directory of cached OVITO/MD preview PNGs
+    # (aicryoet-tools .portal_cache). Optional: unlike thumbnails this is a
+    # demo feature, so a missing/bad dir just disables the route (404) rather
+    # than failing startup. Tests may pre-seed app.state.md_preview_root.
+    if not hasattr(app.state, "md_preview_root"):
+        raw_md = os.environ.get(
+            "CATALOG_MD_PREVIEW_DIR",
+            "/groups/cryoet/cryoet/data/collepardolab/.portal_cache",
+        )
+        try:
+            resolved_md = Path(raw_md).resolve(strict=True)
+            app.state.md_preview_root = resolved_md if resolved_md.is_dir() else None
+        except (FileNotFoundError, OSError):
+            app.state.md_preview_root = None
+        if app.state.md_preview_root is None:
+            logger.warning(
+                "CATALOG_MD_PREVIEW_DIR={!r} not found; /md-previews disabled", raw_md
+            )
+
     workers = _detect_multi_worker()
     if workers is not None:
         logger.warning(
@@ -215,6 +238,9 @@ def create_app() -> FastAPI:
         tilt_series_routes.router, prefix="/tilt-series", tags=["tilt-series"]
     )
     app.include_router(thumbnails_routes.router, prefix="/thumbnails", tags=["thumbnails"])
+    app.include_router(
+        md_previews_routes.router, prefix="/md-previews", tags=["md-previews"]
+    )
     return app
 
 
