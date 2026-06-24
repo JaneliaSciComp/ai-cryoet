@@ -172,7 +172,16 @@ def _cmd_scan(args) -> int:
             print(f"  error: {e}", file=sys.stderr)
         if len(report.errors) > 10:
             print(f"  (+ {len(report.errors) - 10} more)", file=sys.stderr)
-        return 1
+        # Per-sample errors are isolated: the scan rolled them back and
+        # catalogued every other sample, so the run as a whole succeeded.
+        # Exit 0 so the k8s Job/CronJob isn't marked failed over one bad
+        # sample. Genuine whole-scan failures raise out of scan_root and are
+        # caught above (return 1).
+        print(
+            f"scan completed with {len(report.errors)} per-sample error(s); "
+            "see above. Exiting 0 — the run as a whole succeeded.",
+            file=sys.stderr,
+        )
     return 0
 
 
