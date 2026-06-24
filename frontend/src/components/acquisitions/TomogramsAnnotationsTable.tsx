@@ -19,7 +19,7 @@ import type {
   PostProcessedTomogramOut,
   RawTomogramOut,
 } from '~/types'
-import { PreviewThumbnail, ThumbnailPlaceholder, tomogramPreviewUrl } from '~/components/common/Thumbnail'
+import { PreviewThumbnail, annotationPreviewUrl, tomogramPreviewUrl } from '~/components/common/Thumbnail'
 import { NeuroglancerButton } from '~/components/common/NeuroglancerButton'
 
 // Discriminated row so raw vs. post-processed tomograms share one table while
@@ -67,8 +67,12 @@ function combinedTomograms(acquisition: AcquisitionOut): TomogramRow[] {
 // `Table` (rather than another MRT instance) keeps the detail panel light;
 // annotations carry no shape/voxel/size metadata in the schema, so those
 // columns render em-dashes for parity with the tomogram header row.
-function AnnotationsSubTable(props: { annotations: AnnotationOut[] }) {
-  const { annotations } = props
+function AnnotationsSubTable(props: {
+  sampleId: string
+  acquisitionId: string
+  annotations: AnnotationOut[]
+}) {
+  const { sampleId, acquisitionId, annotations } = props
   if (annotations.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -89,10 +93,19 @@ function AnnotationsSubTable(props: { annotations: AnnotationOut[] }) {
         </TableRow>
       </TableHead>
       <TableBody>
-        {annotations.map((a) => (
+        {annotations.map((a) => {
+          const alt = `Center XY slice of ${a.annotation_id}`
+          return (
           <TableRow key={a.annotation_id}>
             <TableCell sx={{ width: 112 }}>
-              <ThumbnailPlaceholder width={96} height={56} />
+              <PreviewThumbnail
+                src={annotationPreviewUrl(sampleId, acquisitionId, a.annotation_id)}
+                alt={alt}
+                tooltipTitle={alt}
+                width={96}
+                height={56}
+                clickable
+              />
             </TableCell>
             <TableCell>
               {a.annotation_id}
@@ -106,10 +119,23 @@ function AnnotationsSubTable(props: { annotations: AnnotationOut[] }) {
             <TableCell>{dash}</TableCell>
             <TableCell>{dash}</TableCell>
             <TableCell align="right">
-              <NeuroglancerButton source={null} />
+              <NeuroglancerButton
+                source={
+                  a.files.some((f) => f.toLowerCase().endsWith('.mrc'))
+                    ? {
+                        kind: 'launch',
+                        entity: 'annotation',
+                        sampleId,
+                        acquisitionId,
+                        entityId: a.annotation_id,
+                      }
+                    : null
+                }
+              />
             </TableCell>
           </TableRow>
-        ))}
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -250,6 +276,8 @@ export function TomogramsAnnotationsTable(props: {
         </Typography>
         <Box sx={{ mt: 1 }}>
           <AnnotationsSubTable
+            sampleId={sampleId}
+            acquisitionId={acquisition.acquisition_id}
             annotations={
               annotationsByTomogram.get(row.original.tomogram_id) ?? []
             }
