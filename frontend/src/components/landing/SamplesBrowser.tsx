@@ -41,6 +41,7 @@ type NavigateFn = (opts: {
 function searchToFilters(s: SamplesSearchParams): LandingFilterState {
   return {
     project: s.project,
+    dataset_type: s.dataset_type?.[0],
     microscope: s.microscope?.[0],
     pixel_size_min: s.pixel_size_min,
     pixel_size_max: s.pixel_size_max,
@@ -65,6 +66,8 @@ function applyFilterPatch(
   };
 
   if ("project" in patch) set("project", patch.project);
+  if ("dataset_type" in patch)
+    set("dataset_type", patch.dataset_type ? [patch.dataset_type] : undefined);
   if ("microscope" in patch)
     set("microscope", patch.microscope ? [patch.microscope] : undefined);
   if ("pixel_size_min" in patch) set("pixel_size_min", patch.pixel_size_min);
@@ -79,9 +82,15 @@ function applyFilterPatch(
 function activeChips(
   f: LandingFilterState,
   showMicroscope: boolean,
+  showDataType: boolean,
 ): Array<{ key: keyof LandingFilterState; label: string }> {
   const chips: Array<{ key: keyof LandingFilterState; label: string }> = [];
   if (f.project) chips.push({ key: "project", label: `Project: ${f.project}` });
+  if (showDataType && f.dataset_type)
+    chips.push({
+      key: "dataset_type",
+      label: `Data type: ${f.dataset_type.replace(/_/g, " ")}`,
+    });
   if (showMicroscope && f.microscope)
     chips.push({ key: "microscope", label: `Microscope: ${f.microscope}` });
   if (f.pixel_size_min != null)
@@ -143,7 +152,11 @@ export function SamplesBrowser(props: {
     });
   const reset = () => navigate({ search: () => ({}), replace: true });
 
-  const chips = activeChips(filters, dataSource !== "simulation");
+  const chips = activeChips(
+    filters,
+    dataSource !== "simulation",
+    dataSource === "simulation",
+  );
 
   // On small screens the sidebar collapses into a button that opens this drawer.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -155,6 +168,7 @@ export function SamplesBrowser(props: {
       onChange={patch}
       onReset={reset}
       showMicroscope={dataSource !== "simulation"}
+      showDataType={dataSource === "simulation"}
     />
   );
 

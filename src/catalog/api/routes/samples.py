@@ -75,6 +75,7 @@ def list_samples(
     project: list[str] | None = Query(None),
     data_source: list[str] | None = Query(None),
     type: list[str] | None = Query(None),
+    dataset_type: list[str] | None = Query(None),
     microscope: list[str] | None = Query(None),
     voltage: list[float] | None = Query(None),
     camera: list[str] | None = Query(None),
@@ -164,6 +165,17 @@ def list_samples(
         stmt = stmt.where(orm.SampleORM.data_source.in_(data_source))
     if type:
         stmt = stmt.where(orm.SampleORM.type.in_(type))
+    # `dataset_type` lives on the 1:1 simulation sub-entity, so match via an
+    # EXISTS subquery rather than a column on the sample row.
+    if dataset_type:
+        stmt = stmt.where(
+            exists(
+                select(1)
+                .where(orm.SimulationORM.sample_id == orm.SampleORM.sample_id)
+                .where(orm.SimulationORM.dataset_type.in_(dataset_type))
+                .correlate(orm.SampleORM)
+            )
+        )
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(

@@ -227,6 +227,7 @@ class FiltersOptionsOut(BaseModel):
     projects: list[str] = []
     data_sources: list[str] = []
     types: list[str] = []
+    dataset_types: list[str] = []
     microscopes: list[str] = []
     voltages: list[float] = []
     cameras: list[str] = []

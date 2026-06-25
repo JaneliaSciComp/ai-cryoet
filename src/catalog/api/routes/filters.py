@@ -52,6 +52,23 @@ def get_filter_options(session: Session = Depends(get_session)):
         .order_by(orm.SampleORM.type)
     ).scalars().all())
 
+    # ── Categorical: simulation.dataset_type (slab/bulk/single_molecule) ────
+    # Join through samples so soft-deleted samples are excluded.
+    dataset_types = [
+        _enum_value(d)
+        for d in session.execute(
+            select(orm.SimulationORM.dataset_type)
+            .join(
+                orm.SampleORM,
+                orm.SampleORM.sample_id == orm.SimulationORM.sample_id,
+            )
+            .where(orm.SampleORM.deleted_at.is_(None))
+            .where(orm.SimulationORM.dataset_type.is_not(None))
+            .distinct()
+            .order_by(orm.SimulationORM.dataset_type)
+        ).scalars().all()
+    ]
+
     # ── Categorical: acquisitions.microscope / voltage / camera ────────────
     # Join through samples so soft-deleted samples are excluded.
     microscopes = list(session.execute(
@@ -150,6 +167,7 @@ def get_filter_options(session: Session = Depends(get_session)):
         projects=projects,
         data_sources=data_sources,
         types=types,
+        dataset_types=dataset_types,
         microscopes=microscopes,
         voltages=voltages,
         cameras=cameras,

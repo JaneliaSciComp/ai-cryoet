@@ -38,6 +38,7 @@ export const samplesSearchSchema = z.object({
   offset: z.coerce.number().int().nonnegative().optional(),
   // Drawer fields (extended, all optional so shared URLs round-trip)
   type: stringArray,
+  dataset_type: stringArray,
   microscope: stringArray,
   voltage: numberArray,
   camera: stringArray,
@@ -75,6 +76,7 @@ export function buildSamplesQueryString(params: SamplesSearchParams): string {
   addOne('limit', params.limit)
   addOne('offset', params.offset)
   addMany('type', params.type)
+  addMany('dataset_type', params.dataset_type)
   addMany('microscope', params.microscope)
   addMany('voltage', params.voltage)
   addMany('camera', params.camera)
