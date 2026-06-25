@@ -203,6 +203,7 @@ export type FiltersOptionsOut = {
   projects: string[]
   data_sources: string[]
   types: string[]
+  dataset_types: string[]
   microscopes: string[]
   voltages: number[]
   cameras: string[]
