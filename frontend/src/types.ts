@@ -139,6 +139,27 @@ export type MdSourceOut = {
   frame: number | null
 }
 
+// ── Scan status (freshness + thumbnail provenance) ───────────────────────
+// Per-entity current-state projection surfaced on the detail pages (plan §4.6).
+// A freshly-migrated entity not yet re-scanned has scan_status === null.
+
+export type ScanOutcome = 'upserted' | 'skipped' | 'failed'
+
+export type EntityScanStatus = {
+  last_scanned_at: number
+  last_changed_at: number | null
+  last_outcome: ScanOutcome
+  last_scan_run_id: string
+}
+
+export type AcquisitionScanStatus = EntityScanStatus & {
+  thumbnail_path: string | null
+  thumbnail_source_kind: 'zarr' | 'st' | 'frames' | 'none' | null
+  thumbnail_source_path: string | null
+  thumbnail_generated_at: number | null
+  thumbnail_status: 'ok' | 'missing_source' | 'render_failed' | null
+}
+
 export type AcquisitionOut = {
   acquisition_id: string
   // acquisition.toml ([acquisition]) — researcher authored
@@ -170,6 +191,7 @@ export type AcquisitionOut = {
   post_processed_tomograms: PostProcessedTomogramOut[]
   annotations: AnnotationOut[]
   tilt_series: TiltSeriesOut[]
+  scan_status: AcquisitionScanStatus | null
 }
 
 export type SampleDetail = {
@@ -190,6 +212,7 @@ export type SampleDetail = {
   md_run: MdRunOut[]
   acquisitions: AcquisitionOut[]
   thumbnail_path: string | null
+  scan_status: EntityScanStatus | null
 }
 
 // ── Filters / stats / viewers ────────────────────────────────────────────
@@ -241,8 +264,11 @@ export type ViewerLaunchOut = {
   url: string
 }
 
-// ── Scan history / warnings / extras ─────────────────────────────────────
+// ── Warnings / extras ─────────────────────────────────────────────────────
 
+// Still consumed by the sample/acquisition detail pages via
+// /samples/{id}/warnings. The endpoint now reads the live `issues` table but
+// returns these unchanged-enough fields.
 export type WarningOut = {
   id: number
   sample_id: string
@@ -253,48 +279,90 @@ export type WarningOut = {
   scan_run_id: string
 }
 
-export type ScanOut = {
-  scan_run_id: string
-  started_at: number
-  ended_at: number | null
-  root: string
-  status: string
-  samples_upserted: number | null
-  samples_skipped: number | null
-  samples_failed: number | null
-}
-
 export type ExtrasSummaryRow = {
   entity_type: string
   key: string
   count: number
 }
 
-// A sample's outcome within a scan run (drives the /manage tables).
-// data_source/project/type are null for failed samples never persisted;
-// detail carries the error message for failed outcomes.
-export type ScanSampleOut = {
-  sample_id: string
-  data_source: string | null
-  project: string | null
-  type: string | null
-  warning_count: number
-  detail: string | null
+// ── Manage page: summary / cadence ─────────────────────────────────────────
+
+export type ManageLatestScan = {
+  started_at: number
+  ended_at: number | null
+  status: string
+  duration: number | null
 }
 
-// All warning messages for a single sample in the latest completed scan.
-export type SampleWarningsGroup = {
-  sample_id: string
-  warnings: string[]
+export type ManageSummary = {
+  latest_scan: ManageLatestScan | null
+  cadence_cron: string
+  cadence_tz: string
+  outstanding: { errors: number; warnings: number }
 }
 
-// A run-level warning not tied to any sample (e.g. an unknown subdirectory
-// under MdSimulation/ that was skipped during discovery).
-export type RunWarningOut = {
-  id: number
+// ── Manage page: issues (outstanding + recently resolved) ───────────────────
+
+export type IssueSeverity = 'error' | 'warning'
+export type IssueScope = 'sample' | 'acquisition' | 'run'
+
+export type IssueItem = {
   category: string
-  location: string
   message: string
-  detected_at: number
+}
+
+// One outstanding (or recently resolved) issue group, keyed by entity +
+// file_kind. `severity` is the max across the group. Per plan §9.7, the
+// "still present as of" UI compares `last_seen_run_id` to the global
+// `latest_run_id` to decide whether the owner was re-evaluated this scan.
+export type IssueGroup = {
+  scope: IssueScope
+  sample_id: string | null
+  acquisition_id: string | null
+  file_kind: string
+  file_path: string | null
+  severity: IssueSeverity
+  issues: IssueItem[]
+  first_seen_at: number
+  last_seen_at: number
+  last_seen_run_id: string
+  latest_run_id: string | null
+  latest_scan_at: number | null
+  // Only present on the /resolved view.
+  resolved_at?: number | null
+  resolved_run_id?: string | null
+}
+
+// ── Manage page: scan runs + logs ──────────────────────────────────────────
+
+export type ScanRun = {
   scan_run_id: string
+  started_at: number
+  ended_at: number | null
+  status: string
+  root: string
+  n_upserted: number | null
+  n_skipped: number | null
+  n_failed: number | null
+  n_new_issues: number | null
+  n_resolved_issues: number | null
+  n_warning_active: number | null
+  n_error_active: number | null
+}
+
+export type ScanLogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
+
+export type ScanLogLine = {
+  id: number
+  seq: number
+  ts: number
+  level: ScanLogLevel
+  sample_id: string | null
+  message: string
+}
+
+export type ScanSampleOutcome = {
+  sample_id: string
+  outcome: ScanOutcome
+  detail: string | null
 }

@@ -19,6 +19,7 @@ import { MetadataDrawer } from '~/components/common/MetadataDrawer'
 import { MetadataSection } from '~/components/common/MetadataSection'
 import { sampleMetadataSections } from '~/components/common/metadataSections'
 import { SampleAcquisitionsTable } from '~/components/samples/SampleAcquisitionsTable'
+import { EntityFreshnessCard } from '~/components/manage/EntityFreshnessCard'
 import {
   sampleDetailQueryOptions,
   sampleWarningsQueryOptions,
@@ -119,8 +120,8 @@ function SampleDetailRoute() {
         warning={
           warnings.length > 0
             ? {
-                // /manage isn't built yet; plain link for now (filters to this
-                // sample's warnings once that route exists).
+                // Opens the manage page with outstanding issues filtered to
+                // this sample (read from the URL search params there).
                 href: `/manage?sample=${encodeURIComponent(sampleId)}`,
                 text: "*There are warnings for this sample's metadata. Click to view",
               }
@@ -199,7 +200,10 @@ function SampleDetailRoute() {
         })()}
         details={
           <FileglancerPathSection path={samplePath}>
-            <SampleContentsCard sample={sample} />
+            <Stack spacing={2}>
+              <SampleContentsCard sample={sample} />
+              <EntityFreshnessCard status={sample.scan_status} kind="sample" />
+            </Stack>
           </FileglancerPathSection>
         }
       />

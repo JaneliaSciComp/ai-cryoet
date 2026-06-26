@@ -25,6 +25,7 @@ import {
   sampleMetadataSections,
 } from '~/components/common/metadataSections'
 import { TomogramsAnnotationsTable } from '~/components/acquisitions/TomogramsAnnotationsTable'
+import { EntityFreshnessCard } from '~/components/manage/EntityFreshnessCard'
 import {
   sampleDetailQueryOptions,
   sampleWarningsQueryOptions,
@@ -220,8 +221,8 @@ function AcquisitionDetailRoute() {
         warning={
           acqWarnings.length > 0
             ? {
-                // /manage isn't built yet; plain link for now (filters to this
-                // acquisition's warnings once that route exists).
+                // Opens the manage page with outstanding issues filtered to
+                // this acquisition (read from the URL search params there).
                 href: `/manage?sample=${encodeURIComponent(
                   sampleId,
                 )}&acquisition=${encodeURIComponent(acquisitionId)}`,
@@ -267,6 +268,7 @@ function AcquisitionDetailRoute() {
         })()}
         details={
           <FileglancerPathSection path={acquisition.path}>
+            <Stack spacing={2}>
             <AcquisitionSummary
               acquisition={acquisition}
               tiltSeriesPlot={(() => {
@@ -288,6 +290,11 @@ function AcquisitionDetailRoute() {
                 )
               })()}
             />
+            <EntityFreshnessCard
+              status={acquisition.scan_status}
+              kind="acquisition"
+            />
+            </Stack>
           </FileglancerPathSection>
         }
       />
