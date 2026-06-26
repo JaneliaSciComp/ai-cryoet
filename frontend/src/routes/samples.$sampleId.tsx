@@ -16,7 +16,7 @@ import { DetailHero } from '~/components/common/DetailHero'
 import { DetailPageHeader } from '~/components/common/DetailPageHeader'
 import { SectionHeading } from '~/components/common/SectionHeading'
 import { MetadataDrawer } from '~/components/common/MetadataDrawer'
-import { MetadataSection } from '~/components/common/MetadataSection'
+import { MetadataSectionList } from '~/components/common/MetadataSectionList'
 import { sampleMetadataSections } from '~/components/common/metadataSections'
 import { SampleAcquisitionsTable } from '~/components/samples/SampleAcquisitionsTable'
 import {
@@ -223,9 +223,7 @@ function SampleDetailRoute() {
         eyebrow="Sample details"
         title={sampleId}
       >
-        {sampleMetadataSections(sample).map((section) => (
-          <MetadataSection key={section.title} {...section} />
-        ))}
+        <MetadataSectionList sections={sampleMetadataSections(sample)} />
       </MetadataDrawer>
     </Stack>
   )
