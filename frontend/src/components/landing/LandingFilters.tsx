@@ -37,15 +37,15 @@ type LandingFiltersProps = {
 
 // `dataset_type` is stored as a snake_case enum value (e.g. "single_molecule");
 // render it as readable words in the dropdown without altering the filter value.
-function prettyDatasetType(v: string): string {
+export function prettyDatasetType(v: string): string {
   return v.replace(/_/g, ' ')
 }
 
-function numOrUndef(s: string): number | undefined {
+export function numOrUndef(s: string): number | undefined {
   return s === '' ? undefined : Number(s)
 }
 
-function DropdownFilter(props: {
+export function DropdownFilter(props: {
   label: string
   value: string
   options: string[]
@@ -53,15 +53,16 @@ function DropdownFilter(props: {
   // Optional display transform for option labels; the underlying value (used
   // for filtering) is unchanged.
   formatOption?: (v: string) => string
+  disabled?: boolean
 }) {
-  const { label, value, options, onChange, formatOption } = props
+  const { label, value, options, onChange, formatOption, disabled } = props
   const display = formatOption ?? ((v: string) => v)
   return (
     <Box>
-      <Typography variant="body2" gutterBottom>
+      <Typography variant="body2" gutterBottom color={disabled ? 'text.disabled' : undefined}>
         {label}
       </Typography>
-      <FormControl size="small" fullWidth>
+      <FormControl size="small" fullWidth disabled={disabled}>
         <Select
           value={value}
           displayEmpty
@@ -92,17 +93,18 @@ function DropdownFilter(props: {
   )
 }
 
-function MinMaxRow(props: {
+export function MinMaxRow(props: {
   label: string
   min: number | undefined
   max: number | undefined
   onMin: (v: number | undefined) => void
   onMax: (v: number | undefined) => void
+  disabled?: boolean
 }) {
-  const { label, min, max, onMin, onMax } = props
+  const { label, min, max, onMin, onMax, disabled } = props
   return (
     <Box>
-      <Typography variant="body2" gutterBottom>
+      <Typography variant="body2" gutterBottom color={disabled ? 'text.disabled' : undefined}>
         {label}
       </Typography>
       <Stack direction="row" spacing={1}>
@@ -111,6 +113,7 @@ function MinMaxRow(props: {
           type="number"
           placeholder="min"
           value={min ?? ''}
+          disabled={disabled}
           onChange={(e) => onMin(numOrUndef(e.target.value))}
         />
         <TextField
@@ -118,6 +121,7 @@ function MinMaxRow(props: {
           type="number"
           placeholder="max"
           value={max ?? ''}
+          disabled={disabled}
           onChange={(e) => onMax(numOrUndef(e.target.value))}
         />
       </Stack>
