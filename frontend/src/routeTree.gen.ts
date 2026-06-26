@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MdSimulationRouteImport } from './routes/md-simulation'
 import { Route as ExperimentalRouteImport } from './routes/experimental'
+import { Route as DataRouteImport } from './routes/data'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ManageIndexRouteImport } from './routes/manage.index'
 import { Route as SamplesSampleIdRouteImport } from './routes/samples.$sampleId'
@@ -26,6 +27,11 @@ const MdSimulationRoute = MdSimulationRouteImport.update({
 const ExperimentalRoute = ExperimentalRouteImport.update({
   id: '/experimental',
   path: '/experimental',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DataRoute = DataRouteImport.update({
+  id: '/data',
+  path: '/data',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -62,6 +68,7 @@ const AcquisitionsAcquisitionIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/data': typeof DataRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/data': typeof DataRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
@@ -83,6 +91,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/data': typeof DataRoute
   '/experimental': typeof ExperimentalRoute
   '/md-simulation': typeof MdSimulationRoute
   '/acquisitions/$acquisitionId': typeof AcquisitionsAcquisitionIdRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/data'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/data'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/data'
     | '/experimental'
     | '/md-simulation'
     | '/acquisitions/$acquisitionId'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DataRoute: typeof DataRoute
   ExperimentalRoute: typeof ExperimentalRoute
   MdSimulationRoute: typeof MdSimulationRoute
   AcquisitionsAcquisitionIdRoute: typeof AcquisitionsAcquisitionIdRoute
@@ -149,6 +162,13 @@ declare module '@tanstack/react-router' {
       path: '/experimental'
       fullPath: '/experimental'
       preLoaderRoute: typeof ExperimentalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/data': {
+      id: '/data'
+      path: '/data'
+      fullPath: '/data'
+      preLoaderRoute: typeof DataRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -198,6 +218,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DataRoute: DataRoute,
   ExperimentalRoute: ExperimentalRoute,
   MdSimulationRoute: MdSimulationRoute,
   AcquisitionsAcquisitionIdRoute: AcquisitionsAcquisitionIdRoute,
