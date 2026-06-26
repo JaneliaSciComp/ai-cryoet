@@ -67,7 +67,7 @@ def _make_record_with_tilt_series(
 def test_upsert_writes_tilt_series_row(session) -> None:
     r = _make_record_with_tilt_series()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=time.time()
     )
     session.commit()
 
@@ -86,7 +86,7 @@ def test_upsert_writes_tilt_series_row(session) -> None:
 def test_soft_delete_leaves_tilt_series_rows_in_place(session) -> None:
     r = _make_record_with_tilt_series()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=time.time()
     )
     # Mimic ``soft_delete_missing_samples``: only flip ``deleted_at``,
     # never touch child rows.
@@ -105,7 +105,7 @@ def test_soft_delete_leaves_tilt_series_rows_in_place(session) -> None:
 def test_resurrection_via_reupsert_brings_tilt_series_back(session) -> None:
     r = _make_record_with_tilt_series()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=time.time()
     )
     session.execute(
         orm.SampleORM.__table__.update().values(deleted_at=time.time())
@@ -115,7 +115,7 @@ def test_resurrection_via_reupsert_brings_tilt_series_back(session) -> None:
     # Re-upsert (resurrection path) clears deleted_at and the surviving
     # tilt_series rows remain reachable.
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-2"
+        session, r, extras=[], run_id="run-2", now=time.time()
     )
     session.commit()
 
@@ -138,7 +138,7 @@ def test_stale_per_mdoc_rows_pruned_on_relaxed_parser(session) -> None:
     old_ids = tuple(f"file_{i:03d}_{i * 3 - 30}.0" for i in range(33))
     r_old = _make_record_with_tilt_series(tilt_series_ids=old_ids)
     upsert_sample_record(
-        session, r_old, extras=[], warnings=[], scan_run_id="run-old"
+        session, r_old, extras=[], run_id="run-old", now=time.time()
     )
     session.commit()
     assert (
@@ -150,7 +150,7 @@ def test_stale_per_mdoc_rows_pruned_on_relaxed_parser(session) -> None:
         tilt_series_ids=("20241211_HippWaffle_49",)
     )
     upsert_sample_record(
-        session, r_new, extras=[], warnings=[], scan_run_id="run-new"
+        session, r_new, extras=[], run_id="run-new", now=time.time()
     )
     session.commit()
 
@@ -162,7 +162,7 @@ def test_upsert_removes_stale_tilt_series_rows(session) -> None:
     """Re-upserting with a smaller tilt_series set deletes the dropped row."""
     r1 = _make_record_with_tilt_series(tilt_series_ids=("ts_a", "ts_b"))
     upsert_sample_record(
-        session, r1, extras=[], warnings=[], scan_run_id="run-1"
+        session, r1, extras=[], run_id="run-1", now=time.time()
     )
     session.commit()
     assert (
@@ -171,7 +171,7 @@ def test_upsert_removes_stale_tilt_series_rows(session) -> None:
 
     r2 = _make_record_with_tilt_series(tilt_series_ids=("ts_a",))
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=time.time()
     )
     session.commit()
 

@@ -17,7 +17,6 @@ from schema import (
 from schema.schema import DataSource, Project
 from schema.loader import ExtrasEntry
 from catalog import db, orm
-from catalog.assembler import ScanWarning
 from catalog.persistence import upsert_sample_record
 from catalog.api.main import create_app
 from catalog.api.deps import get_session
@@ -83,15 +82,24 @@ def client(tmp_path):
                     value=1,
                 ),
             ],
-            warnings=[
-                ScanWarning(
-                    category="extra_field",
-                    location="sample",
-                    message="extra field 'weird'",
-                ),
-            ],
-            scan_run_id="run-A",
+            run_id="run-A",
+            now=time.time(),
         )
+        # One outstanding issue for sample_a (current state; resolved_at NULL).
+        s.add(orm.IssueORM(
+            fingerprint="fp-a-1",
+            severity="warning",
+            scope="sample",
+            sample_id="sample_a",
+            file_kind="sample_toml",
+            location="sample",
+            category="extra_field",
+            message="extra field 'weird'",
+            first_seen_at=time.time(),
+            first_seen_run_id="run-A",
+            last_seen_at=time.time(),
+            last_seen_run_id="run-A",
+        ))
 
         # sample_b — minimal
         rec_b = SampleRecord(
@@ -102,7 +110,7 @@ def client(tmp_path):
             )
         )
         upsert_sample_record(
-            s, rec_b, extras=[], warnings=[], scan_run_id="run-A"
+            s, rec_b, extras=[], run_id="run-A", now=time.time()
         )
 
         # sample_c — soft-deleted (filter test)
@@ -114,7 +122,7 @@ def client(tmp_path):
             )
         )
         upsert_sample_record(
-            s, rec_c, extras=[], warnings=[], scan_run_id="run-A"
+            s, rec_c, extras=[], run_id="run-A", now=time.time()
         )
         from sqlalchemy import update as sa_update
         s.execute(
@@ -123,16 +131,16 @@ def client(tmp_path):
             .values(deleted_at=time.time())
         )
 
-        # scans rows
-        s.add(orm.ScansORM(
+        # scan_runs rows (new model; /manage/scans coverage lives in
+        # test_api_manage.py — these just exercise the shared engine seeding).
+        s.add(orm.ScanRunORM(
             scan_run_id="run-A", started_at=time.time()-100, ended_at=time.time()-50,
             root="/data", status="completed",
-            samples_upserted=2, samples_skipped=0, samples_failed=0,
+            n_upserted=2, n_skipped=0, n_failed=0,
         ))
-        s.add(orm.ScansORM(
+        s.add(orm.ScanRunORM(
             scan_run_id="run-B", started_at=time.time()-10, ended_at=None,
             root="/data", status="running",
-            samples_upserted=None, samples_skipped=None, samples_failed=None,
         ))
         s.commit()
     finally:
@@ -245,19 +253,46 @@ def test_warnings_for_soft_deleted_404(client):
     assert r.status_code == 404
 
 
-# ── /scans ────────────────────────────────────────────────
-def test_list_scans_descending_by_start(client):
-    r = client.get("/scans")
-    assert r.status_code == 200
-    ids = [s["scan_run_id"] for s in r.json()]
-    # run-B started later
-    assert ids == ["run-B", "run-A"]
+# ── /samples/{id} scan_status block (LEFT JOIN; §4.6) ─────────────────────
+def test_sample_detail_scan_status_null_when_not_rescanned(client):
+    """A not-yet-rescanned sample/acquisition returns null scan_status blocks
+    (LEFT JOIN against the side tables)."""
+    body = client.get("/samples/sample_a").json()
+    assert body["scan_status"] is None
+    assert body["acquisitions"][0]["scan_status"] is None
 
 
-def test_get_latest_completed(client):
-    r = client.get("/scans/latest")
-    assert r.status_code == 200
-    assert r.json()["scan_run_id"] == "run-A"
+def test_sample_detail_scan_status_present_when_rescanned(client):
+    """Seeding sample_scan_status + acquisition_scan_status surfaces the
+    scan_status blocks on the detail payload."""
+    # Reach the shared engine via the session override.
+    gen = client.app.dependency_overrides[get_session]()
+    s = next(gen)
+    try:
+        s.add(orm.SampleScanStatusORM(
+            sample_id="sample_a", last_scanned_at=111.0, last_changed_at=100.0,
+            last_outcome="upserted", last_scan_run_id="run-A",
+        ))
+        s.add(orm.AcquisitionScanStatusORM(
+            sample_id="sample_a", acquisition_id="acq1",
+            last_scanned_at=111.0, last_changed_at=100.0,
+            last_outcome="upserted", last_scan_run_id="run-A",
+            thumbnail_path="sample_a/acq1.png", thumbnail_source_kind="frames",
+            thumbnail_source_path="/data/Frames", thumbnail_generated_at=100.0,
+            thumbnail_status="ok",
+        ))
+        s.commit()
+    finally:
+        gen.close()
+
+    body = client.get("/samples/sample_a").json()
+    assert body["scan_status"]["last_outcome"] == "upserted"
+    assert body["scan_status"]["last_scanned_at"] == 111.0
+    assert body["scan_status"]["last_changed_at"] == 100.0
+    acq_status = body["acquisitions"][0]["scan_status"]
+    assert acq_status["thumbnail_status"] == "ok"
+    assert acq_status["thumbnail_source_kind"] == "frames"
+    assert acq_status["thumbnail_source_path"] == "/data/Frames"
 
 
 # ── /extras/summary ───────────────────────────────────────
@@ -305,7 +340,7 @@ def _make_client_with_thumbnail(tmp_path, thumbnail_path_value):
         )
         from catalog.persistence import upsert_sample_record
         upsert_sample_record(
-            s, rec, extras=[], warnings=[], scan_run_id="run-thumb",
+            s, rec, extras=[], run_id="run-thumb", now=time.time(),
             thumbnail_path=thumbnail_path_value,
         )
         s.commit()

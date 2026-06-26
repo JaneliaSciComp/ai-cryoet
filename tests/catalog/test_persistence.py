@@ -28,8 +28,43 @@ from schema.loader import ExtrasEntry
 from schema.schema import DataSource, DatasetType, Project
 
 from catalog import db, orm
-from catalog.assembler import ScanWarning
-from catalog.persistence import upsert_sample_record
+from catalog.assembler import ScanIssue
+from catalog.persistence import (
+    reconcile_run_issues,
+    reconcile_sample_issues,
+    upsert_acquisition_scan_status,
+    upsert_sample_record,
+    upsert_sample_scan_status,
+)
+
+# Fixed run-level ``now`` threaded through the upsert calls (one timestamp per
+# run, decision §9.6); value is arbitrary but stable for assertions.
+_NOW = 1_700_000_000.0
+
+
+def _issue(
+    *,
+    sample_id="s1",
+    category="extra_field",
+    location="<root>",
+    message="m",
+    severity="warning",
+    scope="sample",
+    acquisition_id=None,
+    file_kind="sample_toml",
+    file_path=None,
+) -> ScanIssue:
+    return ScanIssue(
+        severity=severity,
+        scope=scope,
+        category=category,
+        location=location,
+        message=message,
+        sample_id=sample_id,
+        acquisition_id=acquisition_id,
+        file_kind=file_kind,
+        file_path=file_path,
+    )
 
 
 @pytest.fixture
@@ -56,7 +91,7 @@ def _make_record(sample_id: str = "s1", **overrides) -> SampleRecord:
 def test_upsert_basic_sample(session):
     r = _make_record()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     row = session.get(orm.SampleORM, "s1")
@@ -68,7 +103,7 @@ def test_upsert_basic_sample(session):
 def test_upsert_resurrects_soft_deleted(session):
     r = _make_record()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     # Force a soft delete.
     session.execute(
@@ -78,7 +113,7 @@ def test_upsert_resurrects_soft_deleted(session):
     assert session.get(orm.SampleORM, "s1").deleted_at is not None
 
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-2"
+        session, r, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     assert session.get(orm.SampleORM, "s1").deleted_at is None
@@ -87,7 +122,7 @@ def test_upsert_resurrects_soft_deleted(session):
 def test_upsert_chromatin_then_remove(session):
     r1 = _make_record(chromatin=Chromatin(buffer="HEPES"))
     upsert_sample_record(
-        session, r1, extras=[], warnings=[], scan_run_id="run-1"
+        session, r1, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     chrom = session.get(orm.ChromatinORM, "s1")
@@ -97,7 +132,7 @@ def test_upsert_chromatin_then_remove(session):
     # Re-upsert with no chromatin block — row must be deleted.
     r2 = _make_record()
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     assert session.get(orm.ChromatinORM, "s1") is None
@@ -108,7 +143,7 @@ def test_upsert_fiducial_then_remove(session):
         fiducial=Fiducial(vendor="Aurion", aunp_size_nm=10.0)
     )
     upsert_sample_record(
-        session, r1, extras=[], warnings=[], scan_run_id="run-1"
+        session, r1, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     fid = session.get(orm.FiducialORM, "s1")
@@ -118,7 +153,7 @@ def test_upsert_fiducial_then_remove(session):
 
     r2 = _make_record()
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     assert session.get(orm.FiducialORM, "s1") is None
@@ -133,7 +168,7 @@ def test_upsert_label_ordinal_cleanup(session):
         ]
     )
     upsert_sample_record(
-        session, r1, extras=[], warnings=[], scan_run_id="run-1"
+        session, r1, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     rows = (
@@ -157,7 +192,7 @@ def test_upsert_label_ordinal_cleanup(session):
         ]
     )
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     rows = (
@@ -182,7 +217,7 @@ def test_label_aunp_size_nm_polymorphic(session):
         ]
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     rows = (
@@ -227,7 +262,7 @@ def test_upsert_raw_and_post_tomogram_share_id_namespace(session):
         acquisitions={"acq1": acq_file},
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
 
@@ -268,7 +303,7 @@ def test_stale_raw_tomogram_cleaned_up_on_disappearance(session):
         acquisitions={"acq1": acq_file},
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     assert session.get(orm.RawTomogramORM, ("s1", "acq1", "t_raw")) is not None
@@ -277,7 +312,7 @@ def test_stale_raw_tomogram_cleaned_up_on_disappearance(session):
     acq_file2 = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
     r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq_file2})
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     assert session.get(orm.RawTomogramORM, ("s1", "acq1", "t_raw")) is None
@@ -301,7 +336,7 @@ def test_stale_post_processed_tomogram_cleaned_up(session):
         acquisitions={"acq1": acq_file},
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     assert session.get(
@@ -315,7 +350,7 @@ def test_stale_post_processed_tomogram_cleaned_up(session):
     )
     r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq_file2})
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     assert session.get(
@@ -336,7 +371,7 @@ def test_md_run_and_md_source_round_trip(session):
     )
     acq_file = AcquisitionFile(
         acquisition=Acquisition(acquisition_id="acq1"),
-        md_source=MdSource(md_run_id="run_a", frame=42),
+        md_source=MdSource(md_run_id="run_a", now=_NOW, frame=42),
     )
     r = SampleRecord(
         sample=sample,
@@ -355,7 +390,7 @@ def test_md_run_and_md_source_round_trip(session):
         acquisitions={"acq1": acq_file},
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
 
@@ -388,7 +423,7 @@ def test_md_run_and_md_source_round_trip(session):
         acquisitions={"acq1": acq_file2},
     )
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     assert session.get(orm.MdSourceORM, ("sim1", "acq1")) is None
@@ -401,7 +436,7 @@ def test_md_run_and_md_source_round_trip(session):
         acquisitions={"acq1": acq_file2},
     )
     upsert_sample_record(
-        session, r3, extras=[], warnings=[], scan_run_id="run-3"
+        session, r3, extras=[], run_id="run-3", now=_NOW
     )
     session.commit()
     assert session.get(orm.MdRunORM, ("sim1", "run_a")) is None
@@ -426,7 +461,7 @@ def test_upsert_acquisition_facility_and_tilt_quality(session):
         acquisitions={"acq1": acq_file},
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
 
@@ -450,7 +485,7 @@ def test_stale_acquisition_cleaned_up(session):
         acquisitions={"acq1": acq1, "acq2": acq2},
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     assert session.get(orm.AcquisitionORM, ("s1", "acq2")) is not None
@@ -458,7 +493,7 @@ def test_stale_acquisition_cleaned_up(session):
     # Re-upsert without acq2.
     r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq1})
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     assert session.get(orm.AcquisitionORM, ("s1", "acq1")) is not None
@@ -482,7 +517,7 @@ def test_extras_refresh(session):
         ),
     ]
     upsert_sample_record(
-        session, r, extras=extras, warnings=[], scan_run_id="run-1"
+        session, r, extras=extras, run_id="run-1", now=_NOW
     )
     session.commit()
     rows = (
@@ -496,7 +531,7 @@ def test_extras_refresh(session):
 
     # Re-upsert with one fewer extra — old ones must be gone.
     upsert_sample_record(
-        session, r, extras=extras[:1], warnings=[], scan_run_id="run-2"
+        session, r, extras=extras[:1], run_id="run-2", now=_NOW
     )
     session.commit()
     rows = (
@@ -525,7 +560,7 @@ def test_extras_value_json_handles_dates(session):
         )
     ]
     upsert_sample_record(
-        session, r, extras=extras, warnings=[], scan_run_id="run-1"
+        session, r, extras=extras, run_id="run-1", now=_NOW
     )
     session.commit()
     row = (
@@ -538,42 +573,13 @@ def test_extras_value_json_handles_dates(session):
     assert json.loads(row.value_json) == "2026-05-01"
 
 
-def test_warnings_refresh_with_scan_run_id(session):
+def test_upsert_sample_record_does_not_write_issues(session):
+    """upsert_sample_record no longer touches the issues table — issue
+    reconciliation is a separate call (the scan_warnings write path is gone)."""
     r = _make_record()
-    ws = [ScanWarning(category="extra_field", location="sample", message="x")]
-    upsert_sample_record(
-        session, r, extras=[], warnings=ws, scan_run_id="run-1"
-    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
     session.commit()
-    rows = (
-        session.execute(
-            select(orm.ScanWarningsORM).where(
-                orm.ScanWarningsORM.sample_id == "s1"
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(rows) == 1
-    assert rows[0].scan_run_id == "run-1"
-    assert rows[0].category == "extra_field"
-    assert rows[0].detected_at > 0
-
-    # Re-upsert with no warnings — old ones must be gone.
-    upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-2"
-    )
-    session.commit()
-    rows = (
-        session.execute(
-            select(orm.ScanWarningsORM).where(
-                orm.ScanWarningsORM.sample_id == "s1"
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(rows) == 0
+    assert session.execute(select(orm.IssueORM)).scalars().all() == []
 
 
 def test_idempotent_double_upsert_same_state(session):
@@ -582,11 +588,11 @@ def test_idempotent_double_upsert_same_state(session):
         label=[Label(label_target="actin", aunp_size_nm=5.0)],
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-2"
+        session, r, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
     samples = session.execute(select(orm.SampleORM)).scalars().all()
@@ -614,7 +620,7 @@ def test_unflushed_inserts_dont_get_deleted_by_stale_cleanup(session):
         acquisitions={"acq1": acq_file},
     )
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
 
@@ -628,7 +634,7 @@ def test_unflushed_inserts_dont_get_deleted_by_stale_cleanup(session):
     )
     r2 = SampleRecord(sample=r.sample, acquisitions={"acq1": acq_file2})
     upsert_sample_record(
-        session, r2, extras=[], warnings=[], scan_run_id="run-2"
+        session, r2, extras=[], run_id="run-2", now=_NOW
     )
     session.commit()
 
@@ -643,7 +649,7 @@ def test_unflushed_inserts_dont_get_deleted_by_stale_cleanup(session):
 def test_upsert_writes_disk_size_bytes(session):
     r = _make_record()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1", disk_size_bytes=12345
+        session, r, extras=[], run_id="run-1", now=_NOW, disk_size_bytes=12345
     )
     session.commit()
     row = session.get(orm.SampleORM, "s1")
@@ -654,7 +660,7 @@ def test_upsert_writes_disk_size_bytes(session):
 def test_upsert_default_disk_size_bytes_is_null(session):
     r = _make_record()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     row = session.get(orm.SampleORM, "s1")
@@ -665,7 +671,7 @@ def test_upsert_default_disk_size_bytes_is_null(session):
 def test_upsert_sample_record_with_thumbnail_path(session):
     r = _make_record()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1",
+        session, r, extras=[], run_id="run-1", now=_NOW,
         thumbnail_path="s/a/t.png",
     )
     session.commit()
@@ -677,7 +683,7 @@ def test_upsert_sample_record_with_thumbnail_path(session):
 def test_upsert_sample_record_thumbnail_path_default_is_null(session):
     r = _make_record()
     upsert_sample_record(
-        session, r, extras=[], warnings=[], scan_run_id="run-1"
+        session, r, extras=[], run_id="run-1", now=_NOW
     )
     session.commit()
     row = session.get(orm.SampleORM, "s1")
@@ -685,41 +691,318 @@ def test_upsert_sample_record_thumbnail_path_default_is_null(session):
     assert row.thumbnail_path is None
 
 
-def test_per_sample_isolation_scan_warnings_only_for_target_sample(session):
-    """Warnings refresh deletes only this sample's rows, not all."""
-    r1 = _make_record(sample_id="s1")
-    r2 = _make_record(sample_id="s2")
-    w1 = [ScanWarning(category="extra_field", location="sample", message="m1")]
-    w2 = [ScanWarning(category="extra_field", location="sample", message="m2")]
-    upsert_sample_record(
-        session, r1, extras=[], warnings=w1, scan_run_id="r"
-    )
-    upsert_sample_record(
-        session, r2, extras=[], warnings=w2, scan_run_id="r"
-    )
-    session.commit()
-    # Re-upsert s1 without warnings — s2's warning must remain.
-    upsert_sample_record(
-        session, r1, extras=[], warnings=[], scan_run_id="r"
-    )
-    session.commit()
-    s1_rows = (
+# ── issue reconciliation (§4.4) ────────────────────────────────────────────
+
+
+def _outstanding(session, sample_id="s1"):
+    return (
         session.execute(
-            select(orm.ScanWarningsORM).where(
-                orm.ScanWarningsORM.sample_id == "s1"
-            )
+            select(orm.IssueORM)
+            .where(orm.IssueORM.sample_id == sample_id)
+            .where(orm.IssueORM.resolved_at.is_(None))
         )
         .scalars()
         .all()
     )
-    s2_rows = (
-        session.execute(
-            select(orm.ScanWarningsORM).where(
-                orm.ScanWarningsORM.sample_id == "s2"
-            )
-        )
-        .scalars()
-        .all()
+
+
+def test_reconcile_new_issue_sets_first_seen(session):
+    n_new, n_resolved = reconcile_sample_issues(
+        session, "run-1", "s1", [_issue(message="m1")], _NOW
     )
-    assert len(s1_rows) == 0
-    assert len(s2_rows) == 1
+    session.commit()
+    assert (n_new, n_resolved) == (1, 0)
+    rows = session.execute(select(orm.IssueORM)).scalars().all()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.first_seen_at == _NOW
+    assert row.first_seen_run_id == "run-1"
+    assert row.last_seen_at == _NOW
+    assert row.last_seen_run_id == "run-1"
+    assert row.resolved_at is None
+
+
+def test_reconcile_recurring_preserves_first_seen_bumps_last_seen(session):
+    reconcile_sample_issues(session, "run-1", "s1", [_issue()], _NOW)
+    session.commit()
+    later = _NOW + 3600.0
+    n_new, n_resolved = reconcile_sample_issues(
+        session, "run-2", "s1", [_issue()], later
+    )
+    session.commit()
+    assert (n_new, n_resolved) == (0, 0)
+    row = _outstanding(session)[0]
+    assert row.first_seen_at == _NOW
+    assert row.first_seen_run_id == "run-1"
+    assert row.last_seen_at == later
+    assert row.last_seen_run_id == "run-2"
+
+
+def test_reconcile_fixed_issue_gets_resolved(session):
+    reconcile_sample_issues(session, "run-1", "s1", [_issue()], _NOW)
+    session.commit()
+    later = _NOW + 3600.0
+    # Re-evaluated sample no longer emits the issue → resolved.
+    n_new, n_resolved = reconcile_sample_issues(session, "run-2", "s1", [], later)
+    session.commit()
+    assert (n_new, n_resolved) == (0, 1)
+    assert _outstanding(session) == []
+    row = session.execute(select(orm.IssueORM)).scalars().one()
+    assert row.resolved_at == later
+    assert row.resolved_run_id == "run-2"
+
+
+def test_reconcile_message_only_change_preserves_first_seen(session):
+    """Fingerprint excludes message — a re-worded message updates the text but
+    preserves first_seen (decision §9.4)."""
+    reconcile_sample_issues(
+        session, "run-1", "s1", [_issue(message="count=1")], _NOW
+    )
+    session.commit()
+    later = _NOW + 60.0
+    n_new, n_resolved = reconcile_sample_issues(
+        session, "run-2", "s1", [_issue(message="count=2")], later
+    )
+    session.commit()
+    assert (n_new, n_resolved) == (0, 0)
+    row = _outstanding(session)[0]
+    assert row.first_seen_at == _NOW
+    assert row.message == "count=2"
+
+
+def test_reconcile_resolved_then_recurring_reopens(session):
+    reconcile_sample_issues(session, "run-1", "s1", [_issue()], _NOW)
+    session.commit()
+    reconcile_sample_issues(session, "run-2", "s1", [], _NOW + 60.0)
+    session.commit()
+    assert _outstanding(session) == []
+
+    later = _NOW + 120.0
+    n_new, n_resolved = reconcile_sample_issues(
+        session, "run-3", "s1", [_issue()], later
+    )
+    session.commit()
+    # Reopen counts as newly-opened; only one row total (fingerprint UNIQUE).
+    assert n_new == 1
+    rows = session.execute(select(orm.IssueORM)).scalars().all()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.resolved_at is None
+    assert row.first_seen_at == _NOW  # preserved across the resolve→recur cycle
+    assert row.first_seen_run_id == "run-1"
+    assert row.last_seen_at == later
+    assert row.last_seen_run_id == "run-3"
+
+
+def test_reconcile_skipped_sample_leaves_issues_unchanged(session):
+    """Skipped sample: the scanner does NOT call reconcile, so issues persist
+    with their old last_seen (the skip rule). We simulate by not re-reconciling.
+    """
+    reconcile_sample_issues(session, "run-1", "s1", [_issue()], _NOW)
+    session.commit()
+    # Run-2 skips s1 → no reconcile call. Issue stays outstanding, last_seen old.
+    row = _outstanding(session)[0]
+    assert row.resolved_at is None
+    assert row.last_seen_at == _NOW
+    assert row.last_seen_run_id == "run-1"
+
+
+def test_reconcile_failed_sample_adds_assembly_failed_without_resolving(session):
+    """Failed sample (resolve_missing=False): adds the assembly_failed error but
+    does NOT resolve the sample's other outstanding issues (§4.4)."""
+    reconcile_sample_issues(
+        session, "run-1", "s1", [_issue(category="extra_field")], _NOW
+    )
+    session.commit()
+    later = _NOW + 60.0
+    failed = _issue(
+        category="assembly_failed",
+        severity="error",
+        location="<root>",
+        message="boom",
+    )
+    n_new, n_resolved = reconcile_sample_issues(
+        session, "run-2", "s1", [failed], later, resolve_missing=False
+    )
+    session.commit()
+    assert n_resolved == 0
+    outstanding = _outstanding(session)
+    cats = {row.category for row in outstanding}
+    # Both the prior warning and the new error remain outstanding.
+    assert cats == {"extra_field", "assembly_failed"}
+
+
+def test_reconcile_run_issues_replaces_run_scope_set(session):
+    run_issue = _issue(
+        sample_id=None,
+        scope="run",
+        category="unknown_md_simulation_subdir",
+        location="/data/MdSimulation/Bogus",
+        file_kind="filesystem",
+    )
+    n_new, _ = reconcile_run_issues(session, "run-1", [run_issue], _NOW)
+    session.commit()
+    assert n_new == 1
+    # Next run no longer emits it → resolved.
+    _, n_resolved = reconcile_run_issues(session, "run-2", [], _NOW + 60.0)
+    session.commit()
+    assert n_resolved == 1
+    row = session.execute(select(orm.IssueORM)).scalars().one()
+    assert row.scope == "run"
+    assert row.sample_id is None
+    assert row.resolved_at is not None
+
+
+# ── freshness + thumbnail provenance status (§4.5) ──────────────────────────
+
+
+def test_sample_scan_status_upsert_sets_last_changed_on_upsert(session):
+    upsert_sample_scan_status(
+        session, "s1", now=_NOW, outcome="upserted", run_id="run-1", changed=True
+    )
+    session.commit()
+    row = session.get(orm.SampleScanStatusORM, "s1")
+    assert row.last_scanned_at == _NOW
+    assert row.last_changed_at == _NOW
+    assert row.last_outcome == "upserted"
+    assert row.last_scan_run_id == "run-1"
+
+
+def test_sample_scan_status_skip_preserves_last_changed(session):
+    upsert_sample_scan_status(
+        session, "s1", now=_NOW, outcome="upserted", run_id="run-1", changed=True
+    )
+    session.commit()
+    later = _NOW + 3600.0
+    upsert_sample_scan_status(
+        session, "s1", now=later, outcome="skipped", run_id="run-2", changed=False
+    )
+    session.commit()
+    row = session.get(orm.SampleScanStatusORM, "s1")
+    # last_scanned advances, last_changed stays pinned to the upsert run.
+    assert row.last_scanned_at == later
+    assert row.last_changed_at == _NOW
+    assert row.last_outcome == "skipped"
+
+
+def test_acquisition_scan_status_thumbnail_transitions(session):
+    # ok → records source + generated_at.
+    upsert_acquisition_scan_status(
+        session, "s1", "acq1", now=_NOW, outcome="upserted", run_id="run-1",
+        changed=True, thumbnail_path="s1/acq1.png", thumbnail_source_kind="st",
+        thumbnail_source_path="/data/x.st", thumbnail_generated_at=_NOW,
+        thumbnail_status="ok",
+    )
+    session.commit()
+    row = session.get(orm.AcquisitionScanStatusORM, ("s1", "acq1"))
+    assert row.thumbnail_status == "ok"
+    assert row.thumbnail_source_kind == "st"
+    assert row.thumbnail_source_path == "/data/x.st"
+    assert row.thumbnail_generated_at == _NOW
+
+    # missing_source → status updated; provenance fields preserved from prior
+    # (the upsert only overwrites provided non-None values).
+    later = _NOW + 60.0
+    upsert_acquisition_scan_status(
+        session, "s1", "acq1", now=later, outcome="upserted", run_id="run-2",
+        changed=True, thumbnail_status="missing_source",
+    )
+    session.commit()
+    row = session.get(orm.AcquisitionScanStatusORM, ("s1", "acq1"))
+    assert row.thumbnail_status == "missing_source"
+    assert row.last_scanned_at == later
+
+
+def test_acquisition_scan_status_survives_content_keyed_upsert(session):
+    """The status side table is keyed by its own PK and is NOT deleted by the
+    content keyed-upsert / stale-child cleanup (§3.2)."""
+    acq_file = AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+    r = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={"acq1": acq_file},
+    )
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    upsert_acquisition_scan_status(
+        session, "s1", "acq1", now=_NOW, outcome="upserted", run_id="run-1",
+        changed=True,
+    )
+    session.commit()
+    # A second content upsert (same acquisition kept) must not drop the status.
+    upsert_sample_record(session, r, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+    assert session.get(orm.AcquisitionScanStatusORM, ("s1", "acq1")) is not None
+
+
+# ── orphan prune (§3.2 / §9.10) ─────────────────────────────────────────────
+
+
+def test_orphan_acquisition_status_and_issues_pruned_on_next_upsert(session):
+    r1 = SampleRecord(
+        sample=Sample(
+            sample_id="s1",
+            data_source=DataSource.experimental,
+            project=Project.chromatin,
+        ),
+        acquisitions={
+            "acq1": AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1")),
+            "acq2": AcquisitionFile(acquisition=Acquisition(acquisition_id="acq2")),
+        },
+    )
+    upsert_sample_record(session, r1, extras=[], run_id="run-1", now=_NOW)
+    # Status rows + an acquisition-scope issue for acq2.
+    upsert_acquisition_scan_status(
+        session, "s1", "acq2", now=_NOW, outcome="upserted", run_id="run-1",
+        changed=True,
+    )
+    reconcile_sample_issues(
+        session,
+        "run-1",
+        "s1",
+        [
+            _issue(
+                scope="acquisition",
+                acquisition_id="acq2",
+                file_kind="acquisition_toml",
+                location="acquisitions.acq2",
+            )
+        ],
+        _NOW,
+    )
+    session.commit()
+    assert session.get(orm.AcquisitionScanStatusORM, ("s1", "acq2")) is not None
+    assert len(_outstanding(session)) == 1
+
+    # Re-upsert without acq2 — its status row + acquisition-scope issue pruned.
+    r2 = SampleRecord(
+        sample=r1.sample,
+        acquisitions={
+            "acq1": AcquisitionFile(acquisition=Acquisition(acquisition_id="acq1"))
+        },
+    )
+    upsert_sample_record(session, r2, extras=[], run_id="run-2", now=_NOW + 1)
+    session.commit()
+    assert session.get(orm.AcquisitionScanStatusORM, ("s1", "acq2")) is None
+    assert _outstanding(session) == []
+
+
+def test_soft_deleted_sample_keeps_sample_scan_status(session):
+    """Samples are soft-deleted (no row DELETE), so the FK'd sample_scan_status
+    row survives (§3.2/§9.10)."""
+    r = _make_record()
+    upsert_sample_record(session, r, extras=[], run_id="run-1", now=_NOW)
+    upsert_sample_scan_status(
+        session, "s1", now=_NOW, outcome="upserted", run_id="run-1", changed=True
+    )
+    session.commit()
+    # Simulate soft delete.
+    session.execute(
+        orm.SampleORM.__table__.update()
+        .where(orm.SampleORM.sample_id == "s1")
+        .values(deleted_at=time.time())
+    )
+    session.commit()
+    assert session.get(orm.SampleScanStatusORM, "s1") is not None

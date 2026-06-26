@@ -39,6 +39,9 @@ from schema.schema import (
     TiltSeries,
 )
 
+# The scan tables (scan_runs, scan_log_lines, scan_sample_outcomes, issues) and
+# the two *_scan_status side tables are intentionally excluded from MAPPING:
+# they're catalog-operational, not Pydantic-source data.
 # (pydantic_cls, orm_cls, db_only_columns, pydantic_only_pk_fields)
 # pydantic_only_pk_fields: fields that are Optional[T] in Pydantic but NOT NULL
 # in DB because they're path-injected.

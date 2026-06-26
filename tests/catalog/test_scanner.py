@@ -98,32 +98,36 @@ def test_scan_fixture_root_happy_path(engine):
         assert len(anns) == 1
         assert any(p.endswith("segmentation.mrc") for p in anns[0].files)
 
-        # scans row written, status='completed'
-        scans = s.execute(select(orm.ScansORM)).scalars().all()
+        # scan_runs row written, status='completed'
+        scans = s.execute(select(orm.ScanRunORM)).scalars().all()
         assert len(scans) == 1
         assert scans[0].status == "completed"
-        assert scans[0].samples_upserted == 2
+        assert scans[0].n_upserted == 2
 
         # catalog_meta row reflects the root we just scanned
         meta = s.get(orm.CatalogMetaORM, 1)
         assert meta is not None
         assert meta.data_root == str(FIXTURES.resolve())
 
-        # scan_warnings: at least one for Position_87 (missing_acquisition_toml)
-        warnings = (
+        # issues: at least one outstanding for Position_87 (missing_acquisition_toml)
+        issues = (
             s.execute(
-                select(orm.ScanWarningsORM).where(
-                    orm.ScanWarningsORM.sample_id == "sample_chromatin"
+                select(orm.IssueORM).where(
+                    orm.IssueORM.sample_id == "sample_chromatin"
                 )
             )
             .scalars()
             .all()
         )
-        categories = {w.category for w in warnings}
+        categories = {w.category for w in issues}
         assert "missing_acquisition_toml" in categories
-        # All warning rows from this scan share scan_run_id
-        scan_run_ids = {w.scan_run_id for w in warnings}
-        assert len(scan_run_ids) == 1
+        # Reconciled this run: first/last-seen run ids match the single run.
+        run_ids = {w.first_seen_run_id for w in issues} | {
+            w.last_seen_run_id for w in issues
+        }
+        assert run_ids == {scans[0].scan_run_id}
+        # All freshly-seen issues are outstanding (resolved_at IS NULL).
+        assert all(w.resolved_at is None for w in issues)
     finally:
         s.close()
 
@@ -159,14 +163,83 @@ def test_touched_file_triggers_reassemble(engine):
         os.utime(target, (original_mtime, original_mtime))
 
 
-def test_two_scans_make_two_scans_rows(engine):
+def test_two_scans_make_two_scan_runs_rows(engine):
     scanner.scan_root(engine, FIXTURES)
     scanner.scan_root(engine, FIXTURES)
     s = _session(engine)
     try:
-        scans = s.execute(select(orm.ScansORM)).scalars().all()
+        scans = s.execute(select(orm.ScanRunORM)).scalars().all()
         assert len(scans) == 2
         assert all(sc.status == "completed" for sc in scans)
+    finally:
+        s.close()
+
+
+def test_skipped_sample_leaves_issues_outstanding(engine):
+    """A sample skipped on the second scan keeps its outstanding issues with an
+    unchanged last_seen (the scanner does NOT reconcile a skipped sample, §4.4)."""
+    scanner.scan_root(engine, FIXTURES)
+    s = _session(engine)
+    try:
+        issues = (
+            s.execute(
+                select(orm.IssueORM).where(
+                    orm.IssueORM.sample_id == "sample_chromatin"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert issues
+        first_run_ids = {w.last_seen_run_id for w in issues}
+    finally:
+        s.close()
+
+    # Second scan skips everything (nothing changed on disk).
+    report2 = scanner.scan_root(engine, FIXTURES)
+    assert report2.skipped == 2
+
+    s = _session(engine)
+    try:
+        issues = (
+            s.execute(
+                select(orm.IssueORM).where(
+                    orm.IssueORM.sample_id == "sample_chromatin"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Still outstanding, and last_seen still points at the FIRST run (the
+        # skipped sample was not re-evaluated).
+        assert all(w.resolved_at is None for w in issues)
+        assert {w.last_seen_run_id for w in issues} == first_run_ids
+    finally:
+        s.close()
+
+
+def test_freshness_status_written_on_upsert_and_skip(engine):
+    """sample_scan_status records last_changed on upsert; a later skip advances
+    last_scanned but preserves last_changed (§4.5)."""
+    scanner.scan_root(engine, FIXTURES)
+    s = _session(engine)
+    try:
+        row = s.get(orm.SampleScanStatusORM, "sample_chromatin")
+        assert row is not None
+        assert row.last_outcome == "upserted"
+        assert row.last_changed_at is not None
+        first_changed = row.last_changed_at
+        first_scanned = row.last_scanned_at
+    finally:
+        s.close()
+
+    scanner.scan_root(engine, FIXTURES)  # skip
+    s = _session(engine)
+    try:
+        row = s.get(orm.SampleScanStatusORM, "sample_chromatin")
+        assert row.last_outcome == "skipped"
+        assert row.last_changed_at == first_changed  # preserved
+        assert row.last_scanned_at >= first_scanned  # advanced (or equal)
     finally:
         s.close()
 
@@ -278,13 +351,61 @@ def test_failed_scan_marks_status_failed(engine, tmp_path):
     try:
         scans = (
             s.execute(
-                select(orm.ScansORM).order_by(orm.ScansORM.started_at.desc())
+                select(orm.ScanRunORM).order_by(orm.ScanRunORM.started_at.desc())
             )
             .scalars()
             .all()
         )
         # Most recent scan should be 'failed'
         assert scans[0].status == "failed"
+    finally:
+        s.close()
+
+
+def test_crashed_run_does_not_resolve_run_scope_issues(engine, tmp_path):
+    """A run that ends non-`completed` must NOT resolve run-scope issues (§9.6):
+    the crashed run may not have finished discovery."""
+    # First scan: a bogus MdSimulation subdir emits a run-scope issue.
+    bogus = tmp_path / "MdSimulation" / "NotADatasetType" / "s1"
+    bogus.mkdir(parents=True)
+    (bogus / "sample.toml").write_text(
+        '[sample]\ndata_source = "simulation"\nproject = "chromatin"\n'
+    )
+    _write_minimal_sample(tmp_path, "exp1")
+    scanner.scan_root(engine, tmp_path)
+
+    s = _session(engine)
+    try:
+        run_issues = (
+            s.execute(
+                select(orm.IssueORM).where(orm.IssueORM.scope == "run")
+            )
+            .scalars()
+            .all()
+        )
+        assert len(run_issues) == 1
+        assert run_issues[0].resolved_at is None
+    finally:
+        s.close()
+
+    # Second scan crashes (prune floor exceeded) BEFORE the run-scope reconcile.
+    sample_a = tmp_path / "Experimental" / "exp1"
+    sample_a.rename(tmp_path / "Experimental" / "renamed")
+    with pytest.raises(Exception):
+        scanner.scan_root(engine, tmp_path, prune=True, prune_safety_floor=0.0)
+
+    s = _session(engine)
+    try:
+        # The run-scope issue is still outstanding — a crashed run leaves it be.
+        run_issues = (
+            s.execute(
+                select(orm.IssueORM).where(orm.IssueORM.scope == "run")
+            )
+            .scalars()
+            .all()
+        )
+        assert len(run_issues) == 1
+        assert run_issues[0].resolved_at is None
     finally:
         s.close()
 
@@ -374,11 +495,14 @@ def test_force_recomputes_disk_size_bytes(engine, tmp_path):
 _FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 
 
-def _fake_render_one(ref, dest: Path) -> bool:
-    """Patch target: writes fake PNG bytes to dest and returns True."""
+def _fake_render_one(ref, dest: Path):
+    """Patch target: writes fake PNG bytes to dest and returns the new
+    ``(ok, source_kind, source_path)`` triple (§4.5)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(_FAKE_PNG)
-    return True
+    kind = "zarr" if ref.zarr_path else "st" if ref.st_path else "frames"
+    path = ref.zarr_path or ref.st_path or ref.frames_dir
+    return True, kind, path
 
 
 def test_scan_with_thumbnail_dir_populates_thumbnail_path(engine, tmp_path):
@@ -501,6 +625,31 @@ def test_auto_heal_on_skip(engine, tmp_path):
     assert thumb_file.is_file()
 
 
+def test_scan_records_thumbnail_provenance_in_acq_status(engine, tmp_path):
+    """On upsert the scanner writes the rendered source provenance + status to
+    acquisition_scan_status (§4.5)."""
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    with patch("catalog.thumbnails._render_one", side_effect=_fake_render_one):
+        scanner.scan_root(engine, FIXTURES, thumbnail_dir=thumb_dir)
+
+    s = _session(engine)
+    try:
+        # sample_chromatin/Position_86 renders from its Frames/ dir.
+        row = s.get(
+            orm.AcquisitionScanStatusORM, ("sample_chromatin", "Position_86")
+        )
+        assert row is not None
+        assert row.last_outcome == "upserted"
+        assert row.thumbnail_status == "ok"
+        assert row.thumbnail_source_kind in {"zarr", "st", "frames"}
+        assert row.thumbnail_source_path is not None
+        assert row.thumbnail_generated_at is not None
+    finally:
+        s.close()
+
+
 def test_skip_no_heal_when_file_present(engine, tmp_path):
     """Second scan that skips should not re-render if thumbnail file is present."""
     thumb_dir = tmp_path / "thumbs"
@@ -519,10 +668,10 @@ def test_skip_no_heal_when_file_present(engine, tmp_path):
     mock_render.assert_not_called()
 
 
-def test_scan_emits_and_persists_run_level_warning(engine, tmp_path):
+def test_scan_emits_and_persists_run_level_issue(engine, tmp_path):
     # A sample dropped under an unrecognized MdSimulation/ subdir is skipped by
-    # discovery; the scanner surfaces it as a run-level warning and persists it
-    # to scan_run_warnings (keyed by scan_run_id, no owning sample).
+    # discovery; the scanner surfaces it as a run-scope issue and persists it
+    # to the issues table (scope='run', no owning sample).
     bogus = tmp_path / "MdSimulation" / "NotADatasetType" / "s1"
     bogus.mkdir(parents=True)
     (bogus / "sample.toml").write_text(
@@ -535,30 +684,37 @@ def test_scan_emits_and_persists_run_level_warning(engine, tmp_path):
 
     # The bogus subdir never becomes a sample.
     assert report.upserted == 1
-    assert [w.category for w in report.run_warnings] == [
+    assert [w.category for w in report.run_issues] == [
         "unknown_md_simulation_subdir"
     ]
-    assert "NotADatasetType" in report.run_warnings[0].location
+    assert "NotADatasetType" in report.run_issues[0].location
 
     s = _session(engine)
     try:
-        rows = s.execute(select(orm.ScanRunWarningsORM)).scalars().all()
+        rows = (
+            s.execute(select(orm.IssueORM).where(orm.IssueORM.scope == "run"))
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         row = rows[0]
         assert row.category == "unknown_md_simulation_subdir"
         assert "NotADatasetType" in row.location
-        # Tied to the scan run, not a sample.
+        assert row.sample_id is None
+        assert row.file_kind == "filesystem"
+        assert row.resolved_at is None
+        # Tied to a real scan run.
         scan_ids = {
-            r[0] for r in s.execute(select(orm.ScansORM.scan_run_id)).all()
+            r[0] for r in s.execute(select(orm.ScanRunORM.scan_run_id)).all()
         }
-        assert row.scan_run_id in scan_ids
+        assert row.last_seen_run_id in scan_ids
     finally:
         s.close()
 
 
-def test_scan_emits_run_warning_for_sample_outside_arm(engine, tmp_path):
+def test_scan_emits_run_issue_for_sample_outside_arm(engine, tmp_path):
     # A sample placed under a non-arm top-level dir (root/{other}/{sample}/) is
-    # never discovered; the scanner surfaces and persists a run-level warning.
+    # never discovered; the scanner surfaces and persists a run-scope issue.
     misplaced = tmp_path / "Experiemntal" / "s1"  # typo'd arm name
     misplaced.mkdir(parents=True)
     (misplaced / "sample.toml").write_text(
@@ -571,24 +727,125 @@ def test_scan_emits_run_warning_for_sample_outside_arm(engine, tmp_path):
 
     # The misplaced sample never becomes a catalogued sample.
     assert report.upserted == 1
-    assert [w.category for w in report.run_warnings] == ["sample_outside_arm"]
-    assert "s1" in report.run_warnings[0].location
+    assert [w.category for w in report.run_issues] == ["sample_outside_arm"]
+    assert "s1" in report.run_issues[0].location
 
     s = _session(engine)
     try:
-        rows = s.execute(select(orm.ScanRunWarningsORM)).scalars().all()
+        rows = (
+            s.execute(select(orm.IssueORM).where(orm.IssueORM.scope == "run"))
+            .scalars()
+            .all()
+        )
         assert [r.category for r in rows] == ["sample_outside_arm"]
         assert "s1" in rows[0].location
     finally:
         s.close()
 
 
-def test_scan_clean_root_has_no_run_warnings(engine):
+def test_scan_clean_root_has_no_run_issues(engine):
     report = scanner.scan_root(engine, FIXTURES)
-    assert report.run_warnings == []
+    assert report.run_issues == []
     s = _session(engine)
     try:
-        rows = s.execute(select(orm.ScanRunWarningsORM)).scalars().all()
+        rows = (
+            s.execute(select(orm.IssueORM).where(orm.IssueORM.scope == "run"))
+            .scalars()
+            .all()
+        )
         assert rows == []
+    finally:
+        s.close()
+
+
+# ── log capture (§4.3 / §9.11) ──────────────────────────────────────────────
+
+
+def test_scan_persists_log_lines_with_sample_context_and_seq(engine, tmp_path):
+    """Log lines are bulk-inserted once at run end, carry sample_id context for
+    per-sample lines, and have a monotonic seq."""
+    _write_minimal_sample(tmp_path, "exp1")
+    scanner.scan_root(engine, tmp_path)
+
+    s = _session(engine)
+    try:
+        rows = (
+            s.execute(
+                select(orm.ScanLogLineORM).order_by(orm.ScanLogLineORM.seq)
+            )
+            .scalars()
+            .all()
+        )
+        assert rows, "expected persisted log lines"
+        # Monotonic, strictly increasing seq.
+        seqs = [r.seq for r in rows]
+        assert seqs == sorted(seqs)
+        assert len(set(seqs)) == len(seqs)
+        # All lines belong to the single run.
+        run_ids = {r.scan_run_id for r in rows}
+        assert len(run_ids) == 1
+        # The per-sample "[1/1] exp1" line carries sample_id context.
+        per_sample = [r for r in rows if r.sample_id == "exp1"]
+        assert per_sample, "expected at least one line bound to sample_id=exp1"
+    finally:
+        s.close()
+
+
+def test_scan_log_retention_prunes_old_runs(engine, tmp_path, monkeypatch):
+    """SCAN_LOG_RETENTION_RUNS bounds how many runs keep their log lines; older
+    runs keep their scan_runs row but lose their log lines."""
+    _write_minimal_sample(tmp_path, "exp1")
+    monkeypatch.setenv("SCAN_LOG_RETENTION_RUNS", "1")
+
+    scanner.scan_root(engine, tmp_path)  # run 1
+    scanner.scan_root(engine, tmp_path, force=True)  # run 2
+
+    s = _session(engine)
+    try:
+        # Two scan_runs rows survive; only the most-recent run's log lines remain.
+        scan_runs = s.execute(select(orm.ScanRunORM)).scalars().all()
+        assert len(scan_runs) == 2
+        log_run_ids = {
+            r[0]
+            for r in s.execute(
+                select(orm.ScanLogLineORM.scan_run_id).distinct()
+            ).all()
+        }
+        assert len(log_run_ids) == 1
+    finally:
+        s.close()
+
+
+def test_crashed_scan_persists_partial_log_and_failed_status(engine, tmp_path):
+    """A crashed scan still records its buffered partial log + failed status via
+    the except path (§9.11)."""
+    _write_minimal_sample(tmp_path, "exp1")
+    scanner.scan_root(engine, tmp_path)
+    # Force a crash by renaming the only sample and pruning with floor 0.
+    (tmp_path / "Experimental" / "exp1").rename(tmp_path / "Experimental" / "gone")
+    with pytest.raises(Exception):
+        scanner.scan_root(engine, tmp_path, prune=True, prune_safety_floor=0.0)
+
+    s = _session(engine)
+    try:
+        latest = (
+            s.execute(
+                select(orm.ScanRunORM).order_by(orm.ScanRunORM.started_at.desc())
+            )
+            .scalars()
+            .first()
+        )
+        assert latest.status == "failed"
+        # Partial log lines from the crashed run were still persisted.
+        rows = (
+            s.execute(
+                select(orm.ScanLogLineORM).where(
+                    orm.ScanLogLineORM.scan_run_id == latest.scan_run_id
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows, "expected partial log lines for the crashed run"
     finally:
         s.close()

@@ -138,44 +138,28 @@ def seeded_client(tmp_path):
             sample_id="dead", acquisition_id="acq1", annotation_id="a1",
         ))
 
-        # ── scans + warnings ───────────────────────────────────────────
-        # older completed scan: 10 warnings (must NOT be the totals.warnings value)
-        s.add(orm.ScansORM(
-            scan_run_id="run-old",
-            started_at=time.time() - 1000,
-            ended_at=time.time() - 900,
-            root="/data", status="completed",
-            samples_upserted=4, samples_skipped=0, samples_failed=0,
-        ))
-        for i in range(10):
-            s.add(orm.ScanWarningsORM(
-                sample_id="chrom_a", category="cat",
-                location=f"loc{i}", message=f"old-{i}",
-                detected_at=time.time() - 950, scan_run_id="run-old",
-            ))
-
-        # newer completed scan: 3 warnings (the expected totals.warnings value)
-        s.add(orm.ScansORM(
-            scan_run_id="run-new",
-            started_at=time.time() - 100,
-            ended_at=time.time() - 50,
-            root="/data", status="completed",
-            samples_upserted=4, samples_skipped=0, samples_failed=0,
-        ))
+        # ── issues (current state; totals.warnings = outstanding count) ──
+        # 3 outstanding issues (resolved_at IS NULL) → the totals.warnings value.
         for i in range(3):
-            s.add(orm.ScanWarningsORM(
-                sample_id="syn_a", category="cat",
-                location=f"loc{i}", message=f"new-{i}",
-                detected_at=time.time() - 60, scan_run_id="run-new",
+            s.add(orm.IssueORM(
+                fingerprint=f"fp-out-{i}",
+                severity="warning", scope="sample", sample_id="syn_a",
+                file_kind="sample_toml", location=f"loc{i}",
+                category="cat", message=f"outstanding-{i}",
+                first_seen_at=time.time() - 100, first_seen_run_id="run-new",
+                last_seen_at=time.time() - 50, last_seen_run_id="run-new",
             ))
-
-        # an in-progress scan must be ignored entirely
-        s.add(orm.ScansORM(
-            scan_run_id="run-running",
-            started_at=time.time() - 5, ended_at=None,
-            root="/data", status="running",
-            samples_upserted=None, samples_skipped=None, samples_failed=None,
-        ))
+        # 10 RESOLVED issues — must NOT be counted in totals.warnings.
+        for i in range(10):
+            s.add(orm.IssueORM(
+                fingerprint=f"fp-res-{i}",
+                severity="warning", scope="sample", sample_id="chrom_a",
+                file_kind="sample_toml", location=f"rloc{i}",
+                category="cat", message=f"resolved-{i}",
+                first_seen_at=time.time() - 1000, first_seen_run_id="run-old",
+                last_seen_at=time.time() - 950, last_seen_run_id="run-old",
+                resolved_at=time.time() - 900, resolved_run_id="run-old",
+            ))
 
         s.commit()
     finally:
@@ -211,10 +195,10 @@ def test_totals_match_seeded_counts(seeded_client):
     assert totals["annotations"] == 3
 
 
-def test_totals_warnings_uses_latest_completed_scan(seeded_client):
+def test_totals_warnings_counts_outstanding_issues(seeded_client):
     r = seeded_client.get("/stats/overview")
     totals = r.json()["totals"]
-    # 3 from run-new; 10 from run-old must be ignored.
+    # 3 outstanding (resolved_at IS NULL); 10 resolved must be ignored.
     assert totals["warnings"] == 3
 
 
@@ -282,8 +266,8 @@ def test_empty_db_returns_zero_totals_and_empty_by_project(empty_client):
     assert body["by_project"] == []
 
 
-def test_no_completed_scan_returns_zero_warnings(tmp_path):
-    """Live data + a running-only scan → warnings total is 0."""
+def test_only_resolved_issues_returns_zero_warnings(tmp_path):
+    """Live data + only resolved issues → outstanding warnings total is 0."""
     app, Session = _make_app(tmp_path)
     s = Session()
     try:
@@ -291,13 +275,16 @@ def test_no_completed_scan_returns_zero_warnings(tmp_path):
             sample_id="x", data_source=DataSource.experimental,
             project=Project.chromatin,
         ))
-        s.add(orm.ScansORM(
-            scan_run_id="r1",
-            started_at=time.time(), ended_at=None,
-            root="/data", status="running",
+        # A resolved issue must NOT count toward outstanding warnings.
+        s.add(orm.IssueORM(
+            fingerprint="fp-resolved",
+            severity="warning", scope="sample", sample_id="x",
+            file_kind="sample_toml", location="loc", category="cat",
+            message="resolved", first_seen_at=time.time() - 100,
+            first_seen_run_id="r1", last_seen_at=time.time() - 90,
+            last_seen_run_id="r1", resolved_at=time.time() - 50,
+            resolved_run_id="r1",
         ))
-        # Even if a warning row exists from a previous (now-deleted) scan,
-        # without a completed scan we report 0.
         s.commit()
     finally:
         s.close()
