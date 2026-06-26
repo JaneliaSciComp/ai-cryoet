@@ -41,9 +41,9 @@ from catalog.api.routes import (
     annotations as annotations_routes,
     extras,
     filters,
+    manage as manage_routes,
     md_previews as md_previews_routes,
     samples,
-    scans,
     stats,
     thumbnails as thumbnails_routes,
     tilt_series as tilt_series_routes,
@@ -226,7 +226,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(samples.router, prefix="/samples", tags=["samples"])
-    app.include_router(scans.router, prefix="/scans", tags=["scans"])
+    app.include_router(manage_routes.router, prefix="/manage", tags=["manage"])
     app.include_router(warnings_routes.router, prefix="/samples", tags=["warnings"])
     app.include_router(extras.router, prefix="/extras", tags=["extras"])
     app.include_router(filters.router, prefix="/filters", tags=["filters"])

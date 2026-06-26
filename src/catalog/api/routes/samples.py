@@ -11,8 +11,10 @@ from catalog import orm
 from catalog.api.deps import get_session
 from catalog.api.schemas import (
     AcquisitionOut,
+    AcquisitionScanStatus,
     AnnotationOut,
     ChromatinOut,
+    EntityScanStatus,
     FiducialOut,
     FreezingOut,
     LabelOut,
@@ -106,13 +108,15 @@ def list_samples(
       * Counts on the SELECT list are filter-INDEPENDENT total child rows.
     """
     # ── Subqueries ────────────────────────────────────────────────────────
-    # Warning count per sample.
+    # Outstanding-issue count per sample (current state; resolved_at IS NULL).
     warn_count_sq = (
         select(
-            orm.ScanWarningsORM.sample_id,
-            func.count(orm.ScanWarningsORM.id).label("wc"),
+            orm.IssueORM.sample_id,
+            func.count(orm.IssueORM.id).label("wc"),
         )
-        .group_by(orm.ScanWarningsORM.sample_id)
+        .where(orm.IssueORM.resolved_at.is_(None))
+        .where(orm.IssueORM.sample_id.is_not(None))
+        .group_by(orm.IssueORM.sample_id)
         .subquery()
     )
 
@@ -330,6 +334,9 @@ _ACQ_CHILD_FIELDS = frozenset(
         "post_processed_tomograms",
         "annotations",
         "tilt_series",
+        # Populated separately from acquisition_scan_status (LEFT JOIN), so it
+        # must not be bulk-copied off the AcquisitionORM row.
+        "scan_status",
     }
 )
 
@@ -432,6 +439,27 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
             orm.MdSourceORM, (sample_id, a.acquisition_id)
         )
 
+        # Per-acquisition freshness + thumbnail provenance (side table; None
+        # when the acquisition has not yet been (re)scanned under the new model).
+        acq_status_row = session.get(
+            orm.AcquisitionScanStatusORM, (sample_id, a.acquisition_id)
+        )
+        acq_status = (
+            AcquisitionScanStatus(
+                last_scanned_at=acq_status_row.last_scanned_at,
+                last_changed_at=acq_status_row.last_changed_at,
+                last_outcome=_enum_val(acq_status_row.last_outcome),
+                last_scan_run_id=acq_status_row.last_scan_run_id,
+                thumbnail_path=acq_status_row.thumbnail_path,
+                thumbnail_source_kind=_enum_val(acq_status_row.thumbnail_source_kind),
+                thumbnail_source_path=acq_status_row.thumbnail_source_path,
+                thumbnail_generated_at=acq_status_row.thumbnail_generated_at,
+                thumbnail_status=_enum_val(acq_status_row.thumbnail_status),
+            )
+            if acq_status_row is not None
+            else None
+        )
+
         # Copy every scalar column AcquisitionOut declares straight off the ORM
         # row (researcher-authored + MDOC/frame-derived), then attach the nested
         # child entities below. New scalar fields flow through automatically.
@@ -458,8 +486,22 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
                     for ann in anns
                 ],
                 tilt_series=[_row_to_out(ts, TiltSeriesOut) for ts in ts_rows],
+                scan_status=acq_status,
             )
         )
+
+    # Per-sample freshness rollup (side table; None when not yet rescanned).
+    sample_status_row = session.get(orm.SampleScanStatusORM, sample_id)
+    sample_status = (
+        EntityScanStatus(
+            last_scanned_at=sample_status_row.last_scanned_at,
+            last_changed_at=sample_status_row.last_changed_at,
+            last_outcome=_enum_val(sample_status_row.last_outcome),
+            last_scan_run_id=sample_status_row.last_scan_run_id,
+        )
+        if sample_status_row is not None
+        else None
+    )
 
     return SampleDetail(
         sample_id=sample.sample_id,
@@ -479,4 +521,5 @@ def get_sample(sample_id: str, session: Session = Depends(get_session)):
         md_run=md_runs,
         acquisitions=acq_out,
         thumbnail_path=sample.thumbnail_path,
+        scan_status=sample_status,
     )

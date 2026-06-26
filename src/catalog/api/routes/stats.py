@@ -38,8 +38,8 @@ def _count_live(session: Session, child_orm) -> int:
 def get_stats_overview(session: Session = Depends(get_session)):
     """Aggregate totals + per-project rollup over live samples.
 
-    ``totals.warnings`` reflects only the most recent completed scan
-    (mirrors ``/samples/{id}/warnings`` semantics — Plan §7.3).
+    ``totals.warnings`` reflects the current outstanding-issue count
+    (``issues`` WHERE resolved_at IS NULL) — Plan §4.7.
     """
     # ── Totals ─────────────────────────────────────────────────────────────
     samples_total = session.execute(
@@ -57,21 +57,12 @@ def get_stats_overview(session: Session = Depends(get_session)):
     )
     annotations_total = _count_live(session, orm.AnnotationORM)
 
-    # Warnings: only count rows from the most recent completed scan.
-    latest_scan = session.execute(
-        select(orm.ScansORM.scan_run_id)
-        .where(orm.ScansORM.status == "completed")
-        .order_by(orm.ScansORM.ended_at.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-    if latest_scan is None:
-        warnings_total = 0
-    else:
-        warnings_total = session.execute(
-            select(func.count())
-            .select_from(orm.ScanWarningsORM)
-            .where(orm.ScanWarningsORM.scan_run_id == latest_scan)
-        ).scalar_one()
+    # Warnings: current outstanding issues (resolved_at IS NULL).
+    warnings_total = session.execute(
+        select(func.count())
+        .select_from(orm.IssueORM)
+        .where(orm.IssueORM.resolved_at.is_(None))
+    ).scalar_one()
 
     totals = StatsTotalsOut(
         samples=samples_total,
