@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session
 from catalog.orm import (
     CatalogMetaORM,
     SampleORM,
-    ScansORM,
-    ScanSamplesORM,
+    ScanRunORM,
+    ScanSampleOutcomeORM,
     ScanStateORM,
 )
 
@@ -128,8 +128,16 @@ def load_soft_deleted_ids(session: Session) -> set[str]:
     return set(rows)
 
 
-def start_scan(session: Session, scan_run_id: str, root: Path) -> None:
-    """Record the start of a scan run and upsert ``catalog_meta.data_root``.
+def start_scan(
+    session: Session,
+    scan_run_id: str,
+    root: Path,
+) -> float:
+    """Insert a ``scan_runs`` row (status running) and upsert ``catalog_meta``.
+
+    Returns the run-level ``started_at`` so the orchestrator can thread a single
+    ``now`` value through reconciliation, the per-sample upsert, the status
+    upserts, and ``finish_scan`` (decision §9.6 — one timestamp per run).
 
     The ``catalog_meta`` upsert lives here (rather than in ``finish_scan``)
     so the table reflects what root *was being scanned* even if the scan
@@ -137,15 +145,12 @@ def start_scan(session: Session, scan_run_id: str, root: Path) -> None:
     """
     now = time.time()
     session.add(
-        ScansORM(
+        ScanRunORM(
             scan_run_id=scan_run_id,
             started_at=now,
             ended_at=None,
             root=str(root),
             status="running",
-            samples_upserted=None,
-            samples_skipped=None,
-            samples_failed=None,
         )
     )
     existing = session.get(CatalogMetaORM, 1)
@@ -156,6 +161,7 @@ def start_scan(session: Session, scan_run_id: str, root: Path) -> None:
     else:
         existing.data_root = str(root)
         existing.updated_at = now
+    return now
 
 
 def finish_scan(
@@ -164,28 +170,43 @@ def finish_scan(
     *,
     status: str,
     report: Any,
+    now: float,
 ) -> None:
-    """Mark a scan run as finished and record the per-sample tallies.
+    """Mark a scan run as finished and record the per-sample outcomes.
+
+    Updates the ``scan_runs`` row with ``ended_at=now``, ``status``, the
+    upserted/skipped/failed tallies, and (best-effort, when the report carries
+    them) the issue-churn + outstanding-issue snapshot counts. Then writes the
+    per-sample outcome rows.
 
     ``report`` is duck-typed: any object with ``upserted``, ``skipped``, and
-    ``errors`` attributes works (the real ``ScanReport`` lives in §4.8). We
-    use ``getattr`` with safe defaults so an early-failure caller can still
-    call this with a stub.
+    ``errors`` attributes works. ``getattr`` with safe defaults lets an
+    early-failure caller call this with a stub.
     """
-    now = time.time()
     upserted = getattr(report, "upserted", 0) or 0
     skipped = getattr(report, "skipped", 0) or 0
-    failed = len(getattr(report, "errors", []) or [])
+    failed = len(getattr(report, "failed_samples", []) or [])
+    values: dict[str, Any] = {
+        "ended_at": now,
+        "status": status,
+        "n_upserted": upserted,
+        "n_skipped": skipped,
+        "n_failed": failed,
+    }
+    # Best-effort issue-churn / outstanding snapshots (left null if absent).
+    for attr in (
+        "n_new_issues",
+        "n_resolved_issues",
+        "n_warning_active",
+        "n_error_active",
+    ):
+        v = getattr(report, attr, None)
+        if v is not None:
+            values[attr] = v
     session.execute(
-        update(ScansORM)
-        .where(ScansORM.scan_run_id == scan_run_id)
-        .values(
-            ended_at=now,
-            status=status,
-            samples_upserted=upserted,
-            samples_skipped=skipped,
-            samples_failed=failed,
-        )
+        update(ScanRunORM)
+        .where(ScanRunORM.scan_run_id == scan_run_id)
+        .values(**values)
     )
     _record_scan_membership(session, scan_run_id, report)
 
@@ -197,35 +218,46 @@ def _record_scan_membership(
 
     Idempotent: clears any prior rows for ``scan_run_id`` first, so the
     failure path (``finish_scan`` called twice) doesn't double-insert.
-    Failed samples are deduplicated by ``sample_id`` (a single sample can
-    surface multiple error strings).
+    A sample appears at most once (the Unique(scan_run_id, sample_id)
+    constraint): failed wins over skipped wins over upserted, and failed
+    samples are deduplicated by ``sample_id``.
     """
     session.execute(
-        delete(ScanSamplesORM).where(ScanSamplesORM.scan_run_id == scan_run_id)
+        delete(ScanSampleOutcomeORM).where(
+            ScanSampleOutcomeORM.scan_run_id == scan_run_id
+        )
     )
 
-    for sample_id in getattr(report, "upserted_ids", []) or []:
-        session.add(
-            ScanSamplesORM(
-                scan_run_id=scan_run_id, sample_id=sample_id, outcome="upserted"
-            )
-        )
-    for sample_id in getattr(report, "skipped_ids", []) or []:
-        session.add(
-            ScanSamplesORM(
-                scan_run_id=scan_run_id, sample_id=sample_id, outcome="skipped"
-            )
-        )
-    seen_failed: set[str] = set()
+    seen: set[str] = set()
+
+    # Failed first so it wins the unique (scan_run_id, sample_id) slot.
     for sample_id, detail in getattr(report, "failed_samples", []) or []:
-        if sample_id in seen_failed:
+        if sample_id in seen:
             continue
-        seen_failed.add(sample_id)
+        seen.add(sample_id)
         session.add(
-            ScanSamplesORM(
+            ScanSampleOutcomeORM(
                 scan_run_id=scan_run_id,
                 sample_id=sample_id,
                 outcome="failed",
                 detail=detail or None,
+            )
+        )
+    for sample_id in getattr(report, "upserted_ids", []) or []:
+        if sample_id in seen:
+            continue
+        seen.add(sample_id)
+        session.add(
+            ScanSampleOutcomeORM(
+                scan_run_id=scan_run_id, sample_id=sample_id, outcome="upserted"
+            )
+        )
+    for sample_id in getattr(report, "skipped_ids", []) or []:
+        if sample_id in seen:
+            continue
+        seen.add(sample_id)
+        session.add(
+            ScanSampleOutcomeORM(
+                scan_run_id=scan_run_id, sample_id=sample_id, outcome="skipped"
             )
         )

@@ -99,6 +99,36 @@ def render_frames_median_png(frames_dir: str, *, width: int = TILT_PREVIEW_WIDTH
     return _array_to_png_bytes(img, percentile=(2, 98), width=width)
 
 
+def render_tilt_series_median_png_with_source(
+    *,
+    zarr_path: str | None = None,
+    st_path: str | None = None,
+    frames_dir: str | None = None,
+    width: int = TILT_PREVIEW_WIDTH,
+) -> tuple[bytes, str, str | None]:
+    """Render the median-tilt image and report which source actually rendered.
+
+    Tries zarr → ``.st``/``.mrc`` → raw frames, in that order. Returns
+    ``(png_bytes, source_kind, source_path)`` where ``source_kind`` is one of
+    ``"zarr"``/``"st"``/``"frames"`` and ``source_path`` is the concrete path
+    the preview was rendered from (post-fallback). Paths are assumed already
+    resolved/trusted by the caller (the scan pipeline only passes paths
+    discovered under the data root). Raises ``FileNotFoundError`` when no
+    source is available.
+    """
+    if zarr_path:
+        return render_zarr_median_png(zarr_path, width=width), "zarr", zarr_path
+    if st_path:
+        return render_st_median_png(st_path, width=width), "st", st_path
+    if frames_dir:
+        return (
+            render_frames_median_png(frames_dir, width=width),
+            "frames",
+            frames_dir,
+        )
+    raise FileNotFoundError("no tilt-series source (zarr/st/frames) available")
+
+
 def render_tilt_series_median_png(
     *,
     zarr_path: str | None = None,
@@ -106,17 +136,16 @@ def render_tilt_series_median_png(
     frames_dir: str | None = None,
     width: int = TILT_PREVIEW_WIDTH,
 ) -> bytes:
-    """Render the median-tilt image from the first available source.
+    """Render the median-tilt image from the first available source (bytes only).
 
-    Tries zarr → ``.st``/``.mrc`` → raw frames, in that order. Paths are
-    assumed already resolved/trusted by the caller (the scan pipeline only
-    passes paths discovered under the data root). Raises ``FileNotFoundError``
-    when no source is available.
+    Thin wrapper over :func:`render_tilt_series_median_png_with_source` that
+    drops the source provenance — kept for callers (e.g. the on-demand preview
+    endpoint) that only need the PNG bytes.
     """
-    if zarr_path:
-        return render_zarr_median_png(zarr_path, width=width)
-    if st_path:
-        return render_st_median_png(st_path, width=width)
-    if frames_dir:
-        return render_frames_median_png(frames_dir, width=width)
-    raise FileNotFoundError("no tilt-series source (zarr/st/frames) available")
+    png, _kind, _path = render_tilt_series_median_png_with_source(
+        zarr_path=zarr_path,
+        st_path=st_path,
+        frames_dir=frames_dir,
+        width=width,
+    )
+    return png
