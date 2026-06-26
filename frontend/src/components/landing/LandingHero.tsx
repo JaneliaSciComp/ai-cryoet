@@ -50,6 +50,18 @@ export function LandingHero() {
         justifyContent="center"
       >
         <ButtonLink
+          to="/data"
+          variant="contained"
+          size="large"
+          sx={{
+            bgcolor: 'common.white',
+            color: 'primary.dark',
+            '&:hover': { bgcolor: 'grey.200' },
+          }}
+        >
+          All Data
+        </ButtonLink>
+        <ButtonLink
           to="/experimental"
           variant="contained"
           size="large"

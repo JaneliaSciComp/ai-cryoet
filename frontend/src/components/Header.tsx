@@ -67,6 +67,7 @@ export function Header() {
 
           {/* Desktop / tablet: inline links. */}
           <Box sx={{ display: { xs: "none", md: "flex" }, gap: 3 }}>
+            <StyledCustomLink to="/data">All Data</StyledCustomLink>
             <StyledCustomLink to="/experimental">
               Experimental Data
             </StyledCustomLink>
@@ -97,6 +98,9 @@ export function Header() {
               anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
               transformOrigin={{ vertical: "top", horizontal: "right" }}
             >
+              <MenuItem onClick={closeMenu}>
+                <MenuLink to="/data">All Data</MenuLink>
+              </MenuItem>
               <MenuItem onClick={closeMenu}>
                 <MenuLink to="/experimental">Experimental Data</MenuLink>
               </MenuItem>
