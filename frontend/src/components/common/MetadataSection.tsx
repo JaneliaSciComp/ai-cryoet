@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, SyntheticEvent } from 'react'
 import {
   Accordion,
   AccordionDetails,
@@ -31,16 +31,33 @@ function isEmpty(value: ReactNode): boolean {
 // label/value table. Every row is rendered — empty values show a placeholder
 // rather than being hidden — so callers pass the full field list for the
 // section. Sections that don't apply to an entity are omitted by the builder.
+//
+// Pass `expanded`/`onChange` to drive the accordion from a parent (e.g. an
+// "Expand all" control); otherwise it manages its own state via
+// `defaultExpanded`.
 export function MetadataSection({
   title,
   rows,
   defaultExpanded,
-}: MetadataSectionData) {
+  expanded,
+  onChange,
+}: MetadataSectionData & {
+  expanded?: boolean
+  onChange?: (value: boolean) => void
+}) {
   if (rows.length === 0) return null
+
+  const controlled = expanded !== undefined
 
   return (
     <Accordion
-      defaultExpanded={defaultExpanded}
+      {...(controlled
+        ? {
+            expanded,
+            onChange: (_e: SyntheticEvent, isExpanded: boolean) =>
+              onChange?.(isExpanded),
+          }
+        : { defaultExpanded })}
       disableGutters
       elevation={0}
       sx={{

@@ -18,7 +18,7 @@ import { DetailPageHeader } from '~/components/common/DetailPageHeader'
 import { SectionHeading } from '~/components/common/SectionHeading'
 import { QualityBadge } from '~/components/common/QualityBadge'
 import { MetadataDrawer } from '~/components/common/MetadataDrawer'
-import { MetadataSection } from '~/components/common/MetadataSection'
+import { MetadataSectionList } from '~/components/common/MetadataSectionList'
 import type { MetadataSectionData } from '~/components/common/MetadataSection'
 import {
   acquisitionMetadataSections,
@@ -313,15 +313,17 @@ function AcquisitionDetailRoute() {
           // drawer shown on this acquisition's sample page.
           {
             label: 'Acquisition',
-            content: acquisitionMetadataSections(acquisition).map((section) => (
-              <MetadataSection key={section.title} {...section} />
-            )),
+            content: (
+              <MetadataSectionList
+                sections={acquisitionMetadataSections(acquisition)}
+              />
+            ),
           },
           {
             label: 'Sample',
-            content: sampleMetadataSections(sample).map((section) => (
-              <MetadataSection key={section.title} {...section} />
-            )),
+            content: (
+              <MetadataSectionList sections={sampleMetadataSections(sample)} />
+            ),
           },
         ]}
       />
