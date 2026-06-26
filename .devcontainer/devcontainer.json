@@ -9,14 +9,14 @@
   ],
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096",
-    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "CLAUDE_CONFIG_DIR": "${localEnv:HOME}/.claude",
     "SHELL": "/bin/bash",
     "PATH": "/opt/.pixi/bin:/home/node/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "mounts": [
-    "source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind,consistency=delegated",
+    "source=${localEnv:HOME}/.claude,target=${localEnv:HOME}/.claude,type=bind,consistency=delegated",
     "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
     "source=/opt/.pixi,target=/opt/.pixi,type=bind,readonly"
   ],
