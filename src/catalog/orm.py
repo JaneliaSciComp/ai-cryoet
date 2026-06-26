@@ -18,9 +18,11 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     PrimaryKeyConstraint,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -416,88 +418,227 @@ class ExtrasORM(Base):
     )
 
 
-class ScansORM(Base):
-    __tablename__ = "scans"
+# ---------------------------------------------------------------------------
+# Scan data model — run history (append-only) + current materialized state.
+#
+# Splits "what did this run find?" (run history: scan_runs, scan_log_lines,
+# scan_sample_outcomes) from "what is broken/fresh right now?" (current state:
+# issues, sample_scan_status, acquisition_scan_status). These tables are
+# catalog-operational and intentionally excluded from the Pydantic drift test.
+# ---------------------------------------------------------------------------
+
+
+class ScanRunORM(Base):
+    """One row per scan run (append-only run history).
+
+    Records the run's lifecycle (started/ended/status), where it ran, and
+    end-of-run count snapshots (outcomes, issue churn, and outstanding-issue
+    totals). Replaces the old ``scans`` table.
+    """
+
+    __tablename__ = "scan_runs"
 
     scan_run_id: Mapped[str] = mapped_column(String, primary_key=True)
     started_at: Mapped[float] = mapped_column(Float, nullable=False)
     ended_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(
+        SAEnum("running", "completed", "failed", name="scan_run_status"),
+        nullable=False,
+    )
     root: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)
-    samples_upserted: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    samples_skipped: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    samples_failed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_upserted: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_skipped: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_failed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_new_issues: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_resolved_issues: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_warning_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    n_error_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
-class ScanWarningsORM(Base):
-    __tablename__ = "scan_warnings"
+class ScanLogLineORM(Base):
+    """Durable per-run log lines (Priority 3).
+
+    One row per persisted loguru record, bulk-inserted at run end. ``seq``
+    gives a deterministic monotonic order within a run; ``sample_id`` carries
+    the bound logging context when available. Powers the per-run expandable
+    log panel on the run-detail view.
+    """
+
+    __tablename__ = "scan_log_lines"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scan_run_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("scan_runs.scan_run_id"),
+        nullable=False,
+        index=True,
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    ts: Mapped[float] = mapped_column(Float, nullable=False)
+    level: Mapped[str] = mapped_column(
+        SAEnum("DEBUG", "INFO", "WARNING", "ERROR", name="scan_log_level"),
+        nullable=False,
+        index=True,
+    )
+    sample_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class ScanSampleOutcomeORM(Base):
+    """Per-sample outcome for a scan run (append-only run history).
+
+    Records which samples were upserted, skipped, or failed in each run so the
+    run-detail view can list the samples behind each count. No FK on
+    ``sample_id`` — a failed sample may never have been persisted to
+    ``samples`` (its parse/assemble step is what failed). Replaces the old
+    ``scan_samples`` table.
+    """
+
+    __tablename__ = "scan_sample_outcomes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scan_run_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("scan_runs.scan_run_id"),
+        nullable=False,
+        index=True,
+    )
+    sample_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN), nullable=False, index=True
+    )
+    outcome: Mapped[str] = mapped_column(
+        SAEnum("upserted", "skipped", "failed", name="scan_sample_outcome"),
+        nullable=False,
+    )
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = (UniqueConstraint("scan_run_id", "sample_id"),)
+
+
+class IssueORM(Base):
+    """Current, deduplicated, entity-keyed issue (the heart of Priority 1).
+
+    One row per distinct problem (identified by ``fingerprint``), carrying
+    severity, file attribution, and first/last-seen + resolution stamps.
+    ``resolved_at IS NULL`` means outstanding. Reconciled on every scan so
+    first-seen survives across runs and resolution is detected when a
+    re-evaluated entity stops emitting the issue. Replaces ``scan_warnings`` +
+    ``scan_run_warnings``.
+    """
+
+    __tablename__ = "issues"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    fingerprint: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True, index=True
+    )
+    severity: Mapped[str] = mapped_column(
+        SAEnum("error", "warning", name="issue_severity"),
+        nullable=False,
+        index=True,
+    )
+    scope: Mapped[str] = mapped_column(
+        SAEnum("sample", "acquisition", "run", name="issue_scope"),
+        nullable=False,
+    )
+    sample_id: Mapped[str | None] = mapped_column(
+        String(_ID_MAX_LEN), nullable=True, index=True
+    )
+    acquisition_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    file_kind: Mapped[str] = mapped_column(
+        SAEnum(
+            "sample_toml",
+            "acquisition_toml",
+            "md_run_toml",
+            "mdoc",
+            "mrc_header",
+            "zarr_attrs",
+            "frames",
+            "filesystem",
+            "other",
+            name="issue_file_kind",
+        ),
+        nullable=False,
+    )
+    file_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    location: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str] = mapped_column(String, nullable=False)
+    first_seen_at: Mapped[float] = mapped_column(Float, nullable=False)
+    first_seen_run_id: Mapped[str] = mapped_column(String, nullable=False)
+    last_seen_at: Mapped[float] = mapped_column(Float, nullable=False)
+    last_seen_run_id: Mapped[str] = mapped_column(String, nullable=False)
+    resolved_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resolved_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        Index("ix_issues_resolved_severity", "resolved_at", "severity"),
+    )
+
+
+class SampleScanStatusORM(Base):
+    """1:1 per-sample freshness rollup (Priority 2 current state).
+
+    Records when a sample was last scanned (upsert OR skip) vs last actually
+    changed (upsert only), plus its last outcome and run. Kept as a side table
+    so ``SampleORM`` stays a clean Pydantic-schema mirror; joined into the
+    ``/samples/{id}`` detail endpoint.
+    """
+
+    __tablename__ = "sample_scan_status"
+
     sample_id: Mapped[str] = mapped_column(
         String(_ID_MAX_LEN),
         ForeignKey("samples.sample_id"),
-        nullable=False,
-        index=True,
+        primary_key=True,
     )
-    category: Mapped[str] = mapped_column(String, nullable=False)
-    location: Mapped[str] = mapped_column(String, nullable=False)
-    message: Mapped[str] = mapped_column(String, nullable=False)
-    detected_at: Mapped[float] = mapped_column(Float, nullable=False)
-    scan_run_id: Mapped[str] = mapped_column(
-        String,
-        ForeignKey("scans.scan_run_id"),
+    last_scanned_at: Mapped[float] = mapped_column(Float, nullable=False)
+    last_changed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_outcome: Mapped[str] = mapped_column(
+        SAEnum("upserted", "skipped", "failed", name="sample_scan_outcome"),
         nullable=False,
-        index=True,
     )
+    last_scan_run_id: Mapped[str] = mapped_column(String, nullable=False)
 
 
-class ScanRunWarningsORM(Base):
-    """Run-level warnings not tied to any sample.
+class AcquisitionScanStatusORM(Base):
+    """1:1 per-acquisition freshness + thumbnail provenance (Priority 2).
 
-    Emitted for filesystem issues the per-sample pipeline can't represent —
-    e.g. an unknown subdirectory under ``MdSimulation/`` that holds no
-    cataloguable sample. No FK to ``samples`` (there is no sample); refreshed
-    per run by ``scan_run_id``.
+    Records per-acquisition freshness (derived from the parent sample's
+    outcome) and the thumbnail's real rendered source, generated-at, and
+    status. Kept as a side table so ``AcquisitionORM`` stays a clean
+    Pydantic-schema mirror; joined into the acquisition detail endpoint.
     """
 
-    __tablename__ = "scan_run_warnings"
+    __tablename__ = "acquisition_scan_status"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    category: Mapped[str] = mapped_column(String, nullable=False)
-    location: Mapped[str] = mapped_column(String, nullable=False)
-    message: Mapped[str] = mapped_column(String, nullable=False)
-    detected_at: Mapped[float] = mapped_column(Float, nullable=False)
-    scan_run_id: Mapped[str] = mapped_column(
-        String,
-        ForeignKey("scans.scan_run_id"),
+    sample_id: Mapped[str] = mapped_column(
+        String(_ID_MAX_LEN),
+        ForeignKey("samples.sample_id"),
+    )
+    acquisition_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN))
+    last_scanned_at: Mapped[float] = mapped_column(Float, nullable=False)
+    last_changed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_outcome: Mapped[str] = mapped_column(
+        SAEnum("upserted", "skipped", "failed", name="acquisition_scan_outcome"),
         nullable=False,
-        index=True,
+    )
+    last_scan_run_id: Mapped[str] = mapped_column(String, nullable=False)
+    thumbnail_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    thumbnail_source_kind: Mapped[str | None] = mapped_column(
+        SAEnum("zarr", "st", "frames", "none", name="thumbnail_source_kind"),
+        nullable=True,
+    )
+    thumbnail_source_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    thumbnail_generated_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    thumbnail_status: Mapped[str | None] = mapped_column(
+        SAEnum(
+            "ok", "missing_source", "render_failed", name="thumbnail_status"
+        ),
+        nullable=True,
     )
 
-
-class ScanSamplesORM(Base):
-    """Per-sample outcome for a scan run: which samples were upserted, skipped,
-    or failed. The ``scans`` row keeps only aggregate counts; this table records
-    the membership so the /manage view can list the samples behind each count.
-
-    No FK on ``sample_id`` — a failed sample may never have been persisted to
-    ``samples`` (its parse/assemble step is what failed).
-    """
-
-    __tablename__ = "scan_samples"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    scan_run_id: Mapped[str] = mapped_column(
-        String,
-        ForeignKey("scans.scan_run_id"),
-        nullable=False,
-        index=True,
-    )
-    sample_id: Mapped[str] = mapped_column(String(_ID_MAX_LEN), nullable=False, index=True)
-    # One of: "upserted" | "skipped" | "failed".
-    outcome: Mapped[str] = mapped_column(String, nullable=False)
-    # Error message for failed samples; NULL otherwise.
-    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    __table_args__ = (PrimaryKeyConstraint("sample_id", "acquisition_id"),)
 
 
 class ScanStateORM(Base):
