@@ -592,3 +592,105 @@ def test_scan_clean_root_has_no_run_warnings(engine):
         assert rows == []
     finally:
         s.close()
+
+
+# ── MD-run OVITO previews ─────────────────────────────────────────────────────
+# The OVITO render is patched out (it needs the heavy ``ovito`` dependency, only
+# present in the ``catalog`` pixi feature); these assert the scanner → md_previews
+# → persistence wiring end-to-end. A genuine OVITO render of this exact pipeline
+# was verified manually against tests/data/chromatin_fiber_demo.dump.
+
+# Patch target: the lazily-imported renderer inside md_previews._render_one.
+_MD_RENDER_TARGET = "catalog.imaging._md_render.render_md_dump_preview"
+
+
+def _fake_md_render(dump_path, output_path: Path, **kwargs) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(_FAKE_PNG)
+    return output_path
+
+
+def _write_simulation_md_sample(
+    parent: Path, sample_id: str, run_id: str = "run_001"
+) -> Path:
+    """Write a simulation sample with one MD run carrying a Trajectories dump.
+
+    Layout matches the portal convention the dump-picker expects:
+    ``MdSimulation/SingleMolecule/{sample}/MdRuns/{run}/Trajectories/dna.dump``.
+    """
+    sample_dir = parent / "MdSimulation" / "SingleMolecule" / sample_id
+    traj = sample_dir / "MdRuns" / run_id / "Trajectories"
+    traj.mkdir(parents=True)
+    (sample_dir / "sample.toml").write_text(
+        '[sample]\ndata_source = "simulation"\nproject = "chromatin"\n'
+    )
+    (sample_dir / "MdRuns" / run_id / "md_run.toml").write_text("seed = 1\n")
+    (traj / "dna.dump").write_text("ITEM: ATOMS id type xu yu zu\n")
+    return sample_dir
+
+
+def test_scan_with_md_preview_dir_populates_preview_path(engine, tmp_path):
+    _write_simulation_md_sample(tmp_path, "sim_a", "run_001")
+    preview_dir = tmp_path / "md_previews"
+
+    with patch(_MD_RENDER_TARGET, side_effect=_fake_md_render):
+        scanner.scan_root(engine, tmp_path, md_preview_dir=preview_dir)
+
+    s = _session(engine)
+    try:
+        row = s.get(orm.MdRunORM, ("sim_a", "run_001"))
+        assert row is not None
+        assert row.preview_path == "sim_a/run_001.png"
+    finally:
+        s.close()
+    # Preview PNG written at the persisted relpath (what /md-previews serves).
+    assert (preview_dir / "sim_a" / "run_001.png").is_file()
+
+
+def test_scan_without_md_preview_dir_leaves_preview_path_null(engine, tmp_path):
+    _write_simulation_md_sample(tmp_path, "sim_a", "run_001")
+
+    scanner.scan_root(engine, tmp_path, md_preview_dir=None)
+
+    s = _session(engine)
+    try:
+        row = s.get(orm.MdRunORM, ("sim_a", "run_001"))
+        assert row is not None
+        assert row.preview_path is None
+    finally:
+        s.close()
+    assert list(tmp_path.rglob("*.png")) == []
+
+
+def test_scan_heals_missing_md_preview_on_skip(engine, tmp_path):
+    _write_simulation_md_sample(tmp_path, "sim_a", "run_001")
+    preview_dir = tmp_path / "md_previews"
+
+    with patch(_MD_RENDER_TARGET, side_effect=_fake_md_render):
+        scanner.scan_root(engine, tmp_path, md_preview_dir=preview_dir)
+    preview = preview_dir / "sim_a" / "run_001.png"
+    assert preview.is_file()
+
+    # Delete the PNG; a second (unchanged → skipped) scan should heal it.
+    preview.unlink()
+    with patch(_MD_RENDER_TARGET, side_effect=_fake_md_render):
+        report = scanner.scan_root(engine, tmp_path, md_preview_dir=preview_dir)
+
+    assert report.skipped == 1
+    assert report.md_previews_healed == 1
+    assert preview.is_file()
+
+
+def test_skip_no_md_heal_when_preview_present(engine, tmp_path):
+    _write_simulation_md_sample(tmp_path, "sim_a", "run_001")
+    preview_dir = tmp_path / "md_previews"
+
+    with patch(_MD_RENDER_TARGET, side_effect=_fake_md_render):
+        scanner.scan_root(engine, tmp_path, md_preview_dir=preview_dir)
+
+    # Second scan — nothing changed, preview still present → no re-render.
+    with patch(_MD_RENDER_TARGET, side_effect=_fake_md_render) as mock_render:
+        report = scanner.scan_root(engine, tmp_path, md_preview_dir=preview_dir)
+
+    assert report.md_previews_healed == 0
+    mock_render.assert_not_called()

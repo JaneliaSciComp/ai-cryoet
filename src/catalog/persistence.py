@@ -132,6 +132,7 @@ def upsert_sample_record(
     scan_run_id: str,
     disk_size_bytes: int | None = None,
     thumbnail_path: str | None = None,
+    md_preview_paths: dict[str, str] | None = None,
 ) -> None:
     """Per-sample upsert. Steps:
 
@@ -195,6 +196,9 @@ def upsert_sample_record(
         # matching the ORM column. The schema field has alias ``id``.
         payload = run.model_dump(exclude_none=False, by_alias=False)
         payload["sample_id"] = sample_id
+        # preview_path is a DB-only column (not in the Pydantic model) supplied
+        # by the scanner's MD-preview generation, keyed by md_run_id.
+        payload["preview_path"] = (md_preview_paths or {}).get(run.md_run_id)
         session.merge(orm.MdRunORM(**_filter_to_columns(payload, orm.MdRunORM)))
         keep_md_run_pks.add((sample_id, run.md_run_id))
 

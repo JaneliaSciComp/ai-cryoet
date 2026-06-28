@@ -21,7 +21,15 @@ from loguru import logger
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
 
-from catalog import assembler, discovery, orm, persistence, state, thumbnails
+from catalog import (
+    assembler,
+    discovery,
+    md_previews,
+    orm,
+    persistence,
+    state,
+    thumbnails,
+)
 from catalog.assembler import FieldConflict, ScanWarning
 
 
@@ -44,6 +52,7 @@ class ScanReport:
     # (sample_id, error message) — sample-level failures only.
     failed_samples: list[tuple[str, str]] = field(default_factory=list)
     thumbnails_healed: int = 0
+    md_previews_healed: int = 0
 
 
 def scan_root(
@@ -56,6 +65,7 @@ def scan_root(
     prune_safety_floor: float = 0.5,
     on_error: Literal["collect", "raise"] = "collect",
     thumbnail_dir: Path | None = None,
+    md_preview_dir: Path | None = None,
 ) -> ScanReport:
     """Walk ``root``, assemble + persist each sample, return a ScanReport.
 
@@ -89,11 +99,13 @@ def scan_root(
         sample_locs = list(discovery.iter_samples(root))
         total = len(sample_locs)
         logger.info(
-            "scanning {} — {} sample(s) discovered (force={}, thumbnails={})",
+            "scanning {} — {} sample(s) discovered "
+            "(force={}, thumbnails={}, md_previews={})",
             root,
             total,
             force,
             "on" if thumbnail_dir is not None else "off",
+            "on" if md_preview_dir is not None else "off",
         )
         run_started = time.perf_counter()
 
@@ -112,6 +124,7 @@ def scan_root(
                     scan_run_id=scan_run_id,
                     report=report,
                     thumbnail_dir=thumbnail_dir,
+                    md_preview_dir=md_preview_dir,
                 )
             except Exception as e:  # noqa: BLE001
                 # Make sure no partial transaction is left dangling.
@@ -221,6 +234,7 @@ def _scan_one_sample(
     scan_run_id: str,
     report: ScanReport,
     thumbnail_dir: Path | None,
+    md_preview_dir: Path | None = None,
 ) -> None:
     """Per-sample scan inside its own transaction. Mutates ``report`` in place."""
     parse_targets = discovery.parse_targets_for_sample(sample_loc)
@@ -254,6 +268,31 @@ def _scan_one_sample(
                     stored.thumbnail_path = new_rel
                     session.add(stored)
                     report.thumbnails_healed += 1
+        if md_preview_dir is not None:
+            refs = md_previews.refs_from_location(sample_loc)
+            expected = {
+                r.md_run_id: md_previews.relpath(sample_loc.sample_id, r.md_run_id)
+                for r in refs
+                if r.dump_path
+            }
+            if any(not (md_preview_dir / rel).is_file() for rel in expected.values()):
+                logger.info(
+                    "  md preview missing on disk — re-generating for {}",
+                    sample_loc.sample_id,
+                )
+                with session.begin():
+                    rels = md_previews.generate_md_previews(
+                        sample_loc.sample_id, refs, md_preview_dir,
+                        skip_existing=True,
+                    )
+                    for run_id, rel in rels.items():
+                        row = session.get(
+                            orm.MdRunORM, (sample_loc.sample_id, run_id)
+                        )
+                        if row is not None:
+                            row.preview_path = rel
+                            session.add(row)
+                report.md_previews_healed += 1
         logger.debug("  skipped (unchanged): {}", sample_loc.sample_id)
         report.skipped += 1
         report.skipped_ids.append(sample_loc.sample_id)
@@ -295,6 +334,22 @@ def _scan_one_sample(
                 time.perf_counter() - thumb_started,
                 thumb_rel or "none",
             )
+        md_preview_paths = None
+        if md_preview_dir is not None:
+            refs = md_previews.refs_from_location(sample_loc)
+            n_runs = sum(1 for r in refs if r.dump_path)
+            if n_runs:
+                logger.info("  generating md previews for {} run(s)…", n_runs)
+                md_started = time.perf_counter()
+                md_preview_paths = md_previews.generate_md_previews(
+                    sample_loc.sample_id, refs, md_preview_dir,
+                    skip_existing=False,
+                )
+                logger.info(
+                    "  md previews done in {:.1f}s ({} rendered)",
+                    time.perf_counter() - md_started,
+                    len(md_preview_paths),
+                )
         persistence.upsert_sample_record(
             session,
             result.record,
@@ -303,6 +358,7 @@ def _scan_one_sample(
             scan_run_id=scan_run_id,
             disk_size_bytes=disk_size,
             thumbnail_path=thumb_rel,
+            md_preview_paths=md_preview_paths,
         )
         # Update mtime state for every parse target.
         for p in parse_targets:

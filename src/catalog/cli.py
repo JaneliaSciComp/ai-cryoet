@@ -68,6 +68,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="directory for pre-generated thumbnail cache (defaults to $CATALOG_THUMBNAIL_DIR)",
     )
     scan.add_argument(
+        "--md-preview-dir",
+        default=os.environ.get("CATALOG_MD_PREVIEW_DIR"),
+        help=(
+            "directory for the OVITO MD-preview cache, served by the API's "
+            "/md-previews route (defaults to $CATALOG_MD_PREVIEW_DIR). Requires "
+            "the OVITO dependency (pixi 'catalog' feature)."
+        ),
+    )
+    scan.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -136,6 +145,11 @@ def _cmd_scan(args) -> int:
         thumbnail_dir = Path(args.thumbnail_dir)
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
 
+    md_preview_dir = None
+    if args.md_preview_dir:
+        md_preview_dir = Path(args.md_preview_dir)
+        md_preview_dir.mkdir(parents=True, exist_ok=True)
+
     try:
         report = scanner.scan_root(
             engine,
@@ -145,6 +159,7 @@ def _cmd_scan(args) -> int:
             prune_dry_run=args.prune_dry_run,
             prune_safety_floor=args.prune_safety_floor,
             thumbnail_dir=thumbnail_dir,
+            md_preview_dir=md_preview_dir,
         )
     except Exception as e:  # noqa: BLE001
         print(f"scan failed: {e}", file=sys.stderr)
@@ -154,6 +169,8 @@ def _cmd_scan(args) -> int:
     print(f"skipped:  {report.skipped}")
     if report.thumbnails_healed:
         print(f"thumbnails_healed: {report.thumbnails_healed}")
+    if report.md_previews_healed:
+        print(f"md_previews_healed: {report.md_previews_healed}")
     print(f"warnings: {len(report.warnings)}")
     if report.run_warnings:
         print(f"run-level warnings: {len(report.run_warnings)}")

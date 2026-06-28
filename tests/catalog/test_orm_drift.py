@@ -50,7 +50,7 @@ MAPPING = [
     (Simulation, orm.SimulationORM, {"sample_id"}, set()),
     (Freezing, orm.FreezingORM, {"sample_id"}, set()),
     (Milling, orm.MillingORM, {"sample_id"}, set()),
-    (MdRun, orm.MdRunORM, {"sample_id"}, set()),
+    (MdRun, orm.MdRunORM, {"sample_id", "preview_path"}, set()),
     (Acquisition, orm.AcquisitionORM, {"sample_id"}, {"acquisition_id"}),
     (MdSource, orm.MdSourceORM, {"sample_id", "acquisition_id"}, set()),
     (

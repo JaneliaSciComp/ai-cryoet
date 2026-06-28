@@ -79,6 +79,10 @@ tifffile = ">=2024.1"
 
 [tool.pixi.feature.catalog.pypi-dependencies]
 eerfile = "*"
+# OVITO (TachyonRenderer) for MD-run preview generation in the scanner. Heavy
+# (pulls a PySide6/Qt stack) and only needed when --md-preview-dir is used;
+# catalog.imaging._md_render imports it lazily inside a subprocess.
+ovito = "*"
 
 [tool.pixi.feature.catalog.tasks]
 migrate = "alembic -c src/catalog/migrations/alembic.ini upgrade head"
