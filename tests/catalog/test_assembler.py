@@ -39,6 +39,7 @@ def _write_minimal_sample_toml(sample_dir: Path, extra: str = "") -> Path:
     """
     path = sample_dir / "sample.toml"
     body = """
+        format_version = "1.0.0"
         [sample]
         data_source = "experimental"
         project = "chromatin"
@@ -338,6 +339,30 @@ def test_unfilled_placeholder_warning_categorized(tmp_path):
     # Loader emits "<dotted.path>: unfilled <FILL IN> placeholder"
     # so location is the dotted path.
     assert "description" in placeholders[0].location
+
+
+def test_data_format_version_warning_categorized(tmp_path):
+    """A missing/stale format_version surfaces as a categorized scan warning
+    (so it reaches researchers in the manage UI) without dropping the sample."""
+    sample_dir = tmp_path / "sample_test"
+    _write(
+        sample_dir / "sample.toml",
+        """
+        format_version = "99.0.0"
+        [sample]
+        data_source = "experimental"
+        project = "chromatin"
+        """,
+    )
+    result = assemble_sample(_sample_loc(sample_dir))
+
+    fmt = [w for w in result.warnings if w.category == "data_format_version"]
+    assert len(fmt) == 1
+    assert fmt[0].location == "<root>"
+    assert "major version differs" in fmt[0].message
+    # Stale version must NOT drop the sample from the catalog.
+    assert result.record is not None
+    assert result.errors == []
 
 
 def test_undeclared_tomogram_folder_warns(tmp_path):

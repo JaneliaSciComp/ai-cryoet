@@ -1,4 +1,9 @@
 #:schema file:///groups/cryoet/cryoet/data/scratch/src/schema/schema.json
+# Data format version this file was authored against. Leave as-is unless the
+# SciComp team tells you to update — a major bump means the format changed and
+# your files need updating. See README.
+format_version = "1.0.0"
+
 # sample.toml — researcher-authored sample-level metadata.
 # One file per sample, placed at the root of the sample directory.
 # The sample directory name IS the sample's identity — not repeated here.

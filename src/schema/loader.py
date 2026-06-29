@@ -30,6 +30,7 @@ from pydantic import BaseModel, ValidationError
 from rapidfuzz import process
 
 from schema import (
+    DATA_FORMAT_VERSION,
     AcquisitionFile,
     DataSource,
     MdRun,
@@ -40,6 +41,34 @@ from schema.layout import infer_arm
 
 
 _PLACEHOLDER = "<FILL IN>"
+
+
+def _check_format_version(declared: Any, warnings_out: list[str]) -> None:
+    """Compare sample.toml's `format_version` against DATA_FORMAT_VERSION.
+
+    Emits a warning (never an error) so a stale-but-parseable sample still
+    ingests and the nudge surfaces to researchers in the scan-warnings UI
+    rather than the sample silently dropping out of the catalog. Only the
+    MAJOR component is checked: a major mismatch means the file follows a
+    different format generation; MINOR/PATCH drift is benign (additive
+    fields surface via the existing extra-field warnings). If a major
+    change actually renamed/removed fields, the normal Pydantic validation
+    errors fire on top of this warning.
+    """
+    current_major = DATA_FORMAT_VERSION.split(".")[0]
+    if declared is None:
+        warnings_out.append(
+            f"format_version: not declared; assuming current data format "
+            f"{DATA_FORMAT_VERSION}. Add `format_version = "
+            f'"{DATA_FORMAT_VERSION}"` at the top of sample.toml.'
+        )
+        return
+    if str(declared).split(".")[0] != current_major:
+        warnings_out.append(
+            f"format_version: file declares {declared!r}, but the current "
+            f"data format is {DATA_FORMAT_VERSION} (major version differs). "
+            f"Update your metadata files to the current format."
+        )
 
 # Subdirectory layouts probed when cross-checking tomogram/annotation ids
 # against folders on disk. Tomograms live under one of two layouts (real
@@ -491,6 +520,13 @@ def load_sample_record(
     except tomllib.TOMLDecodeError as e:
         result.sample_errors.append(f"sample.toml: TOML parse error: {e}")
         return result
+
+    # Data-format version gate (top-level key; pop so it isn't seen as an
+    # unknown SampleRecord field downstream).
+    _check_format_version(
+        sample_data.pop("format_version", None),
+        result.warnings,
+    )
 
     # Strip <FILL IN> placeholders from sample.toml before pydantic runs.
     _strip_placeholders(sample_data, "", result.warnings)

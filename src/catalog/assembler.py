@@ -57,6 +57,7 @@ ScanWarningCategory = Literal[
     "annotation_without_target_tomogram",
     "deprecated_md_run_block",
     "dangling_md_source_ref",
+    "data_format_version",
     # Run-level (no owning sample) — emitted by the scanner, not the assembler.
     "unknown_md_simulation_subdir",
 ]
@@ -96,6 +97,8 @@ def _categorize_loader_warning(s: str) -> ScanWarning:
     The loader's warning strings have stable prefixes (verified in
     ``schema/loader.py``):
 
+    - ``"format_version: ..."`` (missing or major-mismatched data format)
+      -> category ``data_format_version``; location ``"<root>"``.
     - ``"extra field 'X' on <Model> closely matches known field 'Y' (similarity N); possible typo"``
       -> category ``possible_typo``; location is the model name (or
       ``"<root>"`` if not parseable).
@@ -109,6 +112,10 @@ def _categorize_loader_warning(s: str) -> ScanWarning:
 
     Anything else falls through to ``extra_field`` with ``<unknown>`` location.
     """
+    if s.startswith("format_version:"):
+        return ScanWarning(
+            category="data_format_version", location="<root>", message=s
+        )
     if s.startswith("[[md_run]] in sample.toml is deprecated"):
         return ScanWarning(
             category="deprecated_md_run_block", location="<root>", message=s

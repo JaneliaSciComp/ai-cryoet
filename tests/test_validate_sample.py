@@ -21,6 +21,7 @@ def _minimal_sample(root: Path, *, project: str = "chromatin") -> Path:
     _write(
         root / "sample.toml",
         f"""
+        format_version = "1.0.0"
         [sample]
         data_source = "experimental"
         project = "{project}"
@@ -62,6 +63,37 @@ def test_acquisition_toml_parse_error(tmp_path):
     assert "acq1" in result.acquisition_errors
     assert "TOML parse error" in result.acquisition_errors["acq1"]
     assert "acq1" not in result.record.acquisitions
+
+
+def test_format_version_missing_warns(tmp_path):
+    _write(tmp_path / "sample.toml", '[sample]\nproject = "chromatin"\n')
+    result = load_sample_record(tmp_path)
+    assert result.sample_errors == []
+    assert any("format_version: not declared" in w for w in result.warnings)
+
+
+def test_format_version_matching_major_is_clean(tmp_path):
+    # Minor/patch drift within the same major is fine — no warning, no error.
+    _write(
+        tmp_path / "sample.toml",
+        'format_version = "1.9.3"\n[sample]\nproject = "chromatin"\n',
+    )
+    result = load_sample_record(tmp_path)
+    assert result.sample_errors == []
+    assert not any("format_version" in w for w in result.warnings)
+
+
+def test_format_version_major_mismatch_warns_but_still_loads(tmp_path):
+    # A stale-but-parseable file warns (not errors) so the sample still
+    # ingests and the nudge surfaces in the scan-warnings UI.
+    _write(
+        tmp_path / "sample.toml",
+        'format_version = "2.0.0"\n[sample]\nproject = "chromatin"\n',
+    )
+    result = load_sample_record(tmp_path)
+    assert result.sample_errors == []
+    assert result.record is not None
+    assert any("major version differs" in w for w in result.warnings)
 
 
 def test_minimal_valid_sample(tmp_path):
@@ -218,6 +250,7 @@ def test_label_block_happy_path(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
+        format_version = "1.0.0"
         [sample]
         data_source = "experimental"
         project = "chromatin"
@@ -248,6 +281,7 @@ def test_freezing_block_happy_path(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
+        format_version = "1.0.0"
         [sample]
         data_source = "experimental"
         project = "chromatin"
@@ -273,6 +307,7 @@ def test_milling_block_happy_path(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
+        format_version = "1.0.0"
         [sample]
         data_source = "experimental"
         project = "chromatin"
@@ -295,6 +330,7 @@ def test_simulation_sample_happy_path(tmp_path):
     _write(
         tmp_path / "sample.toml",
         """
+        format_version = "1.0.0"
         [sample]
         data_source = "simulation"
         project = "chromatin"
