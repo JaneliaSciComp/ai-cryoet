@@ -224,15 +224,10 @@ class RangeOut(BaseModel):
 
 
 class FiltersOptionsOut(BaseModel):
-    projects: list[str] = []
-    data_sources: list[str] = []
-    types: list[str] = []
-    dataset_types: list[str] = []
-    microscopes: list[str] = []
-    voltages: list[float] = []
-    cameras: list[str] = []
-    pixel_size: RangeOut = RangeOut()
-    voxel_size: RangeOut = RangeOut()
+    """Registry-driven filter options: ``categorical`` keyed by each ``text``
+    field's key, ``ranges`` keyed by each ``range`` field's key."""
+    categorical: dict[str, list[str]] = {}
+    ranges: dict[str, RangeOut] = {}
 
 
 class StatsTotalsOut(BaseModel):
