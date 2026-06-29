@@ -1,89 +1,60 @@
-import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { Box, Breadcrumbs, Link, Stack, Typography } from "@mui/material";
-import { CustomLink } from "~/components/CustomLink";
-import { ManageSection } from "~/components/manage/ManageSection";
-import { LastScanCard } from "~/components/manage/LastScanCard";
-import { SamplesWithWarningsTable } from "~/components/manage/SamplesWithWarningsTable";
-import { ScanRunWarningsTable } from "~/components/manage/ScanRunWarningsTable";
-import { ScanSamplesTable } from "~/components/manage/ScanSamplesTable";
+import { createFileRoute } from '@tanstack/react-router'
+import { Box, Breadcrumbs, Stack, Typography } from '@mui/material'
+import { CustomLink } from '~/components/CustomLink'
+import { StatusCadenceCard } from '~/components/manage/StatusCadenceCard'
+import { SectionHeader } from '~/components/manage/SectionHeader'
+import { OutstandingIssuesTable } from '~/components/manage/OutstandingIssuesTable'
+import { RecentlyResolvedTable } from '~/components/manage/RecentlyResolvedTable'
 import {
-  latestScanQueryOptions,
-  latestScanRunWarningsQueryOptions,
-  latestScanSamplesQueryOptions,
-  latestScanWarningsQueryOptions,
-  useLatestScanQuery,
-  useLatestScanRunWarningsQuery,
-  useLatestScanSamplesQuery,
-  useLatestScanWarningsQuery,
-} from "~/utils/queryOptions";
+  manageSummaryQueryOptions,
+  outstandingIssuesQueryOptions,
+  recentlyResolvedQueryOptions,
+  useManageSummaryQuery,
+  useRecentlyResolvedQuery,
+  type IssueFilters,
+} from '~/utils/queryOptions'
 
-export const Route = createFileRoute("/manage/")({
-  loader: ({ context: { queryClient } }) =>
+// Optional entity filter carried in the URL (e.g. /manage?sample=s1 from a
+// detail page's "view metadata errors" link).
+type ManageSearch = { sample?: string; acquisition?: string }
+
+export const Route = createFileRoute('/manage/')({
+  validateSearch: (search: Record<string, unknown>): ManageSearch => ({
+    sample: typeof search.sample === 'string' ? search.sample : undefined,
+    acquisition:
+      typeof search.acquisition === 'string' ? search.acquisition : undefined,
+  }),
+  loaderDeps: ({ search }) => search,
+  loader: ({ context: { queryClient }, deps }) =>
     Promise.all([
-      queryClient.ensureQueryData(latestScanQueryOptions),
-      queryClient.ensureQueryData(latestScanWarningsQueryOptions),
-      queryClient.ensureQueryData(latestScanRunWarningsQueryOptions),
-      queryClient.ensureQueryData(latestScanSamplesQueryOptions("upserted")),
-      queryClient.ensureQueryData(latestScanSamplesQueryOptions("skipped")),
-      queryClient.ensureQueryData(latestScanSamplesQueryOptions("failed")),
+      queryClient.ensureQueryData(manageSummaryQueryOptions),
+      queryClient.ensureQueryData(
+        outstandingIssuesQueryOptions({ q: entityQuery(deps) }),
+      ),
+      queryClient.ensureQueryData(recentlyResolvedQueryOptions(24)),
     ]),
   component: ManageRoute,
-});
+})
 
-// The four expandable sections, keyed so a single "Expand/Collapse all" control
-// can drive them together. All default to open.
-type SectionKey =
-  | "warnings"
-  | "runWarnings"
-  | "upserted"
-  | "skipped"
-  | "failed";
-const SECTION_KEYS: SectionKey[] = [
-  "warnings",
-  "runWarnings",
-  "upserted",
-  "skipped",
-  "failed",
-];
+// Search text seeding the outstanding-issues box from a detail page's "view
+// warnings" link: both the sample and acquisition names (space-separated, so
+// the backend's all-terms-must-match search narrows to that one acquisition,
+// since acquisition ids aren't unique across samples).
+function entityQuery({
+  sample,
+  acquisition,
+}: ManageSearch): string | undefined {
+  return [sample, acquisition].filter(Boolean).join(' ') || undefined
+}
 
 function ManageRoute() {
-  const { data: latestScan } = useLatestScanQuery();
-  const { data: warningGroups } = useLatestScanWarningsQuery();
-  const { data: runWarnings } = useLatestScanRunWarningsQuery();
-  const { data: upserted } = useLatestScanSamplesQuery("upserted");
-  const { data: skipped } = useLatestScanSamplesQuery("skipped");
-  const { data: failed } = useLatestScanSamplesQuery("failed");
+  const { sample, acquisition } = Route.useSearch()
+  const { data: summary } = useManageSummaryQuery()
+  const { data: resolved } = useRecentlyResolvedQuery(24)
 
-  const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
-    warnings: true,
-    runWarnings: true,
-    upserted: true,
-    skipped: true,
-    failed: true,
-  });
-
-  const setSection = (key: SectionKey) => (value: boolean) =>
-    setExpanded((prev) => ({ ...prev, [key]: value }));
-
-  const allExpanded = SECTION_KEYS.every((k) => expanded[k]);
-  const toggleAll = () => {
-    const next = !allExpanded;
-    setExpanded({
-      warnings: next,
-      runWarnings: next,
-      upserted: next,
-      skipped: next,
-      failed: next,
-    });
-  };
-
-  // Map sample_id -> warning messages, so the "updated or inserted" rows can
-  // expand to show their warnings without an extra request.
-  const warningsBySample = useMemo(
-    () => new Map(warningGroups.map((g) => [g.sample_id, g.warnings])),
-    [warningGroups],
-  );
+  const outstandingCount =
+    summary.outstanding.errors + summary.outstanding.warnings
+  const initialFilters: IssueFilters = { q: entityQuery({ sample, acquisition }) }
 
   return (
     <Stack spacing={3}>
@@ -94,98 +65,38 @@ function ManageRoute() {
         <Typography color="text.primary">Manage</Typography>
       </Breadcrumbs>
 
-      <Typography variant="h5" component="h1">
-        File system scans
-      </Typography>
+      <Box>
+        <Typography variant="h5" component="h1">
+          Manage
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          File system scan health, data freshness, and scan logs.
+        </Typography>
+      </Box>
+
+      <StatusCadenceCard summary={summary} />
 
       <Box>
-        <Stack direction="row" spacing={2} alignItems="baseline" sx={{ mb: 1 }}>
-          <Typography variant="h6" component="h2">
-            Last file system scan
-          </Typography>
-          {latestScan ? (
-            <CustomLink
-              to="/manage/$scanId"
-              params={{ scanId: latestScan.scan_run_id }}
-              variant="body2"
-            >
-              View scan details
-            </CustomLink>
-          ) : null}
-          <CustomLink to="/manage/all-scans" variant="body2">
-            View all scans
-          </CustomLink>
-        </Stack>
-        <LastScanCard scan={latestScan} />
+        <CustomLink to="/manage/scans" variant="body2">
+          View scan history
+        </CustomLink>
       </Box>
 
       <Box>
-        <Link
-          component="button"
-          type="button"
-          variant="body2"
-          onClick={toggleAll}
-        >
-          {allExpanded ? "Collapse all" : "Expand all"}
-        </Link>
+        <SectionHeader
+          count={outstandingCount}
+          title="Outstanding data warnings & errors"
+        />
+        <OutstandingIssuesTable initialFilters={initialFilters} />
       </Box>
 
-      <ManageSection
-        count={warningGroups.length}
-        title="Samples with warnings"
-        expanded={expanded.warnings}
-        onChange={setSection("warnings")}
-      >
-        <SamplesWithWarningsTable groups={warningGroups} />
-      </ManageSection>
-
-      <ManageSection
-        count={runWarnings.length}
-        title="Scan-level issues"
-        expanded={expanded.runWarnings}
-        onChange={setSection("runWarnings")}
-      >
-        <ScanRunWarningsTable warnings={runWarnings} />
-      </ManageSection>
-
-      <ManageSection
-        count={upserted.length}
-        title="Samples updated or inserted"
-        expanded={expanded.upserted}
-        onChange={setSection("upserted")}
-      >
-        <ScanSamplesTable
-          outcome="upserted"
-          rows={upserted}
-          warningsBySample={warningsBySample}
+      <Box>
+        <SectionHeader
+          count={resolved.length}
+          title="Recently resolved warnings & errors (last 24h)"
         />
-      </ManageSection>
-
-      <ManageSection
-        count={skipped.length}
-        title="Samples skipped"
-        expanded={expanded.skipped}
-        onChange={setSection("skipped")}
-      >
-        <ScanSamplesTable
-          outcome="skipped"
-          rows={skipped}
-          warningsBySample={warningsBySample}
-        />
-      </ManageSection>
-
-      <ManageSection
-        count={failed.length}
-        title="Samples failed"
-        expanded={expanded.failed}
-        onChange={setSection("failed")}
-      >
-        <ScanSamplesTable
-          outcome="failed"
-          rows={failed}
-          warningsBySample={warningsBySample}
-        />
-      </ManageSection>
+        <RecentlyResolvedTable withinHours={24} />
+      </Box>
     </Stack>
-  );
+  )
 }

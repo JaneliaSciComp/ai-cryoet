@@ -8,6 +8,8 @@ extras walker as ``entity_type='tilt_series'`` entries, get persisted by
 
 from __future__ import annotations
 
+import time
+
 import json
 import textwrap
 from pathlib import Path
@@ -105,8 +107,7 @@ def test_upsert_persists_tilt_series_extras(session) -> None:
         session,
         record,
         extras=extras,
-        warnings=[],
-        scan_run_id="run-1",
+        run_id="run-1", now=time.time(),
     )
     session.commit()
 

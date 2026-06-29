@@ -12,8 +12,11 @@ metadata:
 spec:
   schedule: "0 * * * *"
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
+  # Hourly schedule, so 48 = ~48 hours of recent runs kept on the cluster for
+  # `kubectl logs`. Durable, searchable scan logs beyond this window live in the
+  # catalog DB (scan_log_lines); see the manage-page redesign plan.
+  successfulJobsHistoryLimit: 48
+  failedJobsHistoryLimit: 48
   jobTemplate:
     spec:
       backoffLimit: 1

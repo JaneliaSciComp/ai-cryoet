@@ -11,19 +11,19 @@ import {
 } from '~/utils/samplesSearch'
 import type {
   FiltersOptionsOut,
-  RunWarningOut,
+  IssueGroup,
+  ManageSummary,
   SampleDetail,
   SampleSummary,
-  SampleWarningsGroup,
-  ScanOut,
-  ScanSampleOut,
+  ScanLogLine,
+  ScanRun,
   StatsOverviewOut,
   WarningOut,
 } from '~/types'
 
 // Endpoints scoped to "the latest completed scan" return 404 when no scan has
 // completed yet. Callers want an empty list in that case rather than an error.
-async function fetchOrEmpty<T>(path: string): Promise<T[]> {
+export async function fetchOrEmpty<T>(path: string): Promise<T[]> {
   try {
     return await apiFetch<T[]>(path)
   } catch (err) {
@@ -31,8 +31,6 @@ async function fetchOrEmpty<T>(path: string): Promise<T[]> {
     throw err
   }
 }
-
-type ScanOutcome = 'upserted' | 'skipped' | 'failed'
 
 // ── /samples list ────────────────────────────────────────────────────────────
 
@@ -104,121 +102,127 @@ export function useStatsOverviewQuery() {
   return useSuspenseQuery(statsOverviewQueryOptions)
 }
 
-// ── /scans list ──────────────────────────────────────────────────────────────
+// ── /manage/summary ───────────────────────────────────────────────────────────
 
-export const scansQueryOptions = queryOptions({
-  queryKey: ['scans', 'list'],
-  queryFn: () => apiFetch<Array<ScanOut>>('/scans'),
+export const manageSummaryQueryOptions = queryOptions({
+  queryKey: ['manage', 'summary'],
+  queryFn: () => apiFetch<ManageSummary>('/manage/summary'),
 })
 
-export function useScansQuery() {
-  return useSuspenseQuery(scansQueryOptions)
+export function useManageSummaryQuery() {
+  return useSuspenseQuery(manageSummaryQueryOptions)
 }
 
-// ── /scans/{id} (+ /warnings, /samples) ──────────────────────────────────────
+// ── /manage/issues (outstanding) ────────────────────────────────────────────
+
+// Server-side filters for the outstanding-issues table. All optional; empty
+// values are dropped from the query string so they fall through to "no filter".
+export type IssueFilters = {
+  severity?: 'error' | 'warning'
+  file_kind?: string
+  q?: string
+}
+
+function buildIssueQueryString(filters: IssueFilters): string {
+  const params = new URLSearchParams()
+  if (filters.severity) params.set('severity', filters.severity)
+  if (filters.file_kind) params.set('file_kind', filters.file_kind)
+  if (filters.q) params.set('q', filters.q)
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export const outstandingIssuesQueryOptions = (filters: IssueFilters = {}) =>
+  queryOptions({
+    queryKey: ['manage', 'issues', 'outstanding', filters],
+    queryFn: () =>
+      apiFetch<IssueGroup[]>(`/manage/issues${buildIssueQueryString(filters)}`),
+  })
+
+// `useQuery` + `keepPreviousData` so toolbar filter edits don't unmount the
+// table while the next fetch is in flight.
+export function useOutstandingIssuesQuery(filters: IssueFilters = {}) {
+  return useQuery({
+    ...outstandingIssuesQueryOptions(filters),
+    placeholderData: keepPreviousData,
+  })
+}
+
+// ── /manage/issues/resolved (recently resolved) ─────────────────────────────
+
+export const recentlyResolvedQueryOptions = (withinHours = 24) =>
+  queryOptions({
+    queryKey: ['manage', 'issues', 'resolved', withinHours],
+    queryFn: () =>
+      apiFetch<IssueGroup[]>(
+        `/manage/issues/resolved?within_hours=${withinHours}`,
+      ),
+  })
+
+export function useRecentlyResolvedQuery(withinHours = 24) {
+  return useSuspenseQuery(recentlyResolvedQueryOptions(withinHours))
+}
+
+// ── /manage/scans (run history) ─────────────────────────────────────────────
+
+export const scanRunsQueryOptions = queryOptions({
+  queryKey: ['manage', 'scans', 'list'],
+  queryFn: () => apiFetch<ScanRun[]>('/manage/scans'),
+})
+
+export function useScanRunsQuery() {
+  return useSuspenseQuery(scanRunsQueryOptions)
+}
+
+// ── /manage/scans/{id} ──────────────────────────────────────────────────────
 
 // A specific scan run by id. Rejects with a 404 Error when the scan is
 // unknown, which the route loader turns into a `notFound()`.
-export const scanQueryOptions = (scanId: string) =>
+export const scanRunQueryOptions = (scanId: string) =>
   queryOptions({
-    queryKey: ['scans', 'detail', scanId],
-    queryFn: () => apiFetch<ScanOut>(`/scans/${encodeURIComponent(scanId)}`),
+    queryKey: ['manage', 'scans', 'detail', scanId],
+    queryFn: () =>
+      apiFetch<ScanRun>(`/manage/scans/${encodeURIComponent(scanId)}`),
   })
 
-export function useScanQuery(scanId: string) {
-  return useSuspenseQuery(scanQueryOptions(scanId))
+export function useScanRunQuery(scanId: string) {
+  return useSuspenseQuery(scanRunQueryOptions(scanId))
 }
 
-export const scanWarningsQueryOptions = (scanId: string) =>
+// ── /manage/scans/{id}/logs ─────────────────────────────────────────────────
+
+export type ScanLogFilters = {
+  level?: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
+  q?: string
+}
+
+function buildLogQueryString(filters: ScanLogFilters): string {
+  const params = new URLSearchParams()
+  if (filters.level) params.set('level', filters.level)
+  if (filters.q) params.set('q', filters.q)
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export const scanLogsQueryOptions = (
+  scanId: string,
+  filters: ScanLogFilters = {},
+) =>
   queryOptions({
-    queryKey: ['scans', 'detail', scanId, 'warnings'],
+    queryKey: ['manage', 'scans', 'detail', scanId, 'logs', filters],
     queryFn: () =>
-      apiFetch<SampleWarningsGroup[]>(
-        `/scans/${encodeURIComponent(scanId)}/warnings`,
+      apiFetch<ScanLogLine[]>(
+        `/manage/scans/${encodeURIComponent(scanId)}/logs${buildLogQueryString(
+          filters,
+        )}`,
       ),
   })
 
-export function useScanWarningsQuery(scanId: string) {
-  return useSuspenseQuery(scanWarningsQueryOptions(scanId))
-}
-
-export const scanRunWarningsQueryOptions = (scanId: string) =>
-  queryOptions({
-    queryKey: ['scans', 'detail', scanId, 'run-warnings'],
-    queryFn: () =>
-      apiFetch<RunWarningOut[]>(
-        `/scans/${encodeURIComponent(scanId)}/run-warnings`,
-      ),
+// `useQuery` + `keepPreviousData` so the within-run log filter doesn't unmount
+// the panel between fetches.
+export function useScanLogsQuery(scanId: string, filters: ScanLogFilters = {}) {
+  return useQuery({
+    ...scanLogsQueryOptions(scanId, filters),
+    placeholderData: keepPreviousData,
   })
-
-export function useScanRunWarningsQuery(scanId: string) {
-  return useSuspenseQuery(scanRunWarningsQueryOptions(scanId))
-}
-
-export const scanSamplesQueryOptions = (scanId: string, outcome: ScanOutcome) =>
-  queryOptions({
-    queryKey: ['scans', 'detail', scanId, 'samples', outcome],
-    queryFn: () =>
-      apiFetch<ScanSampleOut[]>(
-        `/scans/${encodeURIComponent(scanId)}/samples?outcome=${outcome}`,
-      ),
-  })
-
-export function useScanSamplesQuery(scanId: string, outcome: ScanOutcome) {
-  return useSuspenseQuery(scanSamplesQueryOptions(scanId, outcome))
-}
-
-// ── /scans/latest ────────────────────────────────────────────────────────────
-
-export const latestScanQueryOptions = queryOptions({
-  queryKey: ['scans', 'latest'],
-  queryFn: async (): Promise<ScanOut | null> => {
-    try {
-      return await apiFetch<ScanOut>('/scans/latest')
-    } catch (err) {
-      // 404 means "no completed scan yet" — surface as null so callers can
-      // render an empty branch without try/catch.
-      if (err instanceof Error && err.message.includes('404')) return null
-      throw err
-    }
-  },
-})
-
-export function useLatestScanQuery() {
-  return useSuspenseQuery(latestScanQueryOptions)
-}
-
-// ── /scans/latest/warnings (grouped by sample) ───────────────────────────────
-
-export const latestScanWarningsQueryOptions = queryOptions({
-  queryKey: ['scans', 'latest', 'warnings'],
-  queryFn: () => fetchOrEmpty<SampleWarningsGroup>('/scans/latest/warnings'),
-})
-
-export function useLatestScanWarningsQuery() {
-  return useSuspenseQuery(latestScanWarningsQueryOptions)
-}
-
-// ── /scans/latest/run-warnings (run-level, no sample) ─────────────────────────
-
-export const latestScanRunWarningsQueryOptions = queryOptions({
-  queryKey: ['scans', 'latest', 'run-warnings'],
-  queryFn: () => fetchOrEmpty<RunWarningOut>('/scans/latest/run-warnings'),
-})
-
-export function useLatestScanRunWarningsQuery() {
-  return useSuspenseQuery(latestScanRunWarningsQueryOptions)
-}
-
-// ── /scans/latest/samples?outcome= ───────────────────────────────────────────
-
-export const latestScanSamplesQueryOptions = (outcome: ScanOutcome) =>
-  queryOptions({
-    queryKey: ['scans', 'latest', 'samples', outcome],
-    queryFn: () =>
-      fetchOrEmpty<ScanSampleOut>(`/scans/latest/samples?outcome=${outcome}`),
-  })
-
-export function useLatestScanSamplesQuery(outcome: ScanOutcome) {
-  return useSuspenseQuery(latestScanSamplesQueryOptions(outcome))
 }

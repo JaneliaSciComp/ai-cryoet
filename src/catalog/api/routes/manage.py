@@ -1,0 +1,362 @@
+"""Manage-page endpoints — scan run history + outstanding/resolved issues.
+
+Replaces the old per-scan-run ``/scans`` router. The model splits run history
+(``scan_runs``, ``scan_log_lines``, ``scan_sample_outcomes``) from current state
+(``issues``); these endpoints serve the redesigned Manage page (plan §4.6):
+
+  GET /manage/summary                       -> ManageSummary
+  GET /manage/issues                        -> list[IssueGroup]   (outstanding)
+  GET /manage/issues/resolved               -> list[IssueGroup]   (recently resolved)
+  GET /manage/scans                         -> list[ScanRun]
+  GET /manage/scans/{id}                    -> ScanRun
+  GET /manage/scans/{id}/logs               -> list[ScanLogLine]
+  GET /manage/scans/{id}/samples            -> list[ScanSampleOutcomeOut]
+"""
+from __future__ import annotations
+
+import os
+import time
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from catalog import orm
+from catalog.api.deps import get_session
+from catalog.api.schemas import (
+    IssueGroup,
+    IssueItem,
+    LatestScanInfo,
+    ManageSummary,
+    OutstandingCounts,
+    ScanLogLine,
+    ScanRun,
+    ScanSampleOutcomeOut,
+)
+
+router = APIRouter()
+
+Outcome = Literal["upserted", "skipped", "failed"]
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+Severity = Literal["error", "warning"]
+
+
+def _enum_val(v):
+    """Coerce a possibly-enum value to its string value."""
+    return v.value if hasattr(v, "value") else v
+
+
+def _latest_completed_run(session: Session) -> orm.ScanRunORM | None:
+    """The most recent completed scan run (by ended_at), or None."""
+    return session.execute(
+        select(orm.ScanRunORM)
+        .where(orm.ScanRunORM.status == "completed")
+        .order_by(orm.ScanRunORM.ended_at.desc())
+        .limit(1)
+    ).scalars().first()
+
+
+def _scan_run_to_out(row: orm.ScanRunORM) -> ScanRun:
+    return ScanRun(
+        scan_run_id=row.scan_run_id,
+        started_at=row.started_at,
+        ended_at=row.ended_at,
+        status=_enum_val(row.status),
+        root=row.root,
+        n_upserted=row.n_upserted,
+        n_skipped=row.n_skipped,
+        n_failed=row.n_failed,
+        n_new_issues=row.n_new_issues,
+        n_resolved_issues=row.n_resolved_issues,
+        n_warning_active=row.n_warning_active,
+        n_error_active=row.n_error_active,
+    )
+
+
+def _group_issues(
+    rows: list[orm.IssueORM],
+    *,
+    latest_run_id: str | None,
+    latest_scan_at: float | None,
+    resolved: bool,
+) -> list[IssueGroup]:
+    """Group issue rows by (scope, sample_id, acquisition_id, file_kind).
+
+    Mirrors the old ``scans._scan_warnings`` Python-grouping style. ``severity``
+    is the max within the group (error wins). When ``resolved`` is True, the
+    group also carries ``resolved_at`` (max) + its ``resolved_run_id``.
+    """
+    groups: dict[tuple, dict] = {}
+    for r in rows:
+        key = (
+            _enum_val(r.scope),
+            r.sample_id,
+            r.acquisition_id,
+            _enum_val(r.file_kind),
+        )
+        g = groups.get(key)
+        if g is None:
+            g = {
+                "scope": _enum_val(r.scope),
+                "sample_id": r.sample_id,
+                "acquisition_id": r.acquisition_id,
+                "file_kind": _enum_val(r.file_kind),
+                "file_path": r.file_path,
+                "has_error": False,
+                "issues": [],
+                "first_seen_at": r.first_seen_at,
+                "last_seen_at": r.last_seen_at,
+                "last_seen_run_id": r.last_seen_run_id,
+                "resolved_at": r.resolved_at,
+                "resolved_run_id": r.resolved_run_id,
+            }
+            groups[key] = g
+
+        if _enum_val(r.severity) == "error":
+            g["has_error"] = True
+        g["issues"].append(IssueItem(category=r.category, message=r.message))
+
+        if r.first_seen_at < g["first_seen_at"]:
+            g["first_seen_at"] = r.first_seen_at
+        if r.last_seen_at > g["last_seen_at"]:
+            g["last_seen_at"] = r.last_seen_at
+            g["last_seen_run_id"] = r.last_seen_run_id
+        if resolved and r.resolved_at is not None and (
+            g["resolved_at"] is None or r.resolved_at > g["resolved_at"]
+        ):
+            g["resolved_at"] = r.resolved_at
+            g["resolved_run_id"] = r.resolved_run_id
+        # ``file_path`` is take-first-non-null within the group.
+        if g["file_path"] is None and r.file_path is not None:
+            g["file_path"] = r.file_path
+
+    out = [
+        IssueGroup(
+            scope=g["scope"],
+            sample_id=g["sample_id"],
+            acquisition_id=g["acquisition_id"],
+            file_kind=g["file_kind"],
+            file_path=g["file_path"],
+            severity="error" if g["has_error"] else "warning",
+            issues=g["issues"],
+            first_seen_at=g["first_seen_at"],
+            last_seen_at=g["last_seen_at"],
+            last_seen_run_id=g["last_seen_run_id"],
+            latest_run_id=latest_run_id,
+            latest_scan_at=latest_scan_at,
+            resolved_at=g["resolved_at"] if resolved else None,
+            resolved_run_id=g["resolved_run_id"] if resolved else None,
+        )
+        for g in groups.values()
+    ]
+    # Sort by severity (errors first) then sample_id.
+    out.sort(key=lambda gr: (0 if gr.severity == "error" else 1, gr.sample_id or ""))
+    return out
+
+
+# ── Summary ──────────────────────────────────────────────────────────────
+
+
+@router.get("/summary", response_model=ManageSummary)
+def get_summary(session: Session = Depends(get_session)):
+    """Status/cadence card: latest scan, configured cadence, outstanding counts."""
+    # Latest scan = latest completed run; fall back to latest run of any status.
+    run = _latest_completed_run(session)
+    if run is None:
+        run = session.execute(
+            select(orm.ScanRunORM)
+            .order_by(orm.ScanRunORM.started_at.desc())
+            .limit(1)
+        ).scalars().first()
+
+    latest_scan: LatestScanInfo | None = None
+    if run is not None:
+        duration = (
+            run.ended_at - run.started_at
+            if run.ended_at is not None
+            else None
+        )
+        latest_scan = LatestScanInfo(
+            started_at=run.started_at,
+            ended_at=run.ended_at,
+            status=_enum_val(run.status),
+            duration=duration,
+        )
+
+    # Outstanding live counts by severity.
+    counts = dict(
+        session.execute(
+            select(orm.IssueORM.severity, func.count())
+            .where(orm.IssueORM.resolved_at.is_(None))
+            .group_by(orm.IssueORM.severity)
+        ).all()
+    )
+    outstanding = OutstandingCounts(
+        errors=counts.get("error", 0),
+        warnings=counts.get("warning", 0),
+    )
+
+    return ManageSummary(
+        latest_scan=latest_scan,
+        cadence_cron=os.environ.get("SCAN_CADENCE_CRON", "0 * * * *"),
+        cadence_tz=os.environ.get("SCAN_CADENCE_TZ", "UTC"),
+        outstanding=outstanding,
+    )
+
+
+# ── Issues ───────────────────────────────────────────────────────────────
+
+
+@router.get("/issues", response_model=list[IssueGroup])
+def get_outstanding_issues(
+    severity: Severity | None = Query(None),
+    file_kind: str | None = Query(None),
+    q: str | None = Query(None),
+    session: Session = Depends(get_session),
+):
+    """Outstanding issues (resolved_at IS NULL), grouped by entity + file_kind."""
+    stmt = select(orm.IssueORM).where(orm.IssueORM.resolved_at.is_(None))
+    if severity is not None:
+        stmt = stmt.where(orm.IssueORM.severity == severity)
+    if file_kind is not None:
+        stmt = stmt.where(orm.IssueORM.file_kind == file_kind)
+    if q:
+        # Each whitespace-separated term must match some field (AND across
+        # terms, OR across fields) so "sample-1 acq1" narrows to that
+        # acquisition — acquisition ids aren't unique across samples.
+        for term in q.lower().split():
+            like = f"%{term}%"
+            stmt = stmt.where(
+                func.lower(orm.IssueORM.message).like(like)
+                | func.lower(orm.IssueORM.location).like(like)
+                | func.lower(func.coalesce(orm.IssueORM.sample_id, "")).like(like)
+                | func.lower(
+                    func.coalesce(orm.IssueORM.acquisition_id, "")
+                ).like(like)
+            )
+    rows = session.execute(stmt).scalars().all()
+
+    run = _latest_completed_run(session)
+    latest_run_id = run.scan_run_id if run else None
+    latest_scan_at = (run.ended_at or run.started_at) if run else None
+
+    return _group_issues(
+        rows,
+        latest_run_id=latest_run_id,
+        latest_scan_at=latest_scan_at,
+        resolved=False,
+    )
+
+
+@router.get("/issues/resolved", response_model=list[IssueGroup])
+def get_resolved_issues(
+    within_hours: float = Query(24.0, gt=0),
+    session: Session = Depends(get_session),
+):
+    """Issues resolved within the last ``within_hours`` hours, same grouping."""
+    cutoff = time.time() - within_hours * 3600.0
+    rows = session.execute(
+        select(orm.IssueORM)
+        .where(orm.IssueORM.resolved_at.is_not(None))
+        .where(orm.IssueORM.resolved_at >= cutoff)
+    ).scalars().all()
+
+    run = _latest_completed_run(session)
+    latest_run_id = run.scan_run_id if run else None
+    latest_scan_at = (run.ended_at or run.started_at) if run else None
+
+    return _group_issues(
+        rows,
+        latest_run_id=latest_run_id,
+        latest_scan_at=latest_scan_at,
+        resolved=True,
+    )
+
+
+# ── Scan runs ──────────────────────────────────────────────────────────────
+
+
+@router.get("/scans", response_model=list[ScanRun])
+def list_scans(session: Session = Depends(get_session)):
+    rows = session.execute(
+        select(orm.ScanRunORM).order_by(orm.ScanRunORM.started_at.desc())
+    ).scalars().all()
+    return [_scan_run_to_out(r) for r in rows]
+
+
+# NOTE: the ``/scans/{id}`` routes must be declared after every literal
+# ``/scans`` path — FastAPI matches in registration order, and a bare
+# path-param route would otherwise swallow a literal segment. (No literal
+# child paths exist today, but keep the discipline mirroring the old scans.py.)
+@router.get("/scans/{scan_run_id}", response_model=ScanRun)
+def get_scan(scan_run_id: str, session: Session = Depends(get_session)):
+    row = session.get(orm.ScanRunORM, scan_run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+    return _scan_run_to_out(row)
+
+
+@router.get("/scans/{scan_run_id}/logs", response_model=list[ScanLogLine])
+def get_scan_logs(
+    scan_run_id: str,
+    level: LogLevel | None = Query(None),
+    q: str | None = Query(None),
+    session: Session = Depends(get_session),
+):
+    """Log lines for one run, ordered by seq. 404 if the run is unknown."""
+    if session.get(orm.ScanRunORM, scan_run_id) is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+
+    stmt = (
+        select(orm.ScanLogLineORM)
+        .where(orm.ScanLogLineORM.scan_run_id == scan_run_id)
+    )
+    if level is not None:
+        stmt = stmt.where(orm.ScanLogLineORM.level == level)
+    if q:
+        like = f"%{q.lower()}%"
+        stmt = stmt.where(func.lower(orm.ScanLogLineORM.message).like(like))
+    stmt = stmt.order_by(orm.ScanLogLineORM.seq)
+
+    rows = session.execute(stmt).scalars().all()
+    return [
+        ScanLogLine(
+            id=r.id,
+            seq=r.seq,
+            ts=r.ts,
+            level=_enum_val(r.level),
+            sample_id=r.sample_id,
+            message=r.message,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/scans/{scan_run_id}/samples", response_model=list[ScanSampleOutcomeOut])
+def get_scan_samples(
+    scan_run_id: str,
+    outcome: Outcome | None = Query(None),
+    session: Session = Depends(get_session),
+):
+    """Per-sample outcomes for one run (optional outcome filter). 404 if unknown."""
+    if session.get(orm.ScanRunORM, scan_run_id) is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+
+    stmt = (
+        select(orm.ScanSampleOutcomeORM)
+        .where(orm.ScanSampleOutcomeORM.scan_run_id == scan_run_id)
+    )
+    if outcome is not None:
+        stmt = stmt.where(orm.ScanSampleOutcomeORM.outcome == outcome)
+    stmt = stmt.order_by(orm.ScanSampleOutcomeORM.sample_id)
+
+    rows = session.execute(stmt).scalars().all()
+    return [
+        ScanSampleOutcomeOut(
+            sample_id=r.sample_id,
+            outcome=_enum_val(r.outcome),
+            detail=r.detail,
+        )
+        for r in rows
+    ]

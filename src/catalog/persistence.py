@@ -7,8 +7,10 @@ The persistence layer is dumb in two senses:
    list from schema.loader (passed through AssemblyResult.extras) is
    the single source of truth for the extras table.
 
-A scan_run_id is supplied by the orchestrator; persistence stamps detected_at
-and scan_run_id on each scan_warnings row at insert time.
+A run-level ``now`` and ``run_id`` are supplied by the orchestrator; issue
+reconciliation (``reconcile_sample_issues``/``reconcile_run_issues``) diffs the
+fresh issue set against the stored outstanding issues, preserving first-seen and
+detecting resolution.
 
 Upserts use ``session.merge()`` for cross-dialect portability (SQLite +
 Postgres). All operations for one sample happen inside one transaction (the
@@ -19,6 +21,7 @@ transaction rolls back and the orchestrator records the sample as failed.
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import time
 from typing import Any
@@ -30,7 +33,7 @@ from schema import SampleRecord
 from schema.loader import ExtrasEntry
 
 from catalog import orm
-from catalog.assembler import ScanWarning
+from catalog.assembler import ScanIssue
 
 
 class PruneSafetyFloorExceeded(Exception):
@@ -128,8 +131,8 @@ def upsert_sample_record(
     record: SampleRecord,
     *,
     extras: list[ExtrasEntry],
-    warnings: list[ScanWarning],
-    scan_run_id: str,
+    run_id: str,
+    now: float,
     disk_size_bytes: int | None = None,
     thumbnail_path: str | None = None,
 ) -> None:
@@ -146,16 +149,19 @@ def upsert_sample_record(
        ``post_processed_tomograms`` / ``annotations`` / ``tilt_series``
        upsert.
     6. ``extras`` refresh: DELETE WHERE sample_id = ? then INSERT fresh.
-    7. ``scan_warnings`` refresh: DELETE WHERE sample_id = ? then INSERT
-       fresh with ``detected_at`` and ``scan_run_id`` stamped.
-    8. Stale-row cleanup for the multi-row child tables using Python keep-sets.
+    7. Stale-row cleanup for the multi-row child tables using Python keep-sets,
+       plus the §3.2/§9.10 acquisition-orphan prune: any
+       ``acquisition_scan_status`` row and any acquisition-scope ``issue`` whose
+       ``(sample_id, acquisition_id)`` is no longer in ``keep_acq_pks`` is
+       deleted (no FK cascade is relied upon).
+
+    Issue reconciliation is *not* done here — the orchestrator calls
+    :func:`reconcile_sample_issues` separately with the same ``run_id``/``now``.
     """
     sample_id = record.sample.sample_id
     assert sample_id is not None, (
         "sample_id must be set on the record before persistence"
     )
-
-    now = time.time()
 
     # ---- Step 1: samples row ------------------------------------------------
     sample_payload = record.sample.model_dump(exclude_none=False)
@@ -347,6 +353,11 @@ def upsert_sample_record(
         keep=keep_ts_pks,
     )
 
+    # ---- acquisition-orphan prune (§3.2 / §9.10) --------------------------
+    # Acquisitions are hard-deleted above; mirror that for the side table and
+    # for acquisition-scope issues so neither leaks orphans (no FK cascade).
+    _prune_orphan_acquisition_status(session, sample_id, keep_acq_pks)
+
     # ---- Step 6: extras refresh -------------------------------------------
     session.execute(
         delete(orm.ExtrasORM).where(orm.ExtrasORM.sample_id == sample_id)
@@ -363,52 +374,313 @@ def upsert_sample_record(
             )
         )
 
-    # ---- Step 7: scan_warnings refresh ------------------------------------
-    session.execute(
-        delete(orm.ScanWarningsORM).where(
-            orm.ScanWarningsORM.sample_id == sample_id
-        )
-    )
-    for w in warnings:
-        session.add(
-            orm.ScanWarningsORM(
-                sample_id=sample_id,
-                category=w.category,
-                location=w.location,
-                message=w.message,
-                detected_at=now,
-                scan_run_id=scan_run_id,
-            )
-        )
 
-
-def persist_run_warnings(
-    session: Session,
-    scan_run_id: str,
-    warnings: list[ScanWarning],
+def _prune_orphan_acquisition_status(
+    session: Session, sample_id: str, keep_acq_pks: set[tuple[str, str]]
 ) -> None:
-    """Refresh ``scan_run_warnings`` for ``scan_run_id``: DELETE then INSERT.
-
-    Run-level warnings have no owning sample, so they live in their own table
-    keyed by ``scan_run_id`` (not ``sample_id``). Deleting first makes a re-run
-    with the same id idempotent. ``detected_at`` is stamped at insert time.
+    """Delete acquisition_scan_status rows + acquisition-scope issues for
+    acquisitions of ``sample_id`` that are no longer present (not in
+    ``keep_acq_pks``). Python-diff mirrors ``_delete_stale_children`` so
+    in-transaction merges that aren't flushed yet don't confuse a NOT IN.
     """
-    now = time.time()
-    session.execute(
-        delete(orm.ScanRunWarningsORM).where(
-            orm.ScanRunWarningsORM.scan_run_id == scan_run_id
+    # acquisition_scan_status rows
+    status_rows = session.execute(
+        select(orm.AcquisitionScanStatusORM.acquisition_id).where(
+            orm.AcquisitionScanStatusORM.sample_id == sample_id
         )
-    )
-    for w in warnings:
-        session.add(
-            orm.ScanRunWarningsORM(
-                category=w.category,
-                location=w.location,
-                message=w.message,
-                detected_at=now,
-                scan_run_id=scan_run_id,
+    ).scalars().all()
+    for acq_id in status_rows:
+        if (sample_id, acq_id) not in keep_acq_pks:
+            session.execute(
+                delete(orm.AcquisitionScanStatusORM).where(
+                    and_(
+                        orm.AcquisitionScanStatusORM.sample_id == sample_id,
+                        orm.AcquisitionScanStatusORM.acquisition_id == acq_id,
+                    )
+                )
+            )
+
+    # acquisition-scope issues for this sample
+    issue_rows = session.execute(
+        select(orm.IssueORM.id, orm.IssueORM.acquisition_id).where(
+            and_(
+                orm.IssueORM.sample_id == sample_id,
+                orm.IssueORM.scope == "acquisition",
             )
         )
+    ).all()
+    orphan_ids = [
+        row_id
+        for row_id, acq_id in issue_rows
+        if (sample_id, acq_id) not in keep_acq_pks
+    ]
+    if orphan_ids:
+        session.execute(
+            delete(orm.IssueORM).where(orm.IssueORM.id.in_(orphan_ids))
+        )
+
+
+# ─── issue reconciliation (§4.4) ─────────────────────────────────────────────
+
+
+def _issue_fingerprint(issue: ScanIssue) -> str:
+    """Stable identity for an issue — deliberately EXCLUDES ``message`` so a
+    re-worded message preserves ``first_seen_at`` (decision §9.4)."""
+    raw = (
+        f"{issue.scope}|{issue.sample_id}|{issue.acquisition_id}"
+        f"|{issue.file_kind}|{issue.location}|{issue.category}"
+    )
+    return hashlib.sha1(raw.encode()).hexdigest()
+
+
+def _apply_fresh_issue(
+    session: Session,
+    issue: ScanIssue,
+    fp: str,
+    run_id: str,
+    now: float,
+    outstanding_by_fp: dict[str, "orm.IssueORM"],
+) -> bool:
+    """Upsert one fresh issue by fingerprint. Returns True if it is newly opened
+    (a fresh insert OR the reopening of a previously-resolved row).
+
+    The ``issues.fingerprint`` column is globally UNIQUE, so a recurring problem
+    whose row was previously resolved must be *reopened* in place rather than
+    re-inserted (which would violate the constraint). ``first_seen_*`` is
+    preserved on reopen so the issue's original first-seen survives a
+    resolve→recur cycle.
+    """
+    existing = outstanding_by_fp.get(fp)
+    if existing is not None:
+        existing.last_seen_at = now
+        existing.last_seen_run_id = run_id
+        existing.message = issue.message
+        existing.severity = issue.severity
+        return False
+
+    # Not in the outstanding set — it may still exist as a resolved row.
+    prior = session.execute(
+        select(orm.IssueORM).where(orm.IssueORM.fingerprint == fp)
+    ).scalars().first()
+    if prior is not None:
+        # Reopen the resolved row (recurrence).
+        prior.last_seen_at = now
+        prior.last_seen_run_id = run_id
+        prior.message = issue.message
+        prior.severity = issue.severity
+        prior.resolved_at = None
+        prior.resolved_run_id = None
+        prior.file_path = issue.file_path
+        return True
+
+    session.add(
+        orm.IssueORM(
+            fingerprint=fp,
+            severity=issue.severity,
+            scope=issue.scope,
+            sample_id=issue.sample_id,
+            acquisition_id=issue.acquisition_id,
+            file_kind=issue.file_kind,
+            file_path=issue.file_path,
+            location=issue.location,
+            category=issue.category,
+            message=issue.message,
+            first_seen_at=now,
+            first_seen_run_id=run_id,
+            last_seen_at=now,
+            last_seen_run_id=run_id,
+            resolved_at=None,
+            resolved_run_id=None,
+        )
+    )
+    return True
+
+
+def reconcile_sample_issues(
+    session: Session,
+    run_id: str,
+    sample_id: str,
+    fresh_issues: list[ScanIssue],
+    now: float,
+    *,
+    resolve_missing: bool = True,
+) -> tuple[int, int]:
+    """Diff ``fresh_issues`` against this sample's outstanding issues (§4.4).
+
+    - Upsert each fresh issue by fingerprint: existing → bump
+      ``last_seen_at``/``last_seen_run_id`` + refresh ``message``/``severity``;
+      missing → insert with ``first_seen_* = last_seen_* = now/run_id`` and
+      ``resolved_at = NULL``.
+    - Outstanding issues absent from the fresh set → ``resolved_at = now``,
+      ``resolved_run_id = run_id`` — UNLESS ``resolve_missing=False`` (the
+      failed-sample path, where we couldn't re-evaluate the sample).
+
+    Returns ``(n_new, n_resolved)``.
+    """
+    outstanding = (
+        session.execute(
+            select(orm.IssueORM).where(
+                and_(
+                    orm.IssueORM.sample_id == sample_id,
+                    orm.IssueORM.resolved_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_fp = {row.fingerprint: row for row in outstanding}
+
+    n_new = 0
+    fresh_fps: set[str] = set()
+    for issue in fresh_issues:
+        fp = _issue_fingerprint(issue)
+        fresh_fps.add(fp)
+        if _apply_fresh_issue(session, issue, fp, run_id, now, by_fp):
+            n_new += 1
+
+    n_resolved = 0
+    if resolve_missing:
+        for fp, row in by_fp.items():
+            if fp not in fresh_fps:
+                row.resolved_at = now
+                row.resolved_run_id = run_id
+                n_resolved += 1
+
+    return n_new, n_resolved
+
+
+def reconcile_run_issues(
+    session: Session,
+    run_id: str,
+    fresh_run_issues: list[ScanIssue],
+    now: float,
+) -> tuple[int, int]:
+    """Reconcile run-scope issues (``scope="run"``, ``sample_id IS NULL``).
+
+    Same diff as :func:`reconcile_sample_issues` but over ALL outstanding
+    run-scope issues. The orchestrator calls this ONLY when the run completes
+    (§4.4/§9.6) — a crashed run may not have finished discovery, so resolving
+    absent run-scope issues would be wrong. Returns ``(n_new, n_resolved)``.
+    """
+    outstanding = (
+        session.execute(
+            select(orm.IssueORM).where(
+                and_(
+                    orm.IssueORM.scope == "run",
+                    orm.IssueORM.sample_id.is_(None),
+                    orm.IssueORM.resolved_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_fp = {row.fingerprint: row for row in outstanding}
+
+    n_new = 0
+    fresh_fps: set[str] = set()
+    for issue in fresh_run_issues:
+        fp = _issue_fingerprint(issue)
+        fresh_fps.add(fp)
+        if _apply_fresh_issue(session, issue, fp, run_id, now, by_fp):
+            n_new += 1
+
+    n_resolved = 0
+    for fp, row in by_fp.items():
+        if fp not in fresh_fps:
+            row.resolved_at = now
+            row.resolved_run_id = run_id
+            n_resolved += 1
+
+    return n_new, n_resolved
+
+
+# ─── freshness + thumbnail provenance status (§4.5) ──────────────────────────
+
+
+def upsert_sample_scan_status(
+    session: Session,
+    sample_id: str,
+    *,
+    now: float,
+    outcome: str,
+    run_id: str,
+    changed: bool,
+) -> None:
+    """Upsert the 1:1 ``sample_scan_status`` row by PK (§4.5).
+
+    ``last_scanned_at=now`` always; ``last_changed_at=now`` only when
+    ``changed`` (an upsert), else the prior value is preserved.
+    """
+    existing = session.get(orm.SampleScanStatusORM, sample_id)
+    prior_changed = existing.last_changed_at if existing is not None else None
+    last_changed_at = now if changed else prior_changed
+    session.merge(
+        orm.SampleScanStatusORM(
+            sample_id=sample_id,
+            last_scanned_at=now,
+            last_changed_at=last_changed_at,
+            last_outcome=outcome,
+            last_scan_run_id=run_id,
+        )
+    )
+
+
+def upsert_acquisition_scan_status(
+    session: Session,
+    sample_id: str,
+    acquisition_id: str,
+    *,
+    now: float,
+    outcome: str,
+    run_id: str,
+    changed: bool,
+    thumbnail_path: str | None = None,
+    thumbnail_source_kind: str | None = None,
+    thumbnail_source_path: str | None = None,
+    thumbnail_generated_at: float | None = None,
+    thumbnail_status: str | None = None,
+) -> None:
+    """Upsert the 1:1 ``acquisition_scan_status`` row by PK (§4.5).
+
+    Freshness fields mirror :func:`upsert_sample_scan_status`. Thumbnail
+    provenance fields are only overwritten when provided (on (re)generation);
+    otherwise the prior values are preserved (e.g. on a skip, which carries no
+    thumbnail info).
+    """
+    existing = session.get(
+        orm.AcquisitionScanStatusORM, (sample_id, acquisition_id)
+    )
+    prior_changed = existing.last_changed_at if existing is not None else None
+    last_changed_at = now if changed else prior_changed
+
+    def _pick(new, attr):
+        if new is not None:
+            return new
+        return getattr(existing, attr) if existing is not None else None
+
+    session.merge(
+        orm.AcquisitionScanStatusORM(
+            sample_id=sample_id,
+            acquisition_id=acquisition_id,
+            last_scanned_at=now,
+            last_changed_at=last_changed_at,
+            last_outcome=outcome,
+            last_scan_run_id=run_id,
+            thumbnail_path=_pick(thumbnail_path, "thumbnail_path"),
+            thumbnail_source_kind=_pick(
+                thumbnail_source_kind, "thumbnail_source_kind"
+            ),
+            thumbnail_source_path=_pick(
+                thumbnail_source_path, "thumbnail_source_path"
+            ),
+            thumbnail_generated_at=_pick(
+                thumbnail_generated_at, "thumbnail_generated_at"
+            ),
+            thumbnail_status=_pick(thumbnail_status, "thumbnail_status"),
+        )
+    )
 
 
 # ─── soft delete + safety floor ──────────────────────────────────────────────
@@ -478,6 +750,10 @@ def soft_delete_missing_samples(
 
 __all__ = [
     "PruneSafetyFloorExceeded",
+    "reconcile_run_issues",
+    "reconcile_sample_issues",
     "soft_delete_missing_samples",
+    "upsert_acquisition_scan_status",
     "upsert_sample_record",
+    "upsert_sample_scan_status",
 ]

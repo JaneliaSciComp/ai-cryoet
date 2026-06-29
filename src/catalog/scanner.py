@@ -2,8 +2,14 @@
 
 scan_root walks the data root, runs the gating check, dispatches per-sample
 to the assembler + persistence layer inside a transaction, and tracks the
-overall run via the `scans` table (one row per invocation, status running/
+overall run via the `scan_runs` table (one row per invocation, status running/
 completed/failed) and a per-sample ScanReport returned to the caller.
+
+Issues are reconciled (not delete-then-inserted): each sample's fresh issue set
+is diffed against its stored outstanding issues so first-seen survives across
+runs and resolution is detected when a re-evaluated sample stops emitting an
+issue. Logs are buffered in memory by a synchronous loguru sink and persisted
+in a single bulk insert at run end (single-writer SQLite contract).
 
 Single-writer contract: running two scan_root calls against the same
 DB simultaneously is undefined. The CLI takes no advisory lock; the operator
@@ -11,6 +17,7 @@ is responsible for serializing scans.
 """
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,11 +25,11 @@ from typing import Literal
 from uuid import uuid4
 
 from loguru import logger
-from sqlalchemy import Engine
+from sqlalchemy import Engine, delete, insert, select
 from sqlalchemy.orm import sessionmaker
 
 from catalog import assembler, discovery, orm, persistence, state, thumbnails
-from catalog.assembler import FieldConflict, ScanWarning
+from catalog.assembler import FieldConflict, ScanIssue
 
 
 @dataclass
@@ -30,20 +37,27 @@ class ScanReport:
     upserted: int = 0
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
-    warnings: list[ScanWarning] = field(default_factory=list)
-    # Run-level warnings not tied to a sample (e.g. unknown MdSimulation subdir).
-    run_warnings: list[ScanWarning] = field(default_factory=list)
+    # Sample/acquisition-scope issues emitted this run (across all samples).
+    issues: list[ScanIssue] = field(default_factory=list)
+    # Run-scope issues not tied to a sample (e.g. unknown MdSimulation subdir).
+    run_issues: list[ScanIssue] = field(default_factory=list)
     conflicts: list[FieldConflict] = field(default_factory=list)
     soft_deleted: int = 0
     # populated only on prune_dry_run=True
     would_soft_delete: list[str] | None = None
-    # Per-sample membership behind the counts above, persisted to scan_samples
-    # so the /manage view can list which samples sit behind each tally.
+    # Per-sample membership behind the counts above, persisted to
+    # scan_sample_outcomes so the run-detail view can list which samples sit
+    # behind each tally.
     upserted_ids: list[str] = field(default_factory=list)
     skipped_ids: list[str] = field(default_factory=list)
     # (sample_id, error message) — sample-level failures only.
     failed_samples: list[tuple[str, str]] = field(default_factory=list)
     thumbnails_healed: int = 0
+    # Issue-churn / outstanding snapshots for the scan_runs row (set at run end).
+    n_new_issues: int = 0
+    n_resolved_issues: int = 0
+    n_warning_active: int | None = None
+    n_error_active: int | None = None
 
 
 def scan_root(
@@ -75,12 +89,35 @@ def scan_root(
     report = ScanReport()
     scan_run_id = uuid4().hex
 
+    # ── Log sink (§4.3/§9.11): synchronous, buffers records in memory ────────
+    log_buffer: list[dict] = []
+    _seq = [0]
+    db_level = os.environ.get("SCAN_LOG_DB_LEVEL", "INFO")
+
+    def _sink(message) -> None:
+        record = message.record
+        _seq[0] += 1
+        log_buffer.append(
+            {
+                "scan_run_id": scan_run_id,
+                "seq": _seq[0],
+                "ts": record["time"].timestamp(),
+                "level": record["level"].name,
+                "sample_id": record["extra"].get("sample_id"),
+                "message": record["message"],
+            }
+        )
+
+    sink_id = logger.add(_sink, level=db_level, enqueue=False)
+
     session = SessionFactory()
+    run_now: float | None = None
     try:
         # Open scan_run + catalog_meta in their own transaction so they're
-        # visible to subsequent transactions.
+        # visible to subsequent transactions. start_scan returns the run-level
+        # `now` we thread through everything (§9.6).
         with session.begin():
-            state.start_scan(session, scan_run_id, root)
+            run_now = state.start_scan(session, scan_run_id, root)
 
         # One SELECT before the loop for soft-deleted ids.
         with session.begin():
@@ -100,35 +137,42 @@ def scan_root(
         fs_sample_ids: set[str] = set()
         for idx, sample_loc in enumerate(sample_locs, start=1):
             fs_sample_ids.add(sample_loc.sample_id)
-            logger.info("[{}/{}] {}", idx, total, sample_loc.sample_id)
+            with logger.contextualize(sample_id=sample_loc.sample_id):
+                logger.info("[{}/{}] {}", idx, total, sample_loc.sample_id)
 
-            # Per-sample work in its own transaction
-            try:
-                _scan_one_sample(
-                    session,
-                    sample_loc,
-                    force=force,
-                    soft_deleted_ids=soft_deleted_ids,
-                    scan_run_id=scan_run_id,
-                    report=report,
-                    thumbnail_dir=thumbnail_dir,
-                )
-            except Exception as e:  # noqa: BLE001
-                # Make sure no partial transaction is left dangling.
-                if session.in_transaction():
-                    session.rollback()
-                report.errors.append(f"{sample_loc.sample_id}: {e}")
-                report.failed_samples.append((sample_loc.sample_id, str(e)))
-                if on_error == "raise":
-                    raise
+                # Per-sample work in its own transaction
+                try:
+                    _scan_one_sample(
+                        session,
+                        sample_loc,
+                        force=force,
+                        soft_deleted_ids=soft_deleted_ids,
+                        scan_run_id=scan_run_id,
+                        now=run_now,
+                        report=report,
+                        thumbnail_dir=thumbnail_dir,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    # Make sure no partial transaction is left dangling.
+                    if session.in_transaction():
+                        session.rollback()
+                    report.errors.append(f"{sample_loc.sample_id}: {e}")
+                    report.failed_samples.append((sample_loc.sample_id, str(e)))
+                    if on_error == "raise":
+                        raise
 
-        # Run-level warnings: subdirs under MdSimulation/ that aren't one of
-        # the four dataset-type dirs hold no cataloguable sample and were
-        # skipped by discovery. Surface them so operators see misplaced data.
-        run_warnings = [
-            ScanWarning(
+        # Run-level issues: subdirs under MdSimulation/ that aren't one of the
+        # four dataset-type dirs hold no cataloguable sample and were skipped by
+        # discovery; samples outside the recognized top-level arms are never
+        # discovered. Surface both so operators see misplaced data.
+        run_issues = [
+            ScanIssue(
+                severity="warning",
+                scope="run",
                 category="unknown_md_simulation_subdir",
                 location=str(subdir),
+                file_kind="filesystem",
+                file_path=str(subdir),
                 message=(
                     f"'{subdir.name}' is not a recognized MdSimulation "
                     "dataset-type directory (expected one of Bulk, "
@@ -138,14 +182,14 @@ def scan_root(
             )
             for subdir in discovery.iter_unknown_md_subdirs(root)
         ]
-        # Samples placed outside the two recognized top-level arms
-        # (root/{other}/{sample}/sample.toml) are never discovered and never
-        # catalogued. Surface each so operators can move it under Experimental/
-        # or MdSimulation/.
-        run_warnings.extend(
-            ScanWarning(
+        run_issues.extend(
+            ScanIssue(
+                severity="warning",
+                scope="run",
                 category="sample_outside_arm",
                 location=str(sample_dir),
+                file_kind="filesystem",
+                file_path=str(sample_dir),
                 message=(
                     f"sample '{sample_dir.name}' is not under a recognized "
                     "top-level arm (expected Experimental/ or MdSimulation/); "
@@ -154,12 +198,7 @@ def scan_root(
             )
             for sample_dir in discovery.iter_misplaced_samples(root)
         )
-        if run_warnings:
-            report.run_warnings.extend(run_warnings)
-            with session.begin():
-                persistence.persist_run_warnings(
-                    session, scan_run_id, run_warnings
-                )
+        report.run_issues.extend(run_issues)
 
         # After the loop: optional prune
         if prune or prune_dry_run:
@@ -180,36 +219,121 @@ def scan_root(
                     )
                     raise
 
+        # Run-scope issue reconciliation — ONLY on the completed path (§9.6).
+        with session.begin():
+            n_new, n_resolved = persistence.reconcile_run_issues(
+                session, scan_run_id, run_issues, run_now
+            )
+            report.n_new_issues += n_new
+            report.n_resolved_issues += n_resolved
+
+        # Outstanding-issue snapshot for the scan_runs row.
+        with session.begin():
+            report.n_warning_active, report.n_error_active = (
+                _count_active_issues(session)
+            )
+
         with session.begin():
             state.finish_scan(
-                session, scan_run_id, status="completed", report=report
+                session,
+                scan_run_id,
+                status="completed",
+                report=report,
+                now=run_now,
             )
         logger.info(
             "scan complete in {:.1f}s — upserted={}, skipped={}, "
-            "healed={}, warnings={}, errors={}",
+            "healed={}, issues={}, errors={}",
             time.perf_counter() - run_started,
             report.upserted,
             report.skipped,
             report.thumbnails_healed,
-            len(report.warnings),
+            len(report.issues),
             len(report.errors),
         )
     except Exception:
-        # Mark the scan failed; let the exception propagate per on_error semantics.
+        # Mark the scan failed; let the exception propagate per on_error
+        # semantics. Do NOT reconcile run-scope issues (§9.6).
         try:
             if session.in_transaction():
                 session.rollback()
             with session.begin():
                 state.finish_scan(
-                    session, scan_run_id, status="failed", report=report
+                    session,
+                    scan_run_id,
+                    status="failed",
+                    report=report,
+                    now=run_now if run_now is not None else time.time(),
                 )
         except Exception:
             pass  # don't mask the original
         raise
     finally:
+        # Persist the buffered log + run retention, then drop the sink. Done in
+        # the finally so a crashed scan still records its partial log.
+        logger.remove(sink_id)
+        try:
+            _persist_logs_and_prune(SessionFactory, log_buffer)
+        except Exception as e:  # noqa: BLE001
+            # Logging is best-effort; never mask the scan outcome.
+            logger.warning("failed to persist scan logs: {}", e)
         session.close()
 
     return report
+
+
+def _count_active_issues(session) -> tuple[int, int]:
+    """Return (n_warning_active, n_error_active) over outstanding issues."""
+    rows = session.execute(
+        select(orm.IssueORM.severity).where(orm.IssueORM.resolved_at.is_(None))
+    ).scalars().all()
+    n_warning = sum(1 for s in rows if s == "warning")
+    n_error = sum(1 for s in rows if s == "error")
+    return n_warning, n_error
+
+
+def _persist_logs_and_prune(SessionFactory, log_buffer: list[dict]) -> None:
+    """Bulk-insert the buffered log lines, then prune old runs' log lines.
+
+    A fresh short transaction is used for the bulk insert. Retention keeps
+    ``scan_log_lines`` only for the most recent ``SCAN_LOG_RETENTION_RUNS``
+    runs (default 720); older runs keep their ``scan_runs`` row but lose their
+    log lines.
+    """
+    log_session = SessionFactory()
+    try:
+        if log_buffer:
+            with log_session.begin():
+                log_session.execute(
+                    insert(orm.ScanLogLineORM), log_buffer
+                )
+
+        retention = int(os.environ.get("SCAN_LOG_RETENTION_RUNS", "720"))
+        with log_session.begin():
+            keep_ids = (
+                log_session.execute(
+                    select(orm.ScanRunORM.scan_run_id)
+                    .order_by(orm.ScanRunORM.started_at.desc())
+                    .limit(retention)
+                )
+                .scalars()
+                .all()
+            )
+            if keep_ids:
+                result = log_session.execute(
+                    delete(orm.ScanLogLineORM).where(
+                        orm.ScanLogLineORM.scan_run_id.notin_(keep_ids)
+                    )
+                )
+                pruned = result.rowcount or 0
+                if pruned:
+                    logger.info(
+                        "pruned {} scan_log_lines beyond the most-recent {} runs",
+                        pruned,
+                        retention,
+                    )
+    finally:
+        log_session.close()
 
 
 def _scan_one_sample(
@@ -219,6 +343,7 @@ def _scan_one_sample(
     force: bool,
     soft_deleted_ids: set[str],
     scan_run_id: str,
+    now: float,
     report: ScanReport,
     thumbnail_dir: Path | None,
 ) -> None:
@@ -236,24 +361,70 @@ def _scan_one_sample(
         and not state.parse_target_set_changed(sample_state, parse_targets)
         and not any(state.is_file_changed(sample_state, p) for p in parse_targets)
     ):
-        if thumbnail_dir is not None:
-            with session.begin():
+        # Skipped: do NOT reconcile issues (they persist; last_seen unchanged),
+        # but DO stamp freshness so the sample records last_scanned_at this run.
+        with session.begin():
+            # Optional thumbnail heal.
+            if thumbnail_dir is not None:
                 stored = session.get(orm.SampleORM, sample_loc.sample_id)
                 rel = stored.thumbnail_path if stored else None
-                if rel and not (thumbnail_dir / rel).is_file():
+                if stored is not None and rel and not (thumbnail_dir / rel).is_file():
                     logger.info(
                         "  thumbnail missing on disk — re-generating for {}",
                         sample_loc.sample_id,
                     )
-                    new_rel = thumbnails.generate_thumbnails(
+                    thumb_result = thumbnails.generate_thumbnails(
                         sample_loc.sample_id,
                         thumbnails.refs_from_db(session, sample_loc.sample_id),
                         thumbnail_dir,
                         skip_existing=True,
                     )
-                    stored.thumbnail_path = new_rel
+                    stored.thumbnail_path = thumb_result.representative
                     session.add(stored)
                     report.thumbnails_healed += 1
+                    # Record the re-derived provenance for healed acquisitions.
+                    for acq_res in thumb_result.per_acq:
+                        persistence.upsert_acquisition_scan_status(
+                            session,
+                            sample_loc.sample_id,
+                            acq_res.acquisition_id,
+                            now=now,
+                            outcome="skipped",
+                            run_id=scan_run_id,
+                            changed=False,
+                            thumbnail_path=acq_res.relpath,
+                            thumbnail_source_kind=acq_res.source_kind,
+                            thumbnail_source_path=acq_res.source_path,
+                            thumbnail_generated_at=(
+                                now if acq_res.status == "ok" else None
+                            ),
+                            thumbnail_status=acq_res.status,
+                        )
+
+            persistence.upsert_sample_scan_status(
+                session,
+                sample_loc.sample_id,
+                now=now,
+                outcome="skipped",
+                run_id=scan_run_id,
+                changed=False,
+            )
+            # Stamp last_scanned_at on each known acquisition (no thumbnail
+            # provenance change). Read the acquisitions from the DB.
+            for acq in session.execute(
+                select(orm.AcquisitionORM.acquisition_id).where(
+                    orm.AcquisitionORM.sample_id == sample_loc.sample_id
+                )
+            ).scalars():
+                persistence.upsert_acquisition_scan_status(
+                    session,
+                    sample_loc.sample_id,
+                    acq,
+                    now=now,
+                    outcome="skipped",
+                    run_id=scan_run_id,
+                    changed=False,
+                )
         logger.debug("  skipped (unchanged): {}", sample_loc.sample_id)
         report.skipped += 1
         report.skipped_ids.append(sample_loc.sample_id)
@@ -262,7 +433,7 @@ def _scan_one_sample(
     # Assemble + persist in one transaction
     with session.begin():
         result = assembler.assemble_sample(sample_loc)
-        report.warnings.extend(result.warnings)
+        report.issues.extend(result.warnings)
         report.conflicts.extend(result.conflicts)
 
         if result.record is None:
@@ -272,11 +443,37 @@ def _scan_one_sample(
             report.failed_samples.append(
                 (sample_loc.sample_id, "; ".join(result.errors))
             )
+            # Failed sample: reconcile ONLY the assembly_failed error issue(s);
+            # do NOT resolve the sample's other outstanding issues.
+            failed_issues = [
+                i
+                for i in result.warnings
+                if i.category == "assembly_failed"
+            ]
+            n_new, n_resolved = persistence.reconcile_sample_issues(
+                session,
+                scan_run_id,
+                sample_loc.sample_id,
+                failed_issues,
+                now,
+                resolve_missing=False,
+            )
+            report.n_new_issues += n_new
+            report.n_resolved_issues += n_resolved
+            persistence.upsert_sample_scan_status(
+                session,
+                sample_loc.sample_id,
+                now=now,
+                outcome="failed",
+                run_id=scan_run_id,
+                changed=False,
+            )
             return
         for e in result.errors:
             report.errors.append(f"{sample_loc.sample_id}: {e}")
 
         disk_size = discovery.dir_size_bytes(sample_loc.path)
+        thumb_result: thumbnails.ThumbnailRunResult | None = None
         thumb_rel = None
         if thumbnail_dir is not None:
             n_acqs = len(result.record.acquisitions)
@@ -284,12 +481,13 @@ def _scan_one_sample(
                 "  generating thumbnails for {} acquisition(s)…", n_acqs
             )
             thumb_started = time.perf_counter()
-            thumb_rel = thumbnails.generate_thumbnails(
+            thumb_result = thumbnails.generate_thumbnails(
                 sample_loc.sample_id,
                 thumbnails.refs_from_record(result.record),
                 thumbnail_dir,
                 skip_existing=False,
             )
+            thumb_rel = thumb_result.representative
             logger.info(
                 "  thumbnails done in {:.1f}s (representative={})",
                 time.perf_counter() - thumb_started,
@@ -299,11 +497,55 @@ def _scan_one_sample(
             session,
             result.record,
             extras=result.extras,
-            warnings=result.warnings,
-            scan_run_id=scan_run_id,
+            run_id=scan_run_id,
+            now=now,
             disk_size_bytes=disk_size,
             thumbnail_path=thumb_rel,
         )
+        # Reconcile this sample's fresh issue set against its outstanding set.
+        n_new, n_resolved = persistence.reconcile_sample_issues(
+            session,
+            scan_run_id,
+            sample_loc.sample_id,
+            list(result.warnings),
+            now,
+        )
+        report.n_new_issues += n_new
+        report.n_resolved_issues += n_resolved
+
+        # Freshness + thumbnail provenance status (upserted ⇒ changed=True).
+        persistence.upsert_sample_scan_status(
+            session,
+            sample_loc.sample_id,
+            now=now,
+            outcome="upserted",
+            run_id=scan_run_id,
+            changed=True,
+        )
+        thumb_by_acq = (
+            {r.acquisition_id: r for r in thumb_result.per_acq}
+            if thumb_result is not None
+            else {}
+        )
+        for acq_id in result.record.acquisitions:
+            acq_res = thumb_by_acq.get(acq_id)
+            persistence.upsert_acquisition_scan_status(
+                session,
+                sample_loc.sample_id,
+                acq_id,
+                now=now,
+                outcome="upserted",
+                run_id=scan_run_id,
+                changed=True,
+                thumbnail_path=acq_res.relpath if acq_res else None,
+                thumbnail_source_kind=acq_res.source_kind if acq_res else None,
+                thumbnail_source_path=acq_res.source_path if acq_res else None,
+                thumbnail_generated_at=(
+                    now if acq_res and acq_res.status == "ok" else None
+                ),
+                thumbnail_status=acq_res.status if acq_res else None,
+            )
+
         # Update mtime state for every parse target.
         for p in parse_targets:
             try:

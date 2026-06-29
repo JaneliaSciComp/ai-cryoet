@@ -13,7 +13,7 @@ from schema.schema import DataSource, DatasetType
 
 from catalog.assembler import (
     AssemblyResult,
-    ScanWarning,
+    ScanIssue,
     assemble_sample,
 )
 from catalog.discovery import SampleLocation, iter_samples
@@ -107,6 +107,18 @@ def test_happy_path_chromatin_fixture():
         and "Position_87" in w.location
     ]
     assert len(missing) == 1
+    # New ScanIssue fields: acquisition-scope, warning severity, resolved to the
+    # acquisition's acquisition.toml with the acquisition_id attached.
+    m = missing[0]
+    assert isinstance(m, ScanIssue)
+    assert m.severity == "warning"
+    assert m.scope == "acquisition"
+    assert m.acquisition_id == "Position_87"
+    assert m.file_kind == "acquisition_toml"
+    assert m.file_path is not None and m.file_path.endswith(
+        "Position_87/acquisition.toml"
+    )
+    assert m.sample_id == "sample_chromatin"
 
     # Position_86 — MDOC values populated
     p86 = acqs["Position_86"].acquisition
@@ -212,6 +224,11 @@ def test_unparseable_mdoc_emits_warning(tmp_path):
     bad = [w for w in result.warnings if w.category == "unparseable_mdoc"]
     assert len(bad) == 2
     assert all(w.location.endswith("Pos1.Frames") for w in bad)
+    # Parser categories carry their concrete offending file path + file_kind.
+    assert all(w.file_kind == "mdoc" for w in bad)
+    assert all(w.severity == "warning" and w.scope == "acquisition" for w in bad)
+    assert all(w.acquisition_id == "Pos1" for w in bad)
+    assert all(w.file_path is not None for w in bad)
 
     acq = result.record.acquisitions["Pos1"].acquisition
     assert acq.pixel_size is None
@@ -314,7 +331,7 @@ def test_typo_warning_categorized(tmp_path):
     _write_minimal_sample_toml(sample_dir, extra='descriptiom = "x"')
     loc = _sample_loc(sample_dir)
     # The underlying Pydantic typo-detector emits a UserWarning; the assembler
-    # then re-emits it as a categorized ScanWarning. We assert the UserWarning
+    # then re-emits it as a categorized ScanIssue. We assert the UserWarning
     # is raised (and capture it) so it doesn't leak into the test summary.
     with pytest.warns(UserWarning, match="closely matches"):
         result = assemble_sample(loc)
@@ -562,3 +579,67 @@ def test_dangling_md_source_ref_warning(tmp_path):
     # Acquisition still validates and is kept.
     assert result.record is not None
     assert "acq1" in result.record.acquisitions
+
+
+# ── _resolve_file (file-resolver) ──────────────────────────────────────────
+
+
+def test_resolve_file_prefixes(tmp_path):
+    """Each ``location`` prefix maps to the expected (file_kind, file_path,
+    acquisition_id) via ``_resolve_file`` (plan §4.2)."""
+    from catalog.assembler import _resolve_file
+
+    sample_dir = tmp_path / "sample_x"
+    loc = _sample_loc(sample_dir)
+
+    # <root> / bare sample path → sample.toml, no acquisition.
+    kind, path, acq = _resolve_file("<root>", loc)
+    assert kind == "sample_toml"
+    assert path == str(sample_dir / "sample.toml")
+    assert acq is None
+
+    # acquisitions.{id}… → that acq's acquisition.toml + acquisition_id.
+    kind, path, acq = _resolve_file("acquisitions.Pos1.tilt_series[ts1]", loc)
+    assert kind == "acquisition_toml"
+    assert path == str(sample_dir / "Pos1" / "acquisition.toml")
+    assert acq == "Pos1"
+
+    # md_source.{id} / md_run… → md_run.toml, no acquisition.
+    kind, path, acq = _resolve_file("md_source.run_a", loc)
+    assert kind == "md_run_toml"
+    assert path == str(sample_dir / "md_run.toml")
+    assert acq is None
+    kind, path, acq = _resolve_file("md_run", loc)
+    assert kind == "md_run_toml"
+    assert acq is None
+
+    # Unknown / model-name path falls through to sample.toml.
+    kind, path, acq = _resolve_file("<unknown>", loc)
+    assert kind == "sample_toml"
+    assert acq is None
+
+
+def test_assembly_failed_emits_error_issue(tmp_path):
+    """An unrecoverable sample.toml yields record=None plus a single
+    ``assembly_failed`` error-severity, sample-scope issue at <root>."""
+    sample_dir = tmp_path / "sample_broken"
+    # Missing required ``project`` field → loader sample_errors.
+    _write(
+        sample_dir / "sample.toml",
+        """
+        [sample]
+        """,
+    )
+    loc = _sample_loc(sample_dir)
+    result = assemble_sample(loc)
+
+    assert result.record is None
+    assert result.errors
+    failed = [w for w in result.warnings if w.category == "assembly_failed"]
+    assert len(failed) == 1
+    f = failed[0]
+    assert f.severity == "error"
+    assert f.scope == "sample"
+    assert f.file_kind == "sample_toml"
+    assert f.location == "<root>"
+    assert f.sample_id == "sample_broken"

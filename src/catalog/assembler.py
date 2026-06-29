@@ -1,12 +1,12 @@
 """Assembler: merges parser outputs for one sample into a validated SampleRecord.
 
 Inputs: a SampleLocation. Outputs: AssemblyResult with the merged record, the
-list of structured warnings (per Q7), any cross-source conflicts, and the
+list of structured issues (per Q7), any cross-source conflicts, and the
 structured extras list (passed through from schema.loader for
 persistence).
 
-The assembler is the sole creator of ScanWarning objects; persistence is a
-dumb writer that stamps detected_at and scan_run_id at insert time.
+The assembler is the sole creator of ScanIssue objects; persistence reconciles
+them against the stored outstanding-issue set (issues table) per scan run.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ from catalog.parsers.tilt_series import parse_acquisition_tilt_angles
 from catalog.parsers.toml_files import load_sample_toml
 
 
-ScanWarningCategory = Literal[
+ScanIssueCategory = Literal[
     "extra_field",
     "possible_typo",
     "unfilled_placeholder",
@@ -57,16 +57,28 @@ ScanWarningCategory = Literal[
     "annotation_without_target_tomogram",
     "deprecated_md_run_block",
     "dangling_md_source_ref",
+    "field_conflict",
+    "assembly_failed",
     # Run-level (no owning sample) — emitted by the scanner, not the assembler.
     "unknown_md_simulation_subdir",
+    "sample_outside_arm",
 ]
+
+# Backwards-compatible alias for the old name.
+ScanWarningCategory = ScanIssueCategory
 
 
 @dataclass
-class ScanWarning:
+class ScanIssue:
+    severity: str  # "error" | "warning"
+    scope: str  # "sample" | "acquisition" | "run"
     category: str
-    location: str
+    location: str  # schema path within the file
     message: str
+    sample_id: str | None = None
+    acquisition_id: str | None = None
+    file_kind: str = "other"
+    file_path: str | None = None
 
 
 @dataclass
@@ -80,7 +92,7 @@ class FieldConflict:
 @dataclass
 class AssemblyResult:
     record: SampleRecord | None
-    warnings: list[ScanWarning] = field(default_factory=list)
+    warnings: list[ScanIssue] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     conflicts: list[FieldConflict] = field(default_factory=list)
     extras: list[ExtrasEntry] = field(default_factory=list)
@@ -88,10 +100,53 @@ class AssemblyResult:
 
 _TYPO_LOC_RE = re.compile(r"on (\w+) closely matches")
 _EXTRA_AT_RE = re.compile(r"extra field '[^']+' at '([^']+)' \(not in schema\)")
+# location prefix "acquisitions.<acq_id>..." → capture the acquisition id.
+_ACQ_LOC_RE = re.compile(r"^acquisitions\.([^.\[]+)")
+# parser categories that already carry a concrete file path in file_path.
+_PARSER_FILE_KINDS = {
+    "unparseable_mdoc": "mdoc",
+    "unparseable_mrc_header": "mrc_header",
+    "unparseable_zarr_attrs": "zarr_attrs",
+    "ambiguous_frame_extension": "frames",
+}
 
 
-def _categorize_loader_warning(s: str) -> ScanWarning:
-    """Convert a loader warning string into a structured ScanWarning.
+def _resolve_file(
+    location: str, sample_loc: SampleLocation
+) -> tuple[str, str | None, str | None]:
+    """Resolve (file_kind, file_path, acquisition_id) for an issue ``location``.
+
+    Uses the known location-prefix conventions:
+
+    - ``"<root>"`` / ``"<unknown>"`` → the sample's ``sample.toml``.
+    - ``"acquisitions.{acq}…"`` → that acquisition's ``acquisition.toml`` and
+      the acquisition id.
+    - ``"md_source.{id}"`` / ``"md_run…"`` → the sample's ``md_run.toml``.
+
+    The concrete offending file for parser categories (mdoc/mrc/zarr/frames) is
+    not derivable from ``location`` alone, so callers that know it should pass
+    ``file_kind``/``file_path`` explicitly; this helper handles the TOML-shaped
+    locations.
+    """
+    sample_dir = sample_loc.path
+    m = _ACQ_LOC_RE.match(location)
+    if m:
+        acq_id = m.group(1)
+        return (
+            "acquisition_toml",
+            str(sample_dir / acq_id / "acquisition.toml"),
+            acq_id,
+        )
+    if location.startswith("md_source.") or location.startswith("md_run"):
+        return ("md_run_toml", str(sample_dir / "md_run.toml"), None)
+    # <root>, <unknown>, model-name, or any bare dotted sample-level path.
+    return ("sample_toml", str(sample_dir / "sample.toml"), None)
+
+
+def _categorize_loader_warning(
+    s: str, sample_loc: SampleLocation
+) -> ScanIssue:
+    """Convert a loader warning string into a structured ScanIssue.
 
     The loader's warning strings have stable prefixes (verified in
     ``schema/loader.py``):
@@ -110,40 +165,67 @@ def _categorize_loader_warning(s: str) -> ScanWarning:
     Anything else falls through to ``extra_field`` with ``<unknown>`` location.
     """
     if s.startswith("[[md_run]] in sample.toml is deprecated"):
-        return ScanWarning(
-            category="deprecated_md_run_block", location="<root>", message=s
-        )
-    if s.startswith("dangling md_source ref:"):
+        category, location = "deprecated_md_run_block", "<root>"
+    elif s.startswith("dangling md_source ref:"):
         # Format includes "md_source.md_run_id '<id>' ..." — surface the id.
         m = re.search(r"md_run_id '([^']+)'", s)
+        category = "dangling_md_source_ref"
         location = f"md_source.{m.group(1)}" if m else "<root>"
-        return ScanWarning(
-            category="dangling_md_source_ref", location=location, message=s
-        )
-    if "possible typo" in s:
+    elif "possible typo" in s:
         m = _TYPO_LOC_RE.search(s)
-        location = m.group(1) if m else "<root>"
-        return ScanWarning(category="possible_typo", location=location, message=s)
-    if "not in schema" in s:
+        category, location = "possible_typo", (m.group(1) if m else "<root>")
+    elif "not in schema" in s:
         m = _EXTRA_AT_RE.search(s)
-        location = m.group(1) if m else "<unknown>"
-        return ScanWarning(category="extra_field", location=location, message=s)
-    if "no matching folder" in s:
+        category, location = "extra_field", (m.group(1) if m else "<unknown>")
+    elif "no matching folder" in s:
         # Format: "acquisitions.<acq>.<kind>[<id>]: id has no matching folder …"
-        # — the loader prefixes the acquisition path so the location is unique.
         head, sep, _ = s.partition(":")
-        location = head if sep else "<unknown>"
-        return ScanWarning(
-            category="declared_id_without_folder", location=location, message=s
+        category, location = "declared_id_without_folder", (
+            head if sep else "<unknown>"
         )
-    if "unfilled <FILL IN> placeholder" in s:
+    elif "unfilled <FILL IN> placeholder" in s:
         # Format: "<path>: unfilled <FILL IN> placeholder"
         head, sep, _ = s.partition(": unfilled <FILL IN> placeholder")
-        location = head if sep else "<unknown>"
-        return ScanWarning(
-            category="unfilled_placeholder", location=location, message=s
+        category, location = "unfilled_placeholder", (
+            head if sep else "<unknown>"
         )
-    return ScanWarning(category="extra_field", location="<unknown>", message=s)
+    else:
+        category, location = "extra_field", "<unknown>"
+    return _make_issue(
+        sample_loc, category=category, location=location, message=s
+    )
+
+
+def _make_issue(
+    sample_loc: SampleLocation,
+    *,
+    category: str,
+    location: str,
+    message: str,
+    severity: str = "warning",
+    file_kind: str | None = None,
+    file_path: str | None = None,
+) -> ScanIssue:
+    """Build a ScanIssue, resolving scope + file attribution from ``location``.
+
+    Scope is ``acquisition`` when ``location`` is acquisition-qualified, else
+    ``sample``. ``file_kind``/``file_path`` may be supplied explicitly (parser
+    categories that know their concrete offending file); otherwise they are
+    derived from the location via :func:`_resolve_file`.
+    """
+    res_kind, res_path, acq_id = _resolve_file(location, sample_loc)
+    scope = "acquisition" if acq_id is not None else "sample"
+    return ScanIssue(
+        severity=severity,
+        scope=scope,
+        category=category,
+        location=location,
+        message=message,
+        sample_id=sample_loc.sample_id,
+        acquisition_id=acq_id,
+        file_kind=file_kind if file_kind is not None else res_kind,
+        file_path=file_path if file_path is not None else res_path,
+    )
 
 
 def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
@@ -179,14 +261,33 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
     )
 
     for w in load.warnings:
-        result.warnings.append(_categorize_loader_warning(w))
+        result.warnings.append(_categorize_loader_warning(w, sample_loc))
     result.extras = list(load.extras)
 
     if load.sample_errors:
         result.errors.extend(load.sample_errors)
+        result.warnings.append(
+            _make_issue(
+                sample_loc,
+                category="assembly_failed",
+                location="<root>",
+                message="; ".join(load.sample_errors),
+                severity="error",
+            )
+        )
         return result
     if load.record is None:
-        result.errors.append("loader returned no record and no sample_errors")
+        msg = "loader returned no record and no sample_errors"
+        result.errors.append(msg)
+        result.warnings.append(
+            _make_issue(
+                sample_loc,
+                category="assembly_failed",
+                location="<root>",
+                message=msg,
+                severity="error",
+            )
+        )
         return result
 
     record = load.record
@@ -206,7 +307,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             category = "missing_acquisition_toml"
             message = f"no acquisition.toml at {acq_loc.path}/acquisition.toml"
         result.warnings.append(
-            ScanWarning(
+            _make_issue(
+                sample_loc,
                 category=category,
                 location=f"acquisitions.{acq_loc.acquisition_id}",
                 message=message,
@@ -255,10 +357,13 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             mdoc_result = parse_acquisition_mdocs(acq_loc.frames_dir)
             if mdoc_result.status == "unreadable":
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="unparseable_mdoc",
                         location=f"acquisitions.{acq_loc.acquisition_id}.Frames",
                         message=mdoc_result.error or "unparseable mdoc",
+                        file_kind="mdoc",
+                        file_path=str(acq_loc.frames_dir),
                     )
                 )
             elif mdoc_result.status == "ok":
@@ -269,10 +374,13 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             cam_result = infer_camera(acq_loc.frames_dir)
             if cam_result.status == "unreadable":
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="ambiguous_frame_extension",
                         location=f"acquisitions.{acq_loc.acquisition_id}.Frames",
                         message=cam_result.error or "ambiguous frame extension",
+                        file_kind="frames",
+                        file_path=str(acq_loc.frames_dir),
                     )
                 )
             elif cam_result.status == "ok" and acq.camera is None:
@@ -286,10 +394,13 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             tilt_angle_result = parse_acquisition_tilt_angles(acq_loc.frames_dir)
             for _mdoc_path_str, err_msg in tilt_angle_result.unreadable:
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="unparseable_mdoc",
                         location=f"acquisitions.{acq_loc.acquisition_id}.Frames",
                         message=err_msg,
+                        file_kind="mdoc",
+                        file_path=_mdoc_path_str or str(acq_loc.frames_dir),
                     )
                 )
             if acq.tilt_angles is None and tilt_angle_result.tilt_angles is not None:
@@ -309,7 +420,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             ts = existing_ts.get(ts_loc.tilt_series_id)
             if ts is None:
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="undeclared_tilt_series_folder",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
@@ -345,7 +457,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             has_artifacts = bool(ts_loc.alignment_files)
             if ts.is_aligned is True and not has_artifacts:
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="tilt_series_alignment_mismatch",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
@@ -359,7 +472,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 )
             elif not ts.is_aligned and has_artifacts:
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="tilt_series_alignment_mismatch",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
@@ -387,7 +501,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
         # /manage view instead of only manifesting as a missing image.
         if acq_loc.frames_dir is not None and not acq_file.tilt_series:
             result.warnings.append(
-                ScanWarning(
+                _make_issue(
+                    sample_loc,
                     category="acquisition_without_tilt_series",
                     location=f"acquisitions.{acq_loc.acquisition_id}",
                     message=(
@@ -414,7 +529,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 # [raw_tomogram] / [[post_processed_tomogram]] block doesn't
                 # go unnoticed.
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="undeclared_tomogram_folder",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
@@ -444,13 +560,16 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 mrc_result = read_mrc_header(tomo_loc.mrc_files[0])
                 if mrc_result.status == "unreadable":
                     result.warnings.append(
-                        ScanWarning(
+                        _make_issue(
+                            sample_loc,
                             category="unparseable_mrc_header",
                             location=(
                                 f"acquisitions.{acq_loc.acquisition_id}"
                                 f".tomogram[{tomo_loc.tomogram_id}]"
                             ),
                             message=mrc_result.error or "unparseable mrc",
+                            file_kind="mrc_header",
+                            file_path=mrc_path_str,
                         )
                     )
                 elif mrc_result.status == "ok":
@@ -472,13 +591,16 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
                 zarr_result = read_zarr_attrs(tomo_loc.zarr_dirs[0])
                 if zarr_result.status == "unreadable":
                     result.warnings.append(
-                        ScanWarning(
+                        _make_issue(
+                            sample_loc,
                             category="unparseable_zarr_attrs",
                             location=(
                                 f"acquisitions.{acq_loc.acquisition_id}"
                                 f".tomogram[{tomo_loc.tomogram_id}]"
                             ),
                             message=zarr_result.error or "unparseable zarr",
+                            file_kind="zarr_attrs",
+                            file_path=zarr_path_str,
                         )
                     )
                 elif zarr_result.status == "ok":
@@ -495,7 +617,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
             ann = existing_anns.get(ann_loc.annotation_id)
             if ann is None:
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="undeclared_annotation_folder",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
@@ -519,7 +642,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
         for ann in acq_file.annotation:
             if ann.target_tomogram is None:
                 result.warnings.append(
-                    ScanWarning(
+                    _make_issue(
+                        sample_loc,
                         category="annotation_without_target_tomogram",
                         location=(
                             f"acquisitions.{acq_loc.acquisition_id}"
@@ -537,9 +661,32 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
     try:
         record = SampleRecord.model_validate(record.model_dump(by_alias=True))
     except Exception as e:  # noqa: BLE001
-        result.errors.append(f"re-validation failed: {e}")
+        msg = f"re-validation failed: {e}"
+        result.errors.append(msg)
+        result.warnings.append(
+            _make_issue(
+                sample_loc,
+                category="assembly_failed",
+                location="<root>",
+                message=msg,
+                severity="error",
+            )
+        )
         result.record = None
         return result
+
+    # Fold any cross-source FieldConflicts into structured issues (each carries
+    # its own severity); scope/file attribution is resolved from its location.
+    for conflict in result.conflicts:
+        result.warnings.append(
+            _make_issue(
+                sample_loc,
+                category=conflict.category or "field_conflict",
+                location=conflict.location,
+                message=f"field conflict: {conflict.values}",
+                severity=conflict.severity,
+            )
+        )
 
     result.record = record
     return result
@@ -548,7 +695,8 @@ def assemble_sample(sample_loc: SampleLocation) -> AssemblyResult:
 __all__ = [
     "AssemblyResult",
     "FieldConflict",
-    "ScanWarning",
-    "ScanWarningCategory",
+    "ScanIssue",
+    "ScanIssueCategory",
+    "ScanWarningCategory",  # backwards-compat alias of ScanIssueCategory
     "assemble_sample",
 ]

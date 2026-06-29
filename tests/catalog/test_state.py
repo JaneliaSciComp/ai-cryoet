@@ -12,7 +12,7 @@ import pytest
 # than fail collection.
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from catalog import db, orm, state  # noqa: E402
@@ -111,12 +111,14 @@ def test_load_soft_deleted_ids(session):
 
 
 def test_start_and_finish_scan(session, tmp_path):
-    state.start_scan(session, "run-1", tmp_path)
+    started_at = state.start_scan(session, "run-1", tmp_path)
     session.commit()
-    row = session.get(orm.ScansORM, "run-1")
+    assert isinstance(started_at, float)
+    row = session.get(orm.ScanRunORM, "run-1")
     assert row is not None
     assert row.status == "running"
     assert row.root == str(tmp_path)
+    assert row.started_at == started_at
     meta = session.get(orm.CatalogMetaORM, 1)
     assert meta is not None
     assert meta.data_root == str(tmp_path)
@@ -124,15 +126,66 @@ def test_start_and_finish_scan(session, tmp_path):
     class FakeReport:
         upserted = 5
         skipped = 2
+        # finish_scan counts failures from failed_samples (sample_id, detail).
+        failed_samples = [("sample_bad", "boom")]
         errors = ["one error"]
+        upserted_ids = ["s1", "s2", "s3", "s4", "s5"]
+        skipped_ids = ["sk1", "sk2"]
 
-    state.finish_scan(session, "run-1", status="completed", report=FakeReport())
+    finished_at = started_at + 50.0
+    state.finish_scan(
+        session, "run-1", status="completed", report=FakeReport(), now=finished_at
+    )
     session.commit()
-    row = session.get(orm.ScansORM, "run-1")
+    row = session.get(orm.ScanRunORM, "run-1")
     assert row.status == "completed"
-    assert row.samples_upserted == 5
-    assert row.samples_skipped == 2
-    assert row.samples_failed == 1
+    assert row.ended_at == finished_at
+    assert row.n_upserted == 5
+    assert row.n_skipped == 2
+    assert row.n_failed == 1
+
+
+def test_start_scan_returns_started_at_threads_now(session, tmp_path):
+    """start_scan returns the run-level ``now`` (== started_at) so the
+    orchestrator can thread one timestamp through the whole run (§9.6)."""
+    started_at = state.start_scan(session, "run-x", tmp_path)
+    session.commit()
+    row = session.get(orm.ScanRunORM, "run-x")
+    assert row.started_at == started_at
+
+
+def test_finish_scan_records_sample_outcomes(session, tmp_path):
+    """_record_scan_membership writes ScanSampleOutcomeORM rows; failed wins the
+    unique (scan_run_id, sample_id) slot over skipped/upserted."""
+    started_at = state.start_scan(session, "run-2", tmp_path)
+    session.commit()
+
+    class FakeReport:
+        upserted = 1
+        skipped = 1
+        failed_samples = [("ghost", "assemble failed")]
+        upserted_ids = ["good"]
+        skipped_ids = ["stale"]
+
+    state.finish_scan(
+        session, "run-2", status="completed", report=FakeReport(),
+        now=started_at + 1,
+    )
+    session.commit()
+    rows = (
+        session.execute(
+            select(orm.ScanSampleOutcomeORM).where(
+                orm.ScanSampleOutcomeORM.scan_run_id == "run-2"
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_sample = {r.sample_id: r for r in rows}
+    assert by_sample["good"].outcome == "upserted"
+    assert by_sample["stale"].outcome == "skipped"
+    assert by_sample["ghost"].outcome == "failed"
+    assert by_sample["ghost"].detail == "assemble failed"
 
 
 def test_record_file_scan_updates_existing(session, tmp_path):

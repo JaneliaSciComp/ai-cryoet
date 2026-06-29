@@ -34,6 +34,37 @@ class AcqRef:
     frames_dir: str | None
 
 
+@dataclass(frozen=True)
+class AcqThumbResult:
+    """Per-acquisition outcome of a thumbnail (re)generation pass.
+
+    ``status`` is ``"ok"`` when a preview rendered, ``"missing_source"`` when
+    the acquisition had no zarr/st/frames source to render from, and
+    ``"render_failed"`` when a source was present but rendering raised.
+    ``source_kind``/``source_path`` record the source that actually rendered
+    (post-fallback); ``relpath`` is the cache-relative PNG path on success.
+    """
+
+    acquisition_id: str
+    status: str  # "ok" | "missing_source" | "render_failed"
+    source_kind: str | None = None
+    source_path: str | None = None
+    relpath: str | None = None
+
+
+@dataclass(frozen=True)
+class ThumbnailRunResult:
+    """Result of :func:`generate_thumbnails` for one sample.
+
+    ``representative`` is the sample's representative thumbnail relpath (first
+    acquisition by id that produced one); ``per_acq`` is the per-acquisition
+    detail used to write thumbnail provenance to ``acquisition_scan_status``.
+    """
+
+    representative: str | None
+    per_acq: list[AcqThumbResult]
+
+
 def _safe_segment(value: str) -> str:
     if not value or "/" in value or "\\" in value or value in (".", ".."):
         raise ValueError(f"unsafe id segment: {value!r}")
@@ -47,18 +78,24 @@ def _relpath(sample_id: str, acquisition_id: str) -> str:
     ))
 
 
-def _render_one(ref: AcqRef, dest: Path) -> bool:
-    from catalog.imaging._tilt_series import render_tilt_series_median_png
+def _render_one(ref: AcqRef, dest: Path) -> tuple[bool, str | None, str | None]:
+    """Render one acquisition's thumbnail to ``dest``.
 
-    source = (
-        "zarr" if ref.zarr_path else "st" if ref.st_path else "frames"
+    Returns ``(ok, source_kind, source_path)`` — the source the renderer
+    actually used (post-fallback) so the caller can record real provenance,
+    not the pre-call guess.
+    """
+    from catalog.imaging._tilt_series import (
+        render_tilt_series_median_png_with_source,
     )
+
+    guess = "zarr" if ref.zarr_path else "st" if ref.st_path else "frames"
     logger.debug(
-        "    rendering thumbnail for {} (source={})", ref.acquisition_id, source
+        "    rendering thumbnail for {} (source≈{})", ref.acquisition_id, guess
     )
     started = time.perf_counter()
     try:
-        png = render_tilt_series_median_png(
+        png, source_kind, source_path = render_tilt_series_median_png_with_source(
             zarr_path=ref.zarr_path,
             st_path=ref.st_path,
             frames_dir=ref.frames_dir,
@@ -66,12 +103,12 @@ def _render_one(ref: AcqRef, dest: Path) -> bool:
         )
     except Exception as e:
         logger.warning(
-            "thumbnail render failed for acquisition {} (source={}): {}",
+            "thumbnail render failed for acquisition {} (source≈{}): {}",
             ref.acquisition_id,
-            source,
+            guess,
             e,
         )
-        return False
+        return False, None, None
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".png.tmp")
     tmp.write_bytes(png)
@@ -82,7 +119,7 @@ def _render_one(ref: AcqRef, dest: Path) -> bool:
         time.perf_counter() - started,
         len(png),
     )
-    return True
+    return True, source_kind, source_path
 
 
 def generate_thumbnails(
@@ -91,18 +128,49 @@ def generate_thumbnails(
     thumbnail_root: Path,
     *,
     skip_existing: bool = False,
-) -> str | None:
+) -> ThumbnailRunResult:
+    """Render each acquisition's thumbnail; return representative + per-acq detail.
+
+    On ``skip_existing`` an on-disk thumbnail is reused (status ``ok``) without
+    re-rendering — its source provenance is left ``None`` for the caller to
+    preserve from the prior record (a heal doesn't re-derive the source).
+    """
     generated: list[str] = []
+    per_acq: list[AcqThumbResult] = []
     for ref in sorted(acqs, key=lambda r: r.acquisition_id):
-        if not (ref.zarr_path or ref.st_path or ref.frames_dir):
-            continue
         rel = _relpath(sample_id, ref.acquisition_id)
         dest = thumbnail_root / rel
-        ok = True if (skip_existing and dest.is_file()) else _render_one(ref, dest)
+        if not (ref.zarr_path or ref.st_path or ref.frames_dir):
+            per_acq.append(
+                AcqThumbResult(ref.acquisition_id, status="missing_source")
+            )
+            continue
+        if skip_existing and dest.is_file():
+            generated.append(rel)
+            per_acq.append(
+                AcqThumbResult(ref.acquisition_id, status="ok", relpath=rel)
+            )
+            continue
+        ok, source_kind, source_path = _render_one(ref, dest)
         if ok:
             generated.append(rel)
+            per_acq.append(
+                AcqThumbResult(
+                    ref.acquisition_id,
+                    status="ok",
+                    source_kind=source_kind,
+                    source_path=source_path,
+                    relpath=rel,
+                )
+            )
+        else:
+            per_acq.append(
+                AcqThumbResult(ref.acquisition_id, status="render_failed")
+            )
 
-    return representative_relpath(generated)
+    return ThumbnailRunResult(
+        representative=representative_relpath(generated), per_acq=per_acq
+    )
 
 
 def representative_relpath(generated: list[str]) -> str | None:

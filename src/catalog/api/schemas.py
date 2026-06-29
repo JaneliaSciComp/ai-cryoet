@@ -157,6 +157,27 @@ class MdSourceOut(BaseModel):
     frame: int | None = None
 
 
+class EntityScanStatus(BaseModel):
+    """Per-sample freshness rollup (from ``sample_scan_status``)."""
+
+    last_scanned_at: float
+    last_changed_at: float | None = None
+    last_outcome: str
+    last_scan_run_id: str
+
+
+class AcquisitionScanStatus(EntityScanStatus):
+    """Per-acquisition freshness + thumbnail provenance (from
+    ``acquisition_scan_status``). Extends the sample shape with the
+    thumbnail's real rendered source, generated-at, and status."""
+
+    thumbnail_path: str | None = None
+    thumbnail_source_kind: str | None = None
+    thumbnail_source_path: str | None = None
+    thumbnail_generated_at: float | None = None
+    thumbnail_status: str | None = None
+
+
 class AcquisitionOut(BaseModel):
     acquisition_id: str
     # acquisition.toml ([acquisition]) — researcher authored
@@ -188,6 +209,7 @@ class AcquisitionOut(BaseModel):
     post_processed_tomograms: list[PostProcessedTomogramOut] = []
     annotations: list[AnnotationOut] = []
     tilt_series: list[TiltSeriesOut] = []
+    scan_status: AcquisitionScanStatus | None = None
 
 
 class SampleDetail(BaseModel):
@@ -212,6 +234,7 @@ class SampleDetail(BaseModel):
     # fall back to a cached image even when no acquisition declares a tilt
     # series (the thumbnail is rendered from raw Frames/). None if none exists.
     thumbnail_path: str | None = None
+    scan_status: EntityScanStatus | None = None
 
 
 # ── Filters / stats / viewers ────────────────────────────────────────────
@@ -278,50 +301,83 @@ class WarningOut(BaseModel):
     scan_run_id: str
 
 
-class ScanOut(BaseModel):
+# ── Manage page (scan run history + issues) ──────────────────────────────
+
+
+class LatestScanInfo(BaseModel):
+    started_at: float
+    ended_at: float | None = None
+    status: str
+    duration: float | None = None
+
+
+class OutstandingCounts(BaseModel):
+    errors: int = 0
+    warnings: int = 0
+
+
+class ManageSummary(BaseModel):
+    """Status/cadence card payload for the Manage page (§3.4)."""
+
+    latest_scan: LatestScanInfo | None = None
+    cadence_cron: str
+    cadence_tz: str
+    outstanding: OutstandingCounts
+
+
+class IssueItem(BaseModel):
+    category: str
+    message: str
+
+
+class IssueGroup(BaseModel):
+    """Outstanding (or recently-resolved) issues grouped by
+    (scope, sample_id, acquisition_id, file_kind)."""
+
+    scope: str
+    sample_id: str | None = None
+    acquisition_id: str | None = None
+    file_kind: str
+    file_path: str | None = None
+    severity: str
+    issues: list[IssueItem] = []
+    first_seen_at: float
+    last_seen_at: float
+    last_seen_run_id: str
+    latest_run_id: str | None = None
+    latest_scan_at: float | None = None
+    resolved_at: float | None = None
+    resolved_run_id: str | None = None
+
+
+class ScanRun(BaseModel):
     scan_run_id: str
     started_at: float
     ended_at: float | None = None
-    root: str
     status: str
-    samples_upserted: int | None = None
-    samples_skipped: int | None = None
-    samples_failed: int | None = None
+    root: str
+    n_upserted: int | None = None
+    n_skipped: int | None = None
+    n_failed: int | None = None
+    n_new_issues: int | None = None
+    n_resolved_issues: int | None = None
+    n_warning_active: int | None = None
+    n_error_active: int | None = None
 
 
-class ScanSampleOut(BaseModel):
-    """A sample's outcome within a scan run (for the /manage view).
-
-    ``data_source``/``project``/``type`` are joined from ``samples`` when the
-    sample still exists; they are ``None`` for failed samples that were never
-    persisted. ``detail`` carries the error message for failed outcomes.
-    """
-
-    sample_id: str
-    data_source: str | None = None
-    project: str | None = None
-    type: str | None = None
-    warning_count: int = 0
-    detail: str | None = None
-
-
-class SampleWarningsGroup(BaseModel):
-    """All warnings for a single sample in the latest completed scan."""
-
-    sample_id: str
-    warnings: list[str]
-
-
-class RunWarningOut(BaseModel):
-    """A run-level warning not tied to any sample (e.g. an unknown subdir
-    under ``MdSimulation/``)."""
-
+class ScanLogLine(BaseModel):
     id: int
-    category: str
-    location: str
+    seq: int
+    ts: float
+    level: str
+    sample_id: str | None = None
     message: str
-    detected_at: float
-    scan_run_id: str
+
+
+class ScanSampleOutcomeOut(BaseModel):
+    sample_id: str
+    outcome: str
+    detail: str | None = None
 
 
 class ExtrasSummaryRow(BaseModel):

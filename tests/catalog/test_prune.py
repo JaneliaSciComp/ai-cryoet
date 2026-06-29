@@ -43,8 +43,7 @@ def _seed(session, ids: list[str]) -> None:
                 )
             ),
             extras=[],
-            warnings=[],
-            scan_run_id="seed",
+            run_id="seed", now=time.time(),
         )
     session.commit()
 
