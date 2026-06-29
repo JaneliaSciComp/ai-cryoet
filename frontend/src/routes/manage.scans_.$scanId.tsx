@@ -22,7 +22,7 @@ export const Route = createFileRoute('/manage/scans_/$scanId')({
 // Scan timestamps are Unix seconds; render in the viewer's locale.
 function formatTs(seconds: number | null): string {
   if (seconds == null) return '—'
-  return new Date(seconds * 1000).toLocaleString()
+  return new Date(seconds * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
 }
 
 function statusColor(

@@ -8,7 +8,7 @@ import type { ManageLatestScan, ManageSummary } from '~/types'
 // Scan timestamps are Unix seconds; render in the viewer's locale.
 function formatTs(seconds: number | null | undefined): string {
   if (seconds == null) return '—'
-  return new Date(seconds * 1000).toLocaleString()
+  return new Date(seconds * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
 }
 
 // Map the scan status onto a brand-themed chip colour.
@@ -71,6 +71,7 @@ function useCadence(
       const nextLocal = next.toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
+        timeZoneName: 'short',
       })
       return { human, nextLocal }
     } catch {

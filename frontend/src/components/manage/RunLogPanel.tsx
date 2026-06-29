@@ -5,7 +5,7 @@ import { type ScanLogFilters, useScanLogsQuery } from '~/utils/queryOptions'
 
 // HH:MM:SS in the viewer's locale, matching the wireframe's compact log stamp.
 function formatLogTs(seconds: number): string {
-  return new Date(seconds * 1000).toLocaleTimeString()
+  return new Date(seconds * 1000).toLocaleTimeString(undefined, { timeZoneName: 'short' })
 }
 
 // Per-level colour for the dark panel.

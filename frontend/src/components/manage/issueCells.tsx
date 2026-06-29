@@ -5,7 +5,7 @@ import type { IssueGroup } from '~/types'
 // Issue timestamps are Unix seconds; render in the viewer's locale.
 export function formatTs(seconds: number | null | undefined): string {
   if (seconds == null) return '—'
-  return new Date(seconds * 1000).toLocaleString()
+  return new Date(seconds * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
 }
 
 // First-seen wants a date-only reading (matches the wireframe's "2026-06-18").

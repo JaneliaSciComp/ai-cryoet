@@ -72,7 +72,7 @@ describe('OutstandingIssuesTable', () => {
   it('shows the latest-scan timestamp when the owner was re-evaluated', () => {
     setData([group({ last_seen_run_id: 'run_latest', latest_run_id: 'run_latest' })])
     render(<OutstandingIssuesTable />)
-    const expected = new Date(1_700_200_000 * 1000).toLocaleString()
+    const expected = new Date(1_700_200_000 * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
     expect(screen.getByText(expected)).toBeInTheDocument()
   })
 
@@ -81,7 +81,7 @@ describe('OutstandingIssuesTable', () => {
       group({ last_seen_run_id: 'run_old', latest_run_id: 'run_latest' }),
     ])
     render(<OutstandingIssuesTable />)
-    const stale = new Date(1_700_100_000 * 1000).toLocaleString()
+    const stale = new Date(1_700_100_000 * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
     expect(screen.getByText(stale)).toBeInTheDocument()
     // The MUI Tooltip title is rendered as an aria-label on the wrapped element.
     expect(

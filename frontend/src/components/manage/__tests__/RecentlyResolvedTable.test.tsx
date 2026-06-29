@@ -62,7 +62,7 @@ describe('RecentlyResolvedTable', () => {
     expect(
       screen.getByText('acquisition_quality out of range'),
     ).toBeInTheDocument()
-    const expected = new Date(resolvedAt * 1000).toLocaleString()
+    const expected = new Date(resolvedAt * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
     expect(screen.getByText(expected)).toBeInTheDocument()
   })
 

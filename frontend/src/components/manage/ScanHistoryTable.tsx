@@ -11,7 +11,7 @@ import type { ScanRun } from '~/types'
 // Scan timestamps are Unix seconds; render in the viewer's locale.
 function formatTs(seconds: number | null): string {
   if (seconds == null) return '—'
-  return new Date(seconds * 1000).toLocaleString()
+  return new Date(seconds * 1000).toLocaleString(undefined, { timeZoneName: 'short' })
 }
 
 // Whole-second duration → "Xm Ys"; null while the scan is still running.
