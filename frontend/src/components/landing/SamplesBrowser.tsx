@@ -3,7 +3,6 @@ import {
   Box,
   Button,
   Chip,
-  Divider,
   Drawer,
   Grid,
   IconButton,
@@ -191,7 +190,7 @@ export function SamplesBrowser(props: {
           aligns with the table, and the filters column rises to share the top
           row with it.
         */}
-        <Stack spacing={3}>
+        <Stack spacing={2}>
           <Stack
             direction="row"
             justifyContent="space-between"
@@ -216,45 +215,43 @@ export function SamplesBrowser(props: {
               Showing {rows.length.toLocaleString()} of {total.toLocaleString()}{" "}
               samples
             </Typography>
-            {chips.length > 0 ? (
-              <Stack
-                direction="row"
-                spacing={1}
-                alignItems="center"
-                flexWrap="wrap"
-                useFlexGap
-                sx={{ mt: 1 }}
-              >
-                <Typography variant="body2" color="text.secondary">
-                  Filtered by:
-                </Typography>
-                {chips.map((c) => (
+            {/* Reserve a row's height whether or not chips are present so the
+                table doesn't jump as filters are added/removed. */}
+            <Box sx={{ mt: 1, minHeight: 40 }}>
+              {chips.length > 0 ? (
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  useFlexGap
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    Filtered by:
+                  </Typography>
+                  {chips.map((c) => (
+                    <Chip
+                      key={c.key}
+                      size="small"
+                      label={c.label}
+                      onDelete={() => clearKey(c.key)}
+                    />
+                  ))}
                   <Chip
-                    key={c.key}
                     size="small"
-                    label={c.label}
-                    onDelete={() => clearKey(c.key)}
+                    color="primary"
+                    label="Clear all"
+                    onClick={reset}
                   />
-                ))}
-                <Chip
-                  size="small"
-                  color="primary"
-                  label="Clear all"
-                  onClick={reset}
-                />
-              </Stack>
-            ) : null}
+                </Stack>
+              ) : null}
+            </Box>
           </Box>
 
-          <Divider />
-
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              Samples ({rows.length.toLocaleString()})
-            </Typography>
-            <SamplesPortalTable rows={rows} loading={isFetching} />
-          </Box>
         </Stack>
+        <Box sx={{ mt: 0 }}>
+          <SamplesPortalTable rows={rows} loading={isFetching} />
+        </Box>
       </Grid>
 
       {/* xs filters drawer; live-applies as you change values (no Apply step). */}
