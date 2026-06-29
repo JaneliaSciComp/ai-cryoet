@@ -5,6 +5,7 @@ import {
   type MRT_ColumnDef,
 } from 'material-react-table'
 import type { SampleSummary } from '~/types'
+import type { SamplesSearchParams } from '~/utils/samplesSearch'
 import { CustomLink } from '~/components/CustomLink'
 import {
   PreviewThumbnail,
@@ -18,8 +19,15 @@ const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
 export function SamplesPortalTable(props: {
   rows: SampleSummary[]
   loading?: boolean
+  // Active search params threaded to each acquisition subtable for client-side
+  // filtering (mirrors the server EXISTS).
+  filters?: SamplesSearchParams
+  // Set true (by the browser, from committed/debounced state) when any
+  // acquisition-entity filter is active, so every detail panel opens to show
+  // the filtered acquisitions.
+  expandAllDetails?: boolean
 }) {
-  const { rows, loading } = props
+  const { rows, loading, filters, expandAllDetails } = props
 
   const columns = useMemo<MRT_ColumnDef<SampleSummary>[]>(
     () => [
@@ -92,13 +100,19 @@ export function SamplesPortalTable(props: {
     // Returning a truthy element here (rather than null when collapsed) is
     // what keeps each row's expand button enabled.
     renderDetailPanel: ({ row }) => (
-      <AcquisitionsSubTable sampleId={row.original.sample_id} />
+      <AcquisitionsSubTable
+        sampleId={row.original.sample_id}
+        filters={filters}
+      />
     ),
     enableColumnActions: false,
     enableColumnFilters: false,
     enableTopToolbar: false,
     enableDensityToggle: false,
-    state: { isLoading: loading },
+    // `expanded: true` opens every detail panel; MRT still mounts each panel
+    // lazily (Collapse mountOnEnter), so a fetch fires per visible page row.
+    // Leave `expanded` uncontrolled (undefined) when not expanding all.
+    state: { isLoading: loading, ...(expandAllDetails ? { expanded: true } : {}) },
     initialState: {
       density: 'comfortable',
       pagination: { pageSize: 10, pageIndex: 0 },

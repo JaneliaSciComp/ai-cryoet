@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from catalog import orm
 from catalog.api.deps import get_session
+from catalog.api.filter_fields import FIELDS, Field
 from catalog.api.schemas import (
     AcquisitionOut,
     AnnotationOut,
@@ -58,34 +59,147 @@ def _build_sub_entity(row, out_cls: type):
     return out_cls(**values)
 
 
-def _tomogram_range_or_clause(
-    column, lo: float | None, hi: float | None
-) -> list:
-    """Build NULL-tolerant range clauses for one tomogram column."""
-    conds = []
-    if lo is not None:
-        conds.append(or_(column.is_(None), column >= lo))
-    if hi is not None:
-        conds.append(or_(column.is_(None), column <= hi))
-    return conds
+# ── Registry-driven filter machinery ──────────────────────────────────────
+# The filter set is generated from catalog.api.filter_fields.FIELDS instead of
+# hand-coded Query(...) params. Conditions are grouped by their ORM table and
+# turned into one EXISTS per sub-entity table (or direct WHERE on samples), so
+# all conditions on the same sub-entity must hold on the *same* row (per-row
+# semantics — resolved decision 9 / the acquisition rule). Repeatable
+# categorical values OR within a facet (col.in_), facets AND across (separate
+# conditions).
+# ponytail: one loop over the registry beats ~60 hand-coded branches; the
+# registry is the contract, pinned by test_filter_fields_drift.py.
+
+# Registry `table` string → ORM class.
+_TABLE_ORM = {
+    "samples": orm.SampleORM,
+    "chromatin": orm.ChromatinORM,
+    "fiducial": orm.FiducialORM,
+    "simulation": orm.SimulationORM,
+    "freezing": orm.FreezingORM,
+    "milling": orm.MillingORM,
+    "labels": orm.LabelORM,
+    "acquisitions": orm.AcquisitionORM,
+    "annotations": orm.AnnotationORM,
+}
+
+
+def _existence_cond(predicate_id: str):
+    """Build a correlated EXISTS for an acquisition-entity existence field.
+
+    Correlated to BOTH sample_id and acquisition_id of the AcquisitionORM in
+    scope, so "has X" means the acquisition currently being matched owns a
+    matching child row.
+    """
+    A = orm.AcquisitionORM
+
+    def _exists(child, *extra):
+        return exists(
+            select(1)
+            .where(child.sample_id == A.sample_id)
+            .where(child.acquisition_id == A.acquisition_id)
+            .where(*extra)
+            .correlate(A)
+        )
+
+    TS, RAW, POST = (
+        orm.TiltSeriesORM,
+        orm.RawTomogramORM,
+        orm.PostProcessedTomogramORM,
+    )
+    if predicate_id == "has_unaligned_tilt_series":
+        # IS NOT TRUE → False or NULL.
+        return _exists(TS, or_(TS.is_aligned.is_(False), TS.is_aligned.is_(None)))
+    if predicate_id == "has_aligned_tilt_series":
+        return _exists(TS, TS.is_aligned.is_(True))
+    if predicate_id == "has_tilt_series_zarr":
+        return _exists(TS, TS.zarr_path.isnot(None))
+    if predicate_id == "has_raw_tomogram":
+        return _exists(RAW)
+    if predicate_id == "has_post_processed_tomogram":
+        return _exists(POST)
+    if predicate_id == "has_tomogram_zarr":
+        return or_(
+            _exists(RAW, RAW.zarr_path.isnot(None)),
+            _exists(POST, POST.zarr_path.isnot(None)),
+        )
+    raise ValueError(f"unknown existence predicate: {predicate_id}")
+
+
+def _field_values(field: Field, params):
+    """Pull a field's value(s) out of the raw query params, typed by kind.
+
+    Returns None when the field is absent (so it contributes no condition).
+      text      -> list[str] (repeatable, OR within facet)
+      range     -> (lo, hi) floats from {key}_min / {key}_max (either may be None)
+      boolean   -> True | False (true/false; absent / other -> None)
+      existence -> True when the checkbox param is truthy, else None
+    """
+    if field.kind == "text":
+        vals = params.getlist(field.key)
+        return vals or None
+    if field.kind == "range":
+        def _num(name):
+            raw = params.get(name)
+            return None if raw in (None, "") else float(raw)
+
+        lo, hi = _num(f"{field.key}_min"), _num(f"{field.key}_max")
+        return (lo, hi) if (lo is not None or hi is not None) else None
+    if field.kind == "boolean":
+        raw = params.get(field.key)
+        if raw is None or raw == "":
+            return None
+        return raw.lower() in ("true", "1", "yes")
+    if field.kind == "existence":
+        raw = params.get(field.key)
+        return bool(raw and raw.lower() in ("true", "1", "yes")) or None
+    return None
+
+
+def _field_condition(field: Field, value):
+    """Map one field+value to a SQLAlchemy condition on its own table's column.
+
+    Existence fields correlate to the acquisition rather than a plain column,
+    so they are routed through ``_existence_cond``.
+    """
+    if field.kind == "existence":
+        return _existence_cond(field.column)
+    col = getattr(_TABLE_ORM[field.table], field.column)
+    if field.kind == "text":
+        return col.in_(value)
+    if field.kind == "range":
+        lo, hi = value
+        conds = []
+        if lo is not None:
+            conds.append(or_(col.is_(None), col >= lo))
+        if hi is not None:
+            conds.append(or_(col.is_(None), col <= hi))
+        return and_(*conds)
+    if field.kind == "boolean":
+        return col.is_(True) if value else col.is_(False)
+    raise ValueError(f"unhandled kind: {field.kind}")
+
+
+def _filter_conditions(params) -> dict[str, list]:
+    """Group active filter conditions by ORM table (sample-direct → 'samples')."""
+    by_table: dict[str, list] = {}
+    for field in FIELDS:
+        value = _field_values(field, params)
+        if value is None:
+            continue
+        # Existence fields live on tilt_series/tomogram tables but are
+        # correlated to the acquisition inside _existence_cond, so they belong
+        # in the acquisition EXISTS bucket (all acquisition filters on the same
+        # acquisition), not a standalone EXISTS on the child table.
+        bucket = "acquisitions" if field.kind == "existence" else field.table
+        by_table.setdefault(bucket, []).append(_field_condition(field, value))
+    return by_table
 
 
 @router.get("", response_model=list[SampleSummary])
 def list_samples(
-    project: list[str] | None = Query(None),
-    data_source: list[str] | None = Query(None),
-    type: list[str] | None = Query(None),
-    dataset_type: list[str] | None = Query(None),
-    microscope: list[str] | None = Query(None),
-    voltage: list[float] | None = Query(None),
-    camera: list[str] | None = Query(None),
-    pixel_size_min: float | None = Query(None),
-    pixel_size_max: float | None = Query(None),
-    voxel_size_min: float | None = Query(None),
-    voxel_size_max: float | None = Query(None),
-    has_tomograms: bool | None = Query(None),
+    request: Request,
     q: str | None = Query(None),
-    has_warnings: bool | None = Query(None),
     sort: Literal["sample_id", "project", "type"] = Query("sample_id"),
     order: Literal["asc", "desc"] = Query("asc"),
     limit: int = Query(100, ge=1, le=1000),
@@ -95,14 +209,18 @@ def list_samples(
     """Paginated list of live samples (deleted_at IS NULL) with filters and
     intrinsic child-row counts (n_acquisitions/n_tomograms/n_tilt_series).
 
+    Filters are registry-driven (``catalog.api.filter_fields.FIELDS``); the
+    full param set is read off ``request.query_params`` rather than declared
+    one-by-one. Param naming: text/existence/boolean use the field ``key``;
+    range fields use ``{key}_min`` / ``{key}_max``. See the OpenAPI-friendly
+    note: the registry is the documented contract.
+
     Filter semantics:
       * Repeatable categorical params act as OR within a facet, AND across.
-      * Acquisition/tomogram/tilt_series filters use EXISTS subqueries on the
-        respective child table.
-      * Range filters are NULL-tolerant: a child row with NULL on the bound
-        column is treated as a match (so partial metadata doesn't drop the
-        whole sample).
-      * Tomogram filters/counts span both raw + post-processed tables.
+      * Sub-entity (1:1, label, acquisition, annotation) filters use EXISTS
+        subqueries; all conditions on one sub-entity must hold on the same row.
+      * Range filters are NULL-tolerant: a row with NULL on the bound column is
+        treated as a match (so partial metadata doesn't drop the whole sample).
       * Counts on the SELECT list are filter-INDEPENDENT total child rows.
     """
     # ── Subqueries ────────────────────────────────────────────────────────
@@ -158,24 +276,58 @@ def list_samples(
         .where(orm.SampleORM.deleted_at.is_(None))
     )
 
-    # ── Sample-table filters ──────────────────────────────────────────────
-    if project:
-        stmt = stmt.where(orm.SampleORM.project.in_(project))
-    if data_source:
-        stmt = stmt.where(orm.SampleORM.data_source.in_(data_source))
-    if type:
-        stmt = stmt.where(orm.SampleORM.type.in_(type))
-    # `dataset_type` lives on the 1:1 simulation sub-entity, so match via an
-    # EXISTS subquery rather than a column on the sample row.
-    if dataset_type:
+    # ── Registry-driven filters (grouped by ORM table) ───────────────────
+    by_table = _filter_conditions(request.query_params)
+
+    # sample-direct columns: WHERE col IN (...) straight on the row.
+    for cond in by_table.pop("samples", []):
+        stmt = stmt.where(cond)
+
+    # acquisition: one EXISTS on AcquisitionORM correlated to the sample,
+    # AND-ing every scalar/range/boolean condition AND each nested-existence
+    # (tilt_series / tomogram / annotation) condition, so all acquisition
+    # filters hold on the *same* acquisition. The annotation_type text filter
+    # lives on AnnotationORM (table='annotations') and is folded in here as a
+    # correlated EXISTS on the same acquisition.
+    acq_conds = by_table.pop("acquisitions", [])
+    ann_conds = by_table.pop("annotations", [])
+    if ann_conds:
+        acq_conds.append(
+            exists(
+                select(1)
+                .where(orm.AnnotationORM.sample_id == orm.AcquisitionORM.sample_id)
+                .where(
+                    orm.AnnotationORM.acquisition_id
+                    == orm.AcquisitionORM.acquisition_id
+                )
+                .where(and_(*ann_conds))
+                .correlate(orm.AcquisitionORM)
+            )
+        )
+    if acq_conds:
         stmt = stmt.where(
             exists(
                 select(1)
-                .where(orm.SimulationORM.sample_id == orm.SampleORM.sample_id)
-                .where(orm.SimulationORM.dataset_type.in_(dataset_type))
+                .where(orm.AcquisitionORM.sample_id == orm.SampleORM.sample_id)
+                .where(and_(*acq_conds))
                 .correlate(orm.SampleORM)
             )
         )
+
+    # 1:1 sub-entities + label (1:N): one EXISTS per table, all that table's
+    # conditions AND-ed inside the SAME EXISTS (per-row — resolved decision 9).
+    for table, conds in by_table.items():
+        sub = _TABLE_ORM[table]
+        stmt = stmt.where(
+            exists(
+                select(1)
+                .where(sub.sample_id == orm.SampleORM.sample_id)
+                .where(and_(*conds))
+                .correlate(orm.SampleORM)
+            )
+        )
+
+    # Free-text search over sample_id + description (unchanged).
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(
@@ -184,101 +336,6 @@ def list_samples(
                 func.lower(orm.SampleORM.description).like(like),
             )
         )
-
-    # ── Acquisition EXISTS filters ────────────────────────────────────────
-    acq_conds = [orm.AcquisitionORM.sample_id == orm.SampleORM.sample_id]
-    if microscope:
-        acq_conds.append(orm.AcquisitionORM.microscope.in_(microscope))
-    if voltage:
-        acq_conds.append(orm.AcquisitionORM.voltage.in_(voltage))
-    if camera:
-        acq_conds.append(orm.AcquisitionORM.camera.in_(camera))
-    if pixel_size_min is not None:
-        acq_conds.append(
-            or_(
-                orm.AcquisitionORM.pixel_size.is_(None),
-                orm.AcquisitionORM.pixel_size >= pixel_size_min,
-            )
-        )
-    if pixel_size_max is not None:
-        acq_conds.append(
-            or_(
-                orm.AcquisitionORM.pixel_size.is_(None),
-                orm.AcquisitionORM.pixel_size <= pixel_size_max,
-            )
-        )
-    if len(acq_conds) > 1:
-        stmt = stmt.where(
-            exists(select(1).where(and_(*acq_conds)).correlate(orm.SampleORM))
-        )
-
-    # ── Tomogram EXISTS filters (apply across raw + post tables) ──────────
-    if voxel_size_min is not None or voxel_size_max is not None:
-        raw_conds = [orm.RawTomogramORM.sample_id == orm.SampleORM.sample_id]
-        raw_conds.extend(
-            _tomogram_range_or_clause(
-                orm.RawTomogramORM.voxel_size, voxel_size_min, voxel_size_max
-            )
-        )
-        post_conds = [
-            orm.PostProcessedTomogramORM.sample_id == orm.SampleORM.sample_id
-        ]
-        post_conds.extend(
-            _tomogram_range_or_clause(
-                orm.PostProcessedTomogramORM.voxel_size,
-                voxel_size_min,
-                voxel_size_max,
-            )
-        )
-        stmt = stmt.where(
-            or_(
-                exists(select(1).where(and_(*raw_conds)).correlate(orm.SampleORM)),
-                exists(select(1).where(and_(*post_conds)).correlate(orm.SampleORM)),
-            )
-        )
-
-    if has_tomograms is True:
-        stmt = stmt.where(
-            or_(
-                exists(
-                    select(1)
-                    .where(orm.RawTomogramORM.sample_id == orm.SampleORM.sample_id)
-                    .correlate(orm.SampleORM)
-                ),
-                exists(
-                    select(1)
-                    .where(
-                        orm.PostProcessedTomogramORM.sample_id
-                        == orm.SampleORM.sample_id
-                    )
-                    .correlate(orm.SampleORM)
-                ),
-            )
-        )
-    elif has_tomograms is False:
-        stmt = stmt.where(
-            and_(
-                ~exists(
-                    select(1)
-                    .where(orm.RawTomogramORM.sample_id == orm.SampleORM.sample_id)
-                    .correlate(orm.SampleORM)
-                ),
-                ~exists(
-                    select(1)
-                    .where(
-                        orm.PostProcessedTomogramORM.sample_id
-                        == orm.SampleORM.sample_id
-                    )
-                    .correlate(orm.SampleORM)
-                ),
-            )
-        )
-
-    # ── Warnings filter ───────────────────────────────────────────────────
-    if has_warnings is True:
-        stmt = stmt.where(func.coalesce(warn_count_sq.c.wc, 0) > 0)
-    elif has_warnings is False:
-        stmt = stmt.where(func.coalesce(warn_count_sq.c.wc, 0) == 0)
 
     # ── Sort + pagination ─────────────────────────────────────────────────
     sort_col = {

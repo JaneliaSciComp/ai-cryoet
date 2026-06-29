@@ -1,0 +1,147 @@
+[
+  {
+    "name": "scalar_in_match",
+    "acq": {"microscope": "Krios"},
+    "filters": {"microscope": ["Krios", "Glacios"]},
+    "expected": true
+  },
+  {
+    "name": "scalar_in_no_match",
+    "acq": {"microscope": "Talos"},
+    "filters": {"microscope": ["Krios", "Glacios"]},
+    "expected": false
+  },
+  {
+    "name": "range_within",
+    "acq": {"resolution": 3.5},
+    "filters": {"resolution_min": 2.0, "resolution_max": 4.0},
+    "expected": true
+  },
+  {
+    "name": "range_below_min",
+    "acq": {"resolution": 1.0},
+    "filters": {"resolution_min": 2.0},
+    "expected": false
+  },
+  {
+    "name": "range_null_tolerant",
+    "acq": {"resolution": null},
+    "filters": {"resolution_min": 2.0, "resolution_max": 4.0},
+    "expected": true
+  },
+  {
+    "name": "boolean_true_match",
+    "acq": {"phase_plate": true},
+    "filters": {"phase_plate": "true"},
+    "expected": true
+  },
+  {
+    "name": "boolean_false_filter_excludes_true",
+    "acq": {"phase_plate": true},
+    "filters": {"phase_plate": "false"},
+    "expected": false
+  },
+  {
+    "name": "existence_has_aligned_tilt_series",
+    "acq": {"tilt_series": [{"is_aligned": true}]},
+    "filters": {"has_aligned_tilt_series": "true"},
+    "expected": true
+  },
+  {
+    "name": "existence_has_aligned_tilt_series_none_aligned",
+    "acq": {"tilt_series": [{"is_aligned": false}]},
+    "filters": {"has_aligned_tilt_series": "true"},
+    "expected": false
+  },
+  {
+    "name": "existence_has_unaligned_tilt_series_null_counts",
+    "acq": {"tilt_series": [{"is_aligned": null}]},
+    "filters": {"has_unaligned_tilt_series": "true"},
+    "expected": true
+  },
+  {
+    "name": "existence_has_tilt_series_zarr",
+    "acq": {"tilt_series": [{"is_aligned": true, "zarr_path": "/x.zarr"}]},
+    "filters": {"has_tilt_series_zarr": "true"},
+    "expected": true
+  },
+  {
+    "name": "existence_has_tilt_series_zarr_missing",
+    "acq": {"tilt_series": [{"is_aligned": true, "zarr_path": null}]},
+    "filters": {"has_tilt_series_zarr": "true"},
+    "expected": false
+  },
+  {
+    "name": "existence_has_raw_tomogram",
+    "acq": {"raw_tomogram": {"tomogram_id": "r1"}},
+    "filters": {"has_raw_tomogram": "true"},
+    "expected": true
+  },
+  {
+    "name": "existence_has_raw_tomogram_missing",
+    "acq": {"raw_tomogram": null},
+    "filters": {"has_raw_tomogram": "true"},
+    "expected": false
+  },
+  {
+    "name": "existence_has_post_processed_tomogram",
+    "acq": {"post_processed_tomograms": [{"tomogram_id": "p1"}]},
+    "filters": {"has_post_processed_tomogram": "true"},
+    "expected": true
+  },
+  {
+    "name": "existence_has_tomogram_zarr_on_post",
+    "acq": {"post_processed_tomograms": [{"tomogram_id": "p1", "zarr_path": "/p.zarr"}]},
+    "filters": {"has_tomogram_zarr": "true"},
+    "expected": true
+  },
+  {
+    "name": "existence_has_tomogram_zarr_none",
+    "acq": {"raw_tomogram": {"tomogram_id": "r1", "zarr_path": null}, "post_processed_tomograms": [{"tomogram_id": "p1", "zarr_path": null}]},
+    "filters": {"has_tomogram_zarr": "true"},
+    "expected": false
+  },
+  {
+    "name": "annotation_type_match",
+    "acq": {"annotations": [{"annotation_id": "a1", "type": "membrane"}]},
+    "filters": {"annotation_type": ["membrane", "ribosome"]},
+    "expected": true
+  },
+  {
+    "name": "annotation_type_no_match",
+    "acq": {"annotations": [{"annotation_id": "a1", "type": "nucleus"}]},
+    "filters": {"annotation_type": ["membrane", "ribosome"]},
+    "expected": false
+  },
+  {
+    "name": "combined_all_on_same_acquisition",
+    "acq": {
+      "microscope": "Krios",
+      "resolution": 3.0,
+      "phase_plate": true,
+      "tilt_series": [{"is_aligned": true, "zarr_path": "/x.zarr"}],
+      "annotations": [{"annotation_id": "a1", "type": "membrane"}]
+    },
+    "filters": {
+      "microscope": ["Krios"],
+      "resolution_max": 4.0,
+      "phase_plate": "true",
+      "has_aligned_tilt_series": "true",
+      "annotation_type": ["membrane"]
+    },
+    "expected": true
+  },
+  {
+    "name": "combined_one_condition_fails",
+    "acq": {
+      "microscope": "Krios",
+      "resolution": 9.0,
+      "phase_plate": true
+    },
+    "filters": {
+      "microscope": ["Krios"],
+      "resolution_max": 4.0
+    },
+    "expected": false
+  }
+]

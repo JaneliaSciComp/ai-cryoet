@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { FIELDS } from './filterFields'
 
 // Coerce single-value query params into single-element arrays so that a URL
 // like `?camera=Falcon` validates against `z.array(z.string())`. TanStack
@@ -22,41 +23,59 @@ function toBoolean(v: unknown): boolean | undefined {
 }
 
 const stringArray = z.preprocess(toArray, z.array(z.string()).optional())
-const numberArray = z.preprocess(toArray, z.array(z.coerce.number()).optional())
 const booleanish = z.preprocess(toBoolean, z.boolean().optional())
+const rangeBound = z.coerce.number().optional()
+
+// Registry-driven field shapes. Reduce over FIELDS so the schema stays in sync
+// with filterFields.ts: text → string[], existence/boolean → tri-state bool via
+// presence, range → {key}_min + {key}_max coerced numbers.
+//
+// ponytail: voltage is `text` in the registry (discrete kV multi-select), so it
+// becomes string[] here — values are stringified in the query string anyway and
+// the backend voltage param parses them. Same for the `‡` JSON facets
+// (linker_pattern / nucleosome_footprint / label_aunp_size_nm): stored strings
+// matched verbatim.
+//
+// Note: `data_source` and `project` are string[] (multi-select per the
+// registry), not single strings — consumers (FilterPanel, filterGating) read
+// them as arrays.
+const registryShape: Record<string, z.ZodTypeAny> = {}
+for (const f of FIELDS) {
+  if (f.kind === 'range') {
+    registryShape[`${f.key}_min`] = rangeBound
+    registryShape[`${f.key}_max`] = rangeBound
+  } else if (f.kind === 'existence' || f.kind === 'boolean') {
+    registryShape[f.key] = booleanish
+  } else {
+    registryShape[f.key] = stringArray
+  }
+}
 
 // Search-param schema for the /samples route. Lives in utils (not the route or
 // the hook) so neither owner has to import the other (avoids circular deps).
+// Registry fields MERGED with the hand-written canonical fields below.
 export const samplesSearchSchema = z.object({
-  // URL-canonical fields (§9.1)
-  project: z.string().optional(),
-  data_source: z.string().optional(),
+  ...registryShape,
+  // URL-canonical fields (§9.1) — kept exactly as before, including the sort enum.
   q: z.string().optional(),
   sort: z.enum(['sample_id', 'project', 'type']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
   limit: z.coerce.number().int().positive().optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
-  // Drawer fields (extended, all optional so shared URLs round-trip)
-  type: stringArray,
-  dataset_type: stringArray,
-  microscope: stringArray,
-  voltage: numberArray,
-  camera: stringArray,
-  has_tomograms: booleanish,
-  pixel_size_min: z.coerce.number().optional(),
-  pixel_size_max: z.coerce.number().optional(),
-  n_tilts_min: z.coerce.number().optional(),
-  n_tilts_max: z.coerce.number().optional(),
-  voxel_spacing_min: z.coerce.number().optional(),
-  voxel_spacing_max: z.coerce.number().optional(),
-});
+})
 
-export type SamplesSearchParams = z.infer<typeof samplesSearchSchema>
-
-// Revised from plan §11.19: every drawer field round-trips through the URL,
-// so there is no longer a "canonical subset". The previous
-// SAMPLES_URL_CANONICAL_KEYS / SamplesUrlCanonicalParams exports were removed
-// when the layout switched to navigating with the full filter set.
+// The registry params are folded into the schema at runtime (reduced over
+// FIELDS), so `z.infer` only sees the canonical fields statically. Re-expose the
+// registry params via an index signature so callers can set/read them (e.g.
+// `data_source: string[]`, `pixel_size_min: number`). Intersecting with the
+// canonical inferred type keeps `sort`/`limit`/etc. precisely typed
+// (`X & unknown = X`); registry params read back as `unknown` and are narrowed
+// at the use site (the browsers + filterGating already treat them dynamically).
+// ponytail: index-typed rather than a precise per-key mapped type — that would
+// need the registry declared `as const`; the drift test already pins parity.
+export type SamplesSearchParams = z.infer<typeof samplesSearchSchema> & {
+  [key: string]: unknown
+}
 
 export function buildSamplesQueryString(params: SamplesSearchParams): string {
   const sp = new URLSearchParams()
@@ -68,25 +87,24 @@ export function buildSamplesQueryString(params: SamplesSearchParams): string {
     if (!v) return
     for (const item of v) addOne(k, item)
   }
-  addOne('project', params.project)
-  addOne('data_source', params.data_source)
+  const p = params as Record<string, unknown>
+  // Registry fields — mirror the schema reduction above.
+  for (const f of FIELDS) {
+    if (f.kind === 'range') {
+      addOne(`${f.key}_min`, p[`${f.key}_min`])
+      addOne(`${f.key}_max`, p[`${f.key}_max`])
+    } else if (f.kind === 'existence' || f.kind === 'boolean') {
+      if (p[f.key] !== undefined) addOne(f.key, p[f.key])
+    } else {
+      addMany(f.key, p[f.key] as unknown[] | undefined)
+    }
+  }
+  // Hand-written canonical fields.
   addOne('q', params.q)
   addOne('sort', params.sort)
   addOne('order', params.order)
   addOne('limit', params.limit)
   addOne('offset', params.offset)
-  addMany('type', params.type)
-  addMany('dataset_type', params.dataset_type)
-  addMany('microscope', params.microscope)
-  addMany('voltage', params.voltage)
-  addMany('camera', params.camera)
-  if (params.has_tomograms !== undefined) {
-    addOne('has_tomograms', params.has_tomograms)
-  }
-  addOne("n_tilts_min", params.n_tilts_min);
-  addOne("n_tilts_max", params.n_tilts_max)
-  addOne('voxel_spacing_min', params.voxel_spacing_min)
-  addOne('voxel_spacing_max', params.voxel_spacing_max)
   const qs = sp.toString()
   return qs ? `?${qs}` : ''
 }

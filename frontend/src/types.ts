@@ -200,15 +200,8 @@ export type RangeOut = {
 }
 
 export type FiltersOptionsOut = {
-  projects: string[]
-  data_sources: string[]
-  types: string[]
-  dataset_types: string[]
-  microscopes: string[]
-  voltages: number[]
-  cameras: string[]
-  pixel_size: RangeOut
-  voxel_size: RangeOut
+  categorical: Record<string, string[]>
+  ranges: Record<string, RangeOut>
 }
 
 export type StatsTotalsOut = {
