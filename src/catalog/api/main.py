@@ -42,6 +42,7 @@ from catalog.api.routes import (
     extras,
     filters,
     md_previews as md_previews_routes,
+    meta as meta_routes,
     samples,
     scans,
     stats,
@@ -225,6 +226,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET"],
         allow_headers=["*"],
     )
+    app.include_router(meta_routes.router, prefix="/meta", tags=["meta"])
     app.include_router(samples.router, prefix="/samples", tags=["samples"])
     app.include_router(scans.router, prefix="/scans", tags=["scans"])
     app.include_router(warnings_routes.router, prefix="/samples", tags=["warnings"])

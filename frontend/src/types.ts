@@ -1,5 +1,12 @@
 // Hand-written mirror of catalog/api/schemas.py — keep in sync.
 
+// ── Meta / versions (UI footer) ───────────────────────────────────────────
+
+export type MetaOut = {
+  portal_version: string
+  data_format_version: string
+}
+
 // ── Sample list / summary ────────────────────────────────────────────────
 
 export type SampleSummary = {

@@ -11,6 +11,14 @@ import datetime as _dt
 from pydantic import BaseModel
 
 
+# ── Meta / versions (UI footer) ──────────────────────────────────────────
+
+
+class MetaOut(BaseModel):
+    portal_version: str
+    data_format_version: str
+
+
 # ── Sample list / summary ────────────────────────────────────────────────
 
 

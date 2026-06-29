@@ -11,6 +11,7 @@ import {
 } from '~/utils/samplesSearch'
 import type {
   FiltersOptionsOut,
+  MetaOut,
   RunWarningOut,
   SampleDetail,
   SampleSummary,
@@ -33,6 +34,16 @@ async function fetchOrEmpty<T>(path: string): Promise<T[]> {
 }
 
 type ScanOutcome = 'upserted' | 'skipped' | 'failed'
+
+// ── /meta (footer versions) ────────────────────────────────────────────────
+// Constant per deploy, so never goes stale within a session.
+
+export const metaQueryOptions = () =>
+  queryOptions({
+    queryKey: ['meta'],
+    queryFn: () => apiFetch<MetaOut>('/meta'),
+    staleTime: Infinity,
+  })
 
 // ── /samples list ────────────────────────────────────────────────────────────
 
