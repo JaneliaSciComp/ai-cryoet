@@ -7,15 +7,29 @@ import {
   type MRT_ColumnDef,
 } from 'material-react-table'
 import { sampleDetailQueryOptions } from '~/utils/queryOptions'
+import { matchAcquisition } from '~/utils/acquisitionMatch'
+import type { SamplesSearchParams } from '~/utils/samplesSearch'
 import type { AcquisitionOut } from '~/types'
 import { CustomLink } from '~/components/CustomLink'
 import { QualityBadge } from '~/components/common/QualityBadge'
 
 const dash = (v: unknown) => (v == null || v === '' ? '—' : String(v))
 
-export function AcquisitionsSubTable({ sampleId }: { sampleId: string }) {
+export function AcquisitionsSubTable({
+  sampleId,
+  filters,
+}: {
+  sampleId: string
+  filters?: SamplesSearchParams
+}) {
   const { data, isLoading, isError } = useQuery(
     sampleDetailQueryOptions(sampleId),
+  )
+
+  const all = data?.acquisitions ?? []
+  const filtered = useMemo(
+    () => (filters ? all.filter((a) => matchAcquisition(a, filters)) : all),
+    [all, filters],
   )
 
   const columns = useMemo<MRT_ColumnDef<AcquisitionOut>[]>(
@@ -85,7 +99,7 @@ export function AcquisitionsSubTable({ sampleId }: { sampleId: string }) {
 
   const table = useMaterialReactTable({
     columns,
-    data: data?.acquisitions ?? [],
+    data: filtered,
     getRowId: (a) => a.acquisition_id,
     state: { isLoading },
     enableTopToolbar: false,
@@ -102,10 +116,15 @@ export function AcquisitionsSubTable({ sampleId }: { sampleId: string }) {
     localization: { noRecordsToDisplay: 'No acquisitions for this sample.' },
   })
 
+  // The server only returns a sample when ≥1 acquisition matched, so a filtered
+  // result of 0 while the sample has acquisitions means the client/server
+  // predicates have drifted — surface it visibly instead of an empty table.
+  const drifted = !!filters && !isLoading && all.length > 0 && filtered.length === 0
+
   return (
     <Box sx={{ p: 2, bgcolor: 'action.hover' }}>
       <Typography variant="overline" color="text.secondary">
-        Acquisitions
+        Acquisitions{filters ? ` (${filtered.length} of ${all.length})` : ''}
       </Typography>
       {isError ? (
         <Typography variant="body2" color="error" sx={{ mt: 1 }}>
@@ -113,6 +132,12 @@ export function AcquisitionsSubTable({ sampleId }: { sampleId: string }) {
         </Typography>
       ) : (
         <Box sx={{ mt: 1 }}>
+          {drifted && (
+            <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
+              ⚠ Filter mismatch: server matched this sample but no acquisition
+              matched client-side (predicate drift — see acquisitionMatch.ts).
+            </Typography>
+          )}
           <MaterialReactTable table={table} />
         </Box>
       )}
