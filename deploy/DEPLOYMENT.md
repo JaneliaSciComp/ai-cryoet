@@ -221,6 +221,16 @@ images:
 Then `oc apply -k deploy/k8s/overlays/production`. Pushing a `v*.*.*` git tag builds and
 publishes all three images (see the workflow).
 
+### Versioning
+
+The three images version together off a single `v*.*.*` git tag — push the tag,
+the workflow builds and tags all three. The tag is also baked into the API image
+as `PORTAL_VERSION` and served at `GET /meta`, which the UI footer renders as
+`Portal v1.0.0 · Data format v1.0.0`. The **portal version** (image release) and
+the **data format version** (researcher-facing TOML/layout format, see
+`docs/data_organization.md`) advance independently — code releases far more often
+than the metadata contract changes.
+
 ## Adding a New Environment
 
 Create a new overlay directory referencing the same base:

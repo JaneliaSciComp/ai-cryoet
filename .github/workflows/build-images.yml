@@ -19,12 +19,17 @@ jobs:
           - image: ai-cryoet-api
             context: .
             file: ./deploy/Dockerfile.api
+            # Bake the release version (git tag) into the image; GET /meta
+            # serves it to the UI footer.
+            build_args: PORTAL_VERSION=${{ github.ref_name }}
           - image: ai-cryoet-frontend
             context: ./frontend
             file: ./frontend/Dockerfile
+            build_args: ""
           - image: ai-cryoet-scanner
             context: .
             file: ./deploy/Dockerfile.scanner
+            build_args: ""
 
     steps:
       - name: Checkout code
@@ -57,6 +62,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: true
+          build-args: ${{ matrix.build_args }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |

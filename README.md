@@ -117,6 +117,12 @@ NGINX_PORT=80            # optional, defaults to 80
 docker compose build
 ```
 
+The API image bakes in a release version surfaced at `GET /meta` and shown in the UI footer; it defaults to `dev` locally. To stamp a real version, set `PORTAL_VERSION` (in production this comes from the git tag — see [deploy/DEPLOYMENT.md](./deploy/DEPLOYMENT.md#versioning)):
+
+```
+PORTAL_VERSION=$(git describe --tags) docker compose build
+```
+
 3. Run the scanner to populate the database (writes into the `catalog-db` Docker volume):
 
 ```

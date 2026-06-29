@@ -33,6 +33,12 @@ ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data/scratch/data \
     CATALOG_DB_URL=sqlite:////db/catalog.db \
     CORS_ORIGINS=http://localhost:3000
 
+# Release version (git tag) surfaced at GET /meta for the UI footer. Set via
+# `--build-arg PORTAL_VERSION=$(git describe --tags)`. Last layer so bumping it
+# doesn't bust the dependency/source cache above.
+ARG PORTAL_VERSION=dev
+ENV PORTAL_VERSION=$PORTAL_VERSION
+
 EXPOSE 8000
 CMD ["pixi", "run", "-e", "api", "uvicorn", "catalog.api.main:app", \
      "--host", "0.0.0.0", "--port", "8000"]

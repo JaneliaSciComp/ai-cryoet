@@ -12,6 +12,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.api
+      args:
+        PORTAL_VERSION: ${PORTAL_VERSION:-dev}
     image: ai-cryoet-api:latest
     environment:
       - CATALOG_DATA_ROOT=${CATALOG_DATA_ROOT:?set CATALOG_DATA_ROOT in .env}
