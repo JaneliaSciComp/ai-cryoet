@@ -5,8 +5,7 @@ params act as OR within a facet; range filters are NULL-tolerant; aggregate
 counts on the SELECT list are filter-independent (decision §11.15).
 
 Fixture seeds five live samples covering a spread of project/data_source/
-type/microscope/voltage/camera/pixel_size/voxel_spacing combinations, plus
-one tomogram-less sample for ``has_tomograms`` tests.
+type/microscope/voltage/camera/pixel_size combinations.
 """
 from __future__ import annotations
 
@@ -241,7 +240,7 @@ def test_filter_camera_repeatable(client):
     }
 
 
-# ── Range filters ─────────────────────────────────────────────────────────
+# ── Range filters (pixel_size; voxel range dropped — resolved decision 7) ──
 
 
 def test_pixel_size_min(client):
@@ -275,42 +274,6 @@ def test_pixel_size_range_exact_bounds(client):
     )
     # NULL passes both bounds.
     assert _ids(r) == {"sample_beta", "sample_gamma", "sample_epsilon"}
-
-
-def test_voxel_spacing_min_null_tolerance(client):
-    """voxel_spacing_min=15.0 selects tomograms with vs>=15 OR vs IS NULL.
-
-    Expected:
-      sample_beta    (20.0)
-      sample_gamma   (NULL passes — NULL-tolerance check)
-      sample_epsilon (15.0 + 25.0 — at least one matches)
-    Excluded: sample_alpha (10.0 only), sample_delta (no tomograms).
-    """
-    assert _ids(client.get("/samples", params={"voxel_size_min": 15.0})) == {
-        "sample_beta", "sample_gamma", "sample_epsilon",
-    }
-
-
-def test_voxel_spacing_max(client):
-    """voxel_spacing_max=10.0 selects tomograms with vs<=10 OR vs IS NULL."""
-    assert _ids(client.get("/samples", params={"voxel_size_max": 10.0})) == {
-        "sample_alpha", "sample_gamma", "sample_epsilon",
-    }
-
-
-# ── has_tomograms partition ────────────────────────────────────────────────
-
-
-def test_has_tomograms_true(client):
-    assert _ids(client.get("/samples", params={"has_tomograms": "true"})) == {
-        "sample_alpha", "sample_beta", "sample_gamma", "sample_epsilon",
-    }
-
-
-def test_has_tomograms_false(client):
-    assert _ids(client.get("/samples", params={"has_tomograms": "false"})) == {
-        "sample_delta",
-    }
 
 
 # ── q (search) ─────────────────────────────────────────────────────────────

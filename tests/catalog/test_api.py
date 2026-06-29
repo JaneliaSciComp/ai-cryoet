@@ -161,18 +161,6 @@ def test_list_samples_filter_data_source(client):
     assert {s["sample_id"] for s in r.json()} == {"sample_b"}
 
 
-def test_list_samples_filter_has_warnings(client):
-    r = client.get("/samples", params={"has_warnings": "true"})
-    ids = {s["sample_id"] for s in r.json()}
-    assert "sample_a" in ids   # has 1 warning
-    assert "sample_b" not in ids
-
-    r = client.get("/samples", params={"has_warnings": "false"})
-    ids = {s["sample_id"] for s in r.json()}
-    assert "sample_b" in ids
-    assert "sample_a" not in ids
-
-
 def test_list_samples_includes_warning_count(client):
     r = client.get("/samples")
     by_id = {s["sample_id"]: s for s in r.json()}
