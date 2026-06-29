@@ -54,7 +54,7 @@ spec:
                   # Must match CATALOG_DATA_ROOT in the ConfigMap and the API's
                   # mount path — the scanner records absolute paths under this
                   # root that the API later resolves.
-                  mountPath: /groups/cryoet/cryoet/data/scratch/data
+                  mountPath: /groups/cryoet/cryoet/data
                   readOnly: true
                 - name: catalog-db
                   mountPath: /db

@@ -26,7 +26,7 @@ COPY src ./src
 # `chmod g=u` grants the group the same access as the owner.
 RUN chgrp -R 0 /app && chmod -R g=u /app
 
-ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data/scratch/data \
+ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data \
     CATALOG_DB_URL=sqlite:////db/catalog.db \
     CATALOG_THUMBNAIL_DIR=/thumbnails
 

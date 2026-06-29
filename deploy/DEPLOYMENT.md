@@ -65,7 +65,7 @@ is gitignored and must not be committed.
 ## Wiring up the data root
 
 The scanner reads a large, **pre-existing** data tree (e.g.
-`/groups/cryoet/cryoet/data/scratch/data`) and the API reads the same tree to
+`/groups/cryoet/cryoet/data`) and the API reads the same tree to
 serve previews and launch Neuroglancer. Unlike the SQLite DB and the thumbnail
 cache — which the app creates from scratch — this data already lives on storage
 your cluster administrators manage.
@@ -78,7 +78,7 @@ configured by the cluster/HPC team, not by these manifests.
 `deploy/k8s/base/storage.yaml` declares a PVC named **`catalog-data-pvc`** as a
 placeholder. Before deploying, take this question to the HPC/OpenShift team:
 
-> *"How do we make `/groups/cryoet/cryoet/data/scratch/data` readable from pods
+> *"How do we make `/groups/cryoet/cryoet/data` readable from pods
 > in the `ai-cryoet` namespace, and what should the PVC be called?"*
 
 They will typically do one of:
@@ -92,7 +92,7 @@ They will typically do one of:
 
 Whatever path is mounted **must equal** `CATALOG_DATA_ROOT` in `config.env` and
 the `mountPath` for the `catalog-data` volume in `api.yaml` and `scanner.yaml`
-(all three default to `/groups/cryoet/cryoet/data/scratch/data`). The scanner
+(all three default to `/groups/cryoet/cryoet/data`). The scanner
 records absolute paths under this root and the API validates reads against it,
 so they must agree exactly.
 

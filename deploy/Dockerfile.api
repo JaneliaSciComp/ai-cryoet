@@ -29,7 +29,7 @@ RUN chgrp -R 0 /app && chmod -R g=u /app
 
 # CATALOG_DATA_ROOT must match the path scanner used when writing the DB —
 # the API resolves DB-recorded paths against this and rejects anything outside.
-ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data/scratch/data \
+ENV CATALOG_DATA_ROOT=/groups/cryoet/cryoet/data \
     CATALOG_DB_URL=sqlite:////db/catalog.db \
     CORS_ORIGINS=http://localhost:3000
 

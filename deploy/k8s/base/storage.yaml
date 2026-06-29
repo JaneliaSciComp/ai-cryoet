@@ -40,9 +40,9 @@ spec:
     # Server-side export path. The filer exports /groups3 (the logical
     # /groups/<lab> tree lives under it), so this is /groups3/... even though the
     # data's logical path — and the container mountPath / CATALOG_DATA_ROOT — is
-    # /groups/cryoet/cryoet/data/scratch/data.
+    # /groups/cryoet/cryoet/data.
     server: building.prfs.janelia.org
-    path: /groups3/cryoet/cryoet/data/scratch/data
+    path: /groups3/cryoet/cryoet/data
   mountOptions:
     - hard
     - nfsvers=3
