@@ -15,124 +15,39 @@ import CloseIcon from '@mui/icons-material/Close'
 import { useFiltersOptionsQuery, useSamplesQuery } from '~/utils/queryOptions'
 import { useDebounce } from '~/hooks/useDebounce'
 import type { SamplesSearchParams } from '~/utils/samplesSearch'
+import { FilterPanel } from '~/components/landing/filters/FilterPanel'
 import {
-  AllDataFilters,
-  type AllDataFilterState,
-} from '~/components/landing/AllDataFilters'
+  anyAcquisitionFilterActive,
+  applyGating,
+  buildChips,
+  computeDisabledGroups,
+  filterNotices,
+} from '~/components/landing/filterGating'
 import { SamplesPortalTable } from '~/components/landing/SamplesPortalTable'
 
 // The /data page spans both arms of the catalog. Unlike SamplesBrowser (which
-// forces a single `data_source`), here `data_source` is a user-settable filter
-// and arm-specific filters (microscope / dataset_type) are always available.
+// forces a single `data_source`), here `data_source` is a user-settable filter.
+// FilterPanel consumes/emits the URL search (SamplesSearchParams) directly; the
+// gating helpers (filterGating.ts) derive disabled groups, auto-select, chips,
+// and notices purely from that search — no separate drawer-state object.
 
 type NavigateFn = (opts: {
   search: (prev: SamplesSearchParams) => SamplesSearchParams
   replace?: boolean
 }) => void
 
-// ── URL search <-> drawer state ──────────────────────────────────────────────
-
-function searchToFilters(s: SamplesSearchParams): AllDataFilterState {
-  return {
-    data_source:
-      s.data_source === 'experimental' || s.data_source === 'simulation'
-        ? s.data_source
-        : undefined,
-    project: s.project,
-    dataset_type: s.dataset_type?.[0],
-    microscope: s.microscope?.[0],
-    pixel_size_min: s.pixel_size_min,
-    pixel_size_max: s.pixel_size_max,
-    has_tomograms: s.has_tomograms,
-  }
-}
-
-function applyFilterPatch(
+// Merge a patch into the search, dropping keys whose value is undefined so they
+// don't linger as bare keys in the URL.
+function mergePatch(
   prev: SamplesSearchParams,
-  patch: Partial<AllDataFilterState>,
+  patch: Partial<SamplesSearchParams>,
 ): SamplesSearchParams {
-  const next: SamplesSearchParams = { ...prev }
-  const set = <K extends keyof SamplesSearchParams>(
-    key: K,
-    value: SamplesSearchParams[K] | undefined,
-  ) => {
-    if (value === undefined) delete next[key]
-    else next[key] = value
+  const next = { ...prev } as Record<string, unknown>
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) delete next[k]
+    else next[k] = v
   }
-
-  if ('data_source' in patch) {
-    set('data_source', patch.data_source)
-    // Selecting one arm clears the opposite arm's filter so a stale value
-    // doesn't silently exclude every sample in the newly-selected arm.
-    if (patch.data_source === 'experimental') delete next.dataset_type
-    if (patch.data_source === 'simulation') delete next.microscope
-  }
-  if ('project' in patch) set('project', patch.project)
-  if ('dataset_type' in patch)
-    set('dataset_type', patch.dataset_type ? [patch.dataset_type] : undefined)
-  if ('microscope' in patch)
-    set('microscope', patch.microscope ? [patch.microscope] : undefined)
-  if ('pixel_size_min' in patch) set('pixel_size_min', patch.pixel_size_min)
-  if ('pixel_size_max' in patch) set('pixel_size_max', patch.pixel_size_max)
-  if ('has_tomograms' in patch)
-    set('has_tomograms', patch.has_tomograms ? true : undefined)
-  return next
-}
-
-function prettyDataSource(v: string): string {
-  return v.charAt(0).toUpperCase() + v.slice(1)
-}
-
-function activeChips(
-  f: AllDataFilterState,
-): Array<{ key: keyof AllDataFilterState; label: string }> {
-  const chips: Array<{ key: keyof AllDataFilterState; label: string }> = []
-  if (f.data_source)
-    chips.push({
-      key: 'data_source',
-      label: `Data source: ${prettyDataSource(f.data_source)}`,
-    })
-  if (f.project) chips.push({ key: 'project', label: `Project: ${f.project}` })
-  if (f.microscope)
-    chips.push({ key: 'microscope', label: `Microscope: ${f.microscope}` })
-  if (f.dataset_type)
-    chips.push({
-      key: 'dataset_type',
-      label: `Data type: ${f.dataset_type.replace(/_/g, ' ')}`,
-    })
-  if (f.pixel_size_min != null)
-    chips.push({
-      key: 'pixel_size_min',
-      label: `Pixel size ≥ ${f.pixel_size_min}`,
-    })
-  if (f.pixel_size_max != null)
-    chips.push({
-      key: 'pixel_size_max',
-      label: `Pixel size ≤ ${f.pixel_size_max}`,
-    })
-  if (f.has_tomograms)
-    chips.push({ key: 'has_tomograms', label: 'Has tomograms' })
-  return chips
-}
-
-// Arm-specific filters and the arm they belong to. When one of these is set but
-// no `data_source` is selected, the filter implicitly restricts results to its
-// arm, so we warn the user (the filter has no effect on the other arm).
-const ARM_SPECIFIC: Array<{
-  key: 'microscope' | 'dataset_type'
-  name: string
-  arm: 'experimental' | 'simulation'
-}> = [
-  { key: 'microscope', name: 'Microscope', arm: 'experimental' },
-  { key: 'dataset_type', name: 'Data type', arm: 'simulation' },
-]
-
-function armWarnings(f: AllDataFilterState): string[] {
-  if (f.data_source) return []
-  return ARM_SPECIFIC.filter((a) => f[a.key] != null).map(
-    (a) =>
-      `${a.name} only applies to ${a.arm} data — only ${a.arm} samples and acquisitions matching this filter are shown.`,
-  )
+  return next as SamplesSearchParams
 }
 
 export function AllDataBrowser(props: {
@@ -144,44 +59,46 @@ export function AllDataBrowser(props: {
   const { data: filterOptions } = useFiltersOptionsQuery()
 
   // The URL updates immediately for shareability; debounce only the value that
-  // drives the query so typing in the range fields doesn't fire a request per
-  // keystroke. `data_source` flows through from the URL — it is a filter here.
+  // drives the query (and the acquisition-subtable filtering / expand-all) so
+  // typing in range fields doesn't fire a request per keystroke.
   const debouncedSearch = useDebounce(search, 300)
   const { data: samples, isFetching } = useSamplesQuery(debouncedSearch)
   const rows = samples ?? []
 
-  // Denominator for "Showing X of Y": every sample across both arms, ignoring
-  // the user's filters.
+  // Denominator for "Showing X of Y": every sample across both arms.
   const { data: baseSamples } = useSamplesQuery({})
   const total = baseSamples?.length ?? rows.length
 
-  const filters = searchToFilters(search)
-  const warnings = armWarnings(filters)
-
-  const patch = (p: Partial<AllDataFilterState>) =>
-    navigate({ search: (prev) => applyFilterPatch(prev, p), replace: true })
-  const clearKey = (key: keyof AllDataFilterState) =>
+  const patch = (p: Partial<SamplesSearchParams>) =>
+    navigate({
+      search: (prev) => mergePatch(prev, applyGating(prev, p)),
+      replace: true,
+    })
+  const clearKey = (key: string) =>
     navigate({
       search: (prev) => {
-        const next = { ...prev }
+        const next = { ...prev } as Record<string, unknown>
         delete next[key]
-        return next
+        return next as SamplesSearchParams
       },
       replace: true,
     })
   const reset = () => navigate({ search: () => ({}), replace: true })
 
-  const chips = activeChips(filters)
+  const disabledGroups = computeDisabledGroups(search)
+  const notices = filterNotices(search)
+  const chips = buildChips(search, undefined, clearKey)
+  const expandAll = anyAcquisitionFilterActive(debouncedSearch)
 
   // On small screens the sidebar collapses into a button that opens this drawer.
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const filterPanel = (
-    <AllDataFilters
+    <FilterPanel
       options={filterOptions}
-      value={filters}
+      values={search}
       onChange={patch}
-      onReset={reset}
+      disabledGroups={disabledGroups}
     />
   )
 
@@ -238,10 +155,10 @@ export function AllDataBrowser(props: {
                   </Typography>
                   {chips.map((c) => (
                     <Chip
-                      key={c.key}
+                      key={c.id}
                       size="small"
                       label={c.label}
-                      onDelete={() => clearKey(c.key)}
+                      onDelete={c.clear}
                     />
                   ))}
                   <Chip
@@ -255,21 +172,25 @@ export function AllDataBrowser(props: {
             </Box>
           </Box>
 
-          {warnings.length > 0 ? (
+          {notices.length > 0 ? (
             <Stack spacing={1}>
-              {warnings.map((w) => (
+              {notices.map((w) => (
                 <Alert key={w} severity="warning">
                   {w}
                 </Alert>
               ))}
             </Stack>
           ) : null}
-
         </Stack>
         {/* Table sits outside the spaced Stack so its top gap is controlled
             here rather than inheriting the Stack's 24px spacing. */}
         <Box sx={{ mt: 1 }}>
-          <SamplesPortalTable rows={rows} loading={isFetching} />
+          <SamplesPortalTable
+            rows={rows}
+            loading={isFetching}
+            filters={debouncedSearch}
+            expandAllDetails={expandAll}
+          />
         </Box>
       </Grid>
 
@@ -279,7 +200,7 @@ export function AllDataBrowser(props: {
         onClose={() => setFiltersOpen(false)}
         sx={{ display: { md: 'none' } }}
       >
-        <Box sx={{ width: 300, p: 2 }}>
+        <Box sx={{ width: 320, p: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
             <IconButton
               aria-label="Close filters"

@@ -21,10 +21,10 @@ export const Route = createFileRoute('/experimental')({
       // Prime both the filtered list and the arm's full list (the "of N"
       // denominator), each scoped to experimental data.
       queryClient.ensureQueryData(
-        samplesQueryOptions({ ...search, data_source: 'experimental' }),
+        samplesQueryOptions({ ...search, data_source: ['experimental'] }),
       ),
       queryClient.ensureQueryData(
-        samplesQueryOptions({ data_source: 'experimental' }),
+        samplesQueryOptions({ data_source: ['experimental'] }),
       ),
     ]),
   component: Experimental,

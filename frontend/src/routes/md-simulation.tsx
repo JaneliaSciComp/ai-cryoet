@@ -21,10 +21,10 @@ export const Route = createFileRoute('/md-simulation')({
       // Prime both the filtered list and the arm's full list (the "of N"
       // denominator), each scoped to MD simulation data.
       queryClient.ensureQueryData(
-        samplesQueryOptions({ ...search, data_source: 'simulation' }),
+        samplesQueryOptions({ ...search, data_source: ['simulation'] }),
       ),
       queryClient.ensureQueryData(
-        samplesQueryOptions({ data_source: 'simulation' }),
+        samplesQueryOptions({ data_source: ['simulation'] }),
       ),
     ]),
   component: MdSimulation,
