@@ -36,6 +36,7 @@ gouauxlab_20250418_AMmilled29-2/
 
 ### 2. Fill out `{sample_id}/sample.toml`
 
+- Leave the `format_version` line at the top untouched — it records which data format your file follows (see [Data format version](#data-format-version)). The exception to this is if you hand-modify your file to follow a new data version - then update the data version accordingly.
 - Complete as many fields marked `<FILL IN>` as you can. For now, the only required authored field is `sample.project` (`sample.data_source` is set by the directory the sample lives under, not authored).
 - Delete the `[synapse]` block if your project is `chromatin`, or vice versa.
 - Optionally, uncomment and complete the `[[aunp]]`, `[freezing]`, and `[milling]` blocks.
@@ -266,6 +267,27 @@ One file per MD run, placed at the root of each `MdRuns/{id}/` directory. The ru
 ---
 
 ## Schema rules
+
+### Data format version
+
+Each `sample.toml` declares the version of the data format it was authored against, as a top-level key above the `[sample]` block:
+
+```toml
+format_version = "1.0.0"
+```
+
+It uses [semantic versioning](https://semver.org):
+
+- **MAJOR** (`1.x.x` → `2.0.0`) — a breaking change: a field or section was renamed/removed, or the directory layout changed. **Your existing files need updating.** The SciComp team will tell you what changed.
+- **MINOR** (`1.0.x` → `1.1.0`) — a new optional field or section was added. Your existing files stay valid as-is; adopt the new field only if it applies to you.
+- **PATCH** (`1.0.0` → `1.0.1`) — clarification only (comments/docs). No action needed.
+
+The check is on the major version only, and it's always a **warning** — your sample is never rejected or hidden from the portal just for a version mismatch. A missing `format_version` warns and assumes the current format; a major-version mismatch warns that your files are a format generation behind. Minor/patch differences are silent. The warning shows up in two places:
+
+- when you run `pixi run validate {sample_dir}` locally, and
+- on the portal's **Manage** page, under the scan's per-sample warnings — so you (and the SciComp team) can see at a glance which samples are on an old format.
+
+When the SciComp team announces a major bump, update your files to the new format and set `format_version` to the announced version to clear the warning.
 
 ### Required fields
 

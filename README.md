@@ -151,7 +151,16 @@ docker compose up
 1. Edit `schema.py` and the canonical template(s) — `templates/sample.toml` / `templates/acquisition.toml`.
 2. Run `pixi run sync` to regenerate the derived artifacts: `schema.json`, `acquisition.schema.json`, and the `templates/sample_id_{data_type}/` starter copies.
 3. Update `docs/schema.md`, the human-readable schema documentation for every stored field, including DB-only ones not in any TOML.
-4. Run `pixi run -e api test -- tests/test_repo_consistency.py tests/test_generate_json_schema.py`. The drift guards in `tests/test_repo_consistency.py` and `tests/test_generate_json_schema.py` fail with a fix hint if the generated schemas, starter copies, or docs are out of date.
+4. Bump `DATA_FORMAT_VERSION` in `src/schema/__init__.py` and the `format_version` line in `templates/sample.toml` (then re-run `pixi run sync`). This is the researcher-facing data format version — semver, separate from the catalog DB schema (Alembic) and from image release versions:
+   - **MAJOR** — a field/section was renamed or removed, or the directory layout changed. Existing researcher files break; announce "update to X.0.0". A major bump is also typically when you write the Alembic migration for any new queryable column.
+   - **MINOR** — a new optional field/section. Old files stay valid.
+   - **PATCH** — comment/doc-only clarification, no structural change.
+
+   The loader (`src/schema/loader.py`) checks the **major** component only and always emits a **warning** (never a hard error) for a missing or major-mismatched `format_version` — so a stale-but-parseable sample still ingests and the nudge surfaces in the manage UI's scan-warnings (category `data_format_version`) rather than the sample silently dropping out of the catalog. If a major change actually renamed/removed fields, the normal validation errors fire on top. Adding a field is a MINOR bump that won't even warn.
+
+   Note: This is **one version for the whole data format** — `sample.toml`, `acquisition.toml`, `md_run.toml`, and the directory layout together — *not* the portal software version, and not a separate version per file. You declare it once, in `sample.toml`; it stands for the format generation the entire sample directory was authored against. A change to *any* of those files or to the layout bumps this single version, and whether it's major or minor depends on the impact, not on which file changed. 
+   
+5. Run `pixi run -e api test -- tests/test_repo_consistency.py tests/test_generate_json_schema.py`. The drift guards in `tests/test_repo_consistency.py` and `tests/test_generate_json_schema.py` fail with a fix hint if the generated schemas, starter copies, or docs are out of date.
 
 ---
 
