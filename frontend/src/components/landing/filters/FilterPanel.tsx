@@ -55,7 +55,11 @@ export function FilterPanel(props: FilterPanelProps) {
               <FilterGroup
                 key={group.id}
                 title={group.title}
-                expanded={!!openGroups[group.id]}
+                // ponytail: a disabled group renders collapsed regardless of
+                // its remembered open state — MUI's `disabled` freezes the
+                // toggle, so without this it'd be stuck open and its checkboxes
+                // (which MUI does NOT auto-disable) would stay clickable.
+                expanded={!!openGroups[group.id] && !disabled}
                 onToggle={() => toggleGroup(group.id)}
                 disabled={disabled}
               >

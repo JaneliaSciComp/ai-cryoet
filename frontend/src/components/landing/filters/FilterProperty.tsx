@@ -64,7 +64,7 @@ export function FilterProperty(props: Props) {
         <Typography variant="body2" fontWeight={600}>{field.label}</Typography>
       </AccordionSummary>
       <AccordionDetails sx={{ px: 0, pt: 0 }}>
-        {renderBody(field, options, v, onChange)}
+        {renderBody(field, options, v, onChange, disabled)}
       </AccordionDetails>
     </Accordion>
   )
@@ -81,6 +81,7 @@ function renderBody(
   options: FiltersOptionsOut,
   v: Record<string, unknown>,
   onChange: (patch: Partial<SamplesSearchParams>) => void,
+  disabled?: boolean,
 ) {
   switch (field.kind) {
     case 'text': {
@@ -108,6 +109,7 @@ function renderBody(
                     size="small"
                     checked={selected.includes(opt)}
                     onChange={() => toggle(opt)}
+                    disabled={disabled}
                   />
                 }
                 label={<Typography variant="body2">{optionLabel(field.key, opt)}</Typography>}
@@ -131,6 +133,7 @@ function renderBody(
           max={v[`${field.key}_max`] as number | undefined}
           onMin={(val) => onChange({ [`${field.key}_min`]: val })}
           onMax={(val) => onChange({ [`${field.key}_max`]: val })}
+          disabled={disabled}
         />
       )
     }
@@ -138,7 +141,7 @@ function renderBody(
       const cur = v[field.key] as boolean | undefined
       const strVal = cur === true ? 'yes' : cur === false ? 'no' : 'any'
       return (
-        <FormControl component="fieldset" variant="standard">
+        <FormControl component="fieldset" variant="standard" disabled={disabled}>
           <FormLabel component="legend" sx={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
             {field.label}
           </FormLabel>
@@ -168,6 +171,7 @@ function renderBody(
               size="small"
               checked={checked}
               onChange={(e) => onChange({ [field.key]: e.target.checked ? true : undefined })}
+              disabled={disabled}
             />
           }
           label={<Typography variant="body2">{field.label}</Typography>}
