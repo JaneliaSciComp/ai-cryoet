@@ -497,6 +497,16 @@ def render_sample_toml(
 # (templates/.../TiltSeries/tilt_series_id/). We rename it to the real id.
 TILT_SERIES_PLACEHOLDER_DIR = "tilt_series_id"
 
+# Other "<x>_id" placeholder leaf dirs the template ships under Reconstructions/.
+# Nothing populates them at reorg time (researchers add reconstructions later),
+# so we drop them rather than leave empty template placeholders behind. The
+# acquisition_id and tilt_series_id placeholders are handled elsewhere (consumed
+# by copytree / renamed by rename_dir).
+PLACEHOLDER_DIRS = (
+    "Reconstructions/Annotations/annotation_id",
+    "Reconstructions/Tomograms/tomogram_id",
+)
+
 # Matches the template's commented "# [[tilt_series]]" header and its commented
 # "# key = ..." field lines, so we can swap the whole block for a live one.
 _TS_HEADER_RE = re.compile(r"^#\s*\[\[tilt_series\]\]\s*$")
@@ -598,6 +608,14 @@ class Runner:
             shutil.rmtree(src)
         else:
             shutil.move(str(src), str(dest))
+
+    def remove_dir(self, target: Path) -> None:
+        """Drop a leftover template placeholder dir, if present."""
+        if not (target.is_dir() or target.is_symlink()):
+            return
+        self._say(f"remove    {target}")
+        if not self.dry_run:
+            shutil.rmtree(target)
 
     def _place(self, src: Path, dest: Path, mode: str) -> None:
         """Place ``src`` at ``dest`` using ``mode`` (one of PLACEMENT_MODES)."""
@@ -703,6 +721,9 @@ def process(
         runner.rename_dir(
             ts_root / TILT_SERIES_PLACEHOLDER_DIR, ts_root / tilt_series_id
         )
+        # Drop the Reconstructions/ placeholder "<x>_id" dirs the template ships.
+        for rel in PLACEHOLDER_DIRS:
+            runner.remove_dir(dest_acq / rel)
         if acq_toml_text is not None:
             runner.write_text(
                 dest_acq / "acquisition.toml",
