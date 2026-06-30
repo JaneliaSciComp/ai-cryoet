@@ -715,21 +715,25 @@ def process(
         dest_acq = sample_dir / acq.acq_id
         runner.make_skeleton(template_acq, dest_acq)
 
-        # Rename the template's placeholder tilt-series folder to the real id
-        # and author the matching [[tilt_series]] block in acquisition.toml.
+        # Tomo5 ships an initial .mrc raw tilt series: rename the placeholder
+        # tilt-series folder to the real id and author the matching
+        # [[tilt_series]] block. SerialEM has no raw series, so we leave both the
+        # placeholder folder and the commented [[tilt_series]] block (copied
+        # verbatim by make_skeleton) for the researcher to fill in later.
         ts_root = dest_acq / "TiltSeries"
-        runner.rename_dir(
-            ts_root / TILT_SERIES_PLACEHOLDER_DIR, ts_root / tilt_series_id
-        )
+        if style != "serialem":
+            runner.rename_dir(
+                ts_root / TILT_SERIES_PLACEHOLDER_DIR, ts_root / tilt_series_id
+            )
+            if acq_toml_text is not None:
+                runner.write_text(
+                    dest_acq / "acquisition.toml",
+                    render_acquisition_toml(acq_toml_text, tilt_series_id),
+                    f"acquisition.toml ([[tilt_series]] id = {tilt_series_id})",
+                )
         # Drop the Reconstructions/ placeholder "<x>_id" dirs the template ships.
         for rel in PLACEHOLDER_DIRS:
             runner.remove_dir(dest_acq / rel)
-        if acq_toml_text is not None:
-            runner.write_text(
-                dest_acq / "acquisition.toml",
-                render_acquisition_toml(acq_toml_text, tilt_series_id),
-                f"acquisition.toml ([[tilt_series]] id = {tilt_series_id})",
-            )
 
         frames_dir = dest_acq / "Frames"
         # Frames.
