@@ -1,5 +1,10 @@
 {
   "include": ["**/*.ts", "**/*.tsx", "public/script*.js"],
+  // Test files are run/typechecked by vitest against a full checkout. Exclude
+  // them from `tsc --noEmit` (the production build step) — they import fixtures
+  // from the repo-root `tests/` dir, which is outside the frontend Docker build
+  // context and so absent in the image.
+  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
   "compilerOptions": {
     "strict": true,
     "esModuleInterop": true,
