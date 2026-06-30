@@ -9,6 +9,7 @@ __pycache__
 # datasets
 data
 data_old_organizations
+.portal_cache
 
 # Mac
 .DS_Store
