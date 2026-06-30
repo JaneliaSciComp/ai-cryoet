@@ -41,10 +41,12 @@ patches:
         path: /spec/storageClassName
         value: ocs-storagecluster-cephfs
 
+# Pin to the version built by the `v*.*.*` git tag. The metadata-action strips
+# the leading `v`, so git tag `v1.0.0` publishes image tag `1.0.0` (no `v`).
 images:
   - name: ghcr.io/janeliascicomp/ai-cryoet-api
-    newTag: latest
+    newTag: "1.0.0"
   - name: ghcr.io/janeliascicomp/ai-cryoet-frontend
-    newTag: latest
+    newTag: "1.0.0"
   - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
-    newTag: latest
+    newTag: "1.0.0"
