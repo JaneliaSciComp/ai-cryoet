@@ -103,7 +103,7 @@ from pathlib import Path
 TEMPLATE_DIR = Path(
     "/groups/cryoet/cryoet/data/scratch/templates/sample_id_experimental"
 )
-DEST_ROOT = Path("/groups/cryoet/cryoet/data/scratch/data/Experimental")
+DEST_ROOT = Path("/groups/cryoet/cryoet/data/Experimental")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Frame-name patterns. The acquisition_id is the common prefix that precedes
