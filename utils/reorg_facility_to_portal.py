@@ -236,21 +236,14 @@ def discover(src: Path, style: str) -> dict[str, Acquisition]:
 # SerialEM mdoc combination: per-frame [FrameSet = 0] -> one [ZValue = N] series mdoc
 # ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
-# !!! CHECK THIS !!!  ExposureDose handling for SerialEM combined mdocs.
+# ExposureDose handling for SerialEM combined mdocs.
 #
 # The SerialEM per-frame mdocs record  ExposureDose = 0  and instead
 # carry  DoseRate (e/Å²/s)  and  ExposureTime (s). The portal sums ExposureDose
 # across tilts to get total dose, so a literal copy yields total_dose = 0.
 #
-# For now we synthesize  ExposureDose = DoseRate * ExposureTime  per tilt.
-# BUT this is unverified: in the example "spoofed" mdocs at
-#   /groups/cryoet/cryoet/data/rosenlab/example_30bp/mdocs/
-# ExposureDose is non-zero and simply EQUALS ExposureTime (no DoseRate field
-# present at all). So the correct dose convention is still ambiguous.
-#
-# TODO(confirm with facility / portal team): is per-tilt dose really
-# DoseRate*ExposureTime, or something else? Adjust _recompute_exposure_dose
-# (or set RECOMPUTE_EXPOSURE_DOSE = False to copy the source value verbatim).
+# We synthesize  ExposureDose = DoseRate * ExposureTime  per tilt.
+# This was confirmed by the Rosen Lab to be okay.
 # ─────────────────────────────────────────────────────────────────────────────
 RECOMPUTE_EXPOSURE_DOSE = True
 
@@ -259,8 +252,7 @@ def _recompute_exposure_dose(body: list[str]) -> list[str]:
     """Return ``body`` with ExposureDose set to DoseRate * ExposureTime.
 
     Only rewrites when both DoseRate and ExposureTime are present and numeric;
-    otherwise the original lines are left untouched. See the CHECK THIS note
-    above — this convention is provisional.
+    otherwise the original lines are left untouched.
     """
     if not RECOMPUTE_EXPOSURE_DOSE:
         return body
