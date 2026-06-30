@@ -206,16 +206,18 @@ not scale the `api` Deployment above 1.
 
 ## Updating the Application
 
-Pin specific image tags in the overlay's `kustomization.yaml`:
+Pin specific image tags in the overlay's `kustomization.yaml`. Note: the build
+workflow's `metadata-action` strips the leading `v`, so a `v1.0.0` git tag
+publishes image tag `1.0.0` (without the `v`) — use that here:
 
 ```yaml
 images:
   - name: ghcr.io/janeliascicomp/ai-cryoet-api
-    newTag: v1.0.0
+    newTag: "1.0.0"
   - name: ghcr.io/janeliascicomp/ai-cryoet-frontend
-    newTag: v1.0.0
+    newTag: "1.0.0"
   - name: ghcr.io/janeliascicomp/ai-cryoet-scanner
-    newTag: v1.0.0
+    newTag: "1.0.0"
 ```
 
 Then `oc apply -k deploy/k8s/overlays/production`. Pushing a `v*.*.*` git tag builds and
