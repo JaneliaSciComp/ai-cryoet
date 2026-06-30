@@ -4,6 +4,7 @@ import {
   MenuItem,
   Stack,
   TextField,
+  alpha,
 } from '@mui/material'
 import {
   MaterialReactTable,
@@ -143,6 +144,7 @@ export function OutstandingIssuesTable({
       <Box
         sx={{
           p: 1.5,
+          bgcolor: (t) => alpha(t.palette.primary.main, 0.12),
           borderBottom: 1,
           borderColor: 'divider',
           display: 'flex',
@@ -165,7 +167,7 @@ export function OutstandingIssuesTable({
             placeholder="Filter by sample, project, or path…"
             value={filters.q ?? ''}
             onChange={(e) => setFilter('q', e.target.value)}
-            sx={{ flex: 1, minWidth: 220, maxWidth: 320 }}
+            sx={{ flex: 1, minWidth: 220, maxWidth: 320, bgcolor: 'common.white' }}
           />
           <TextField
             select
@@ -175,7 +177,7 @@ export function OutstandingIssuesTable({
             onChange={(e) =>
               setFilter('severity', e.target.value as IssueFilters['severity'])
             }
-            sx={{ minWidth: 150 }}
+            sx={{ minWidth: 150, bgcolor: 'common.white' }}
           >
             <MenuItem value="">All severities</MenuItem>
             <MenuItem value="error">Errors only</MenuItem>
@@ -187,7 +189,7 @@ export function OutstandingIssuesTable({
             label="File"
             value={filters.file_kind ?? ''}
             onChange={(e) => setFilter('file_kind', e.target.value)}
-            sx={{ minWidth: 170 }}
+            sx={{ minWidth: 170, bgcolor: 'common.white' }}
           >
             <MenuItem value="">All files</MenuItem>
             {fileKinds.map((kind) => (

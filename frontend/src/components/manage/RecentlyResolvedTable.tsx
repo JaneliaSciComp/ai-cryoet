@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { alpha } from '@mui/material'
 import {
   MaterialReactTable,
   useMaterialReactTable,
@@ -82,6 +83,9 @@ export function RecentlyResolvedTable({
     enablePagination: true,
     positionPagination: 'top',
     enableBottomToolbar: false,
+    muiTopToolbarProps: {
+      sx: { bgcolor: (t) => alpha(t.palette.primary.main, 0.12) },
+    },
     initialState: {
       density: 'comfortable',
       sorting: [{ id: 'resolved_at', desc: true }],
